@@ -22,19 +22,19 @@ echo Java build OK
 
 echo.
 echo [2/3] Starting Java service (port 8080)...
-start /b java -jar target\teamspeak-voice-bridge-1.0.0-SNAPSHOT.jar > logs\teamspeak-bridge.log 2>&1
+start /b java -jar target\teamspeak-voice-bridge-1.0.0-SNAPSHOT.jar
 echo Java service started
 
 echo.
 echo [3/3] Starting Python backend (port 8000)...
 cd /d "%PROJECT_ROOT%\team-speak-ai\backend"
-start "Python Backend" cmd /c "venv\Scripts\python -m uvicorn main:app --host 0.0.0.0 --port 8000"
+start "Python Backend" venv\Scripts\python -m uvicorn main:app --host 0.0.0.0 --port 8000
 echo Python backend started
 
 echo.
 echo [Bonus] Starting frontend (port 5173)...
 cd /d "%PROJECT_ROOT%\team-speak-ai\frontend"
-start "Vue Frontend" cmd /c "npm run dev"
+start "Vue Frontend" npm run dev
 echo Frontend started
 
 echo.
@@ -45,8 +45,6 @@ echo.
 echo Java TeamSpeak Bridge: http://localhost:8080
 echo Python Backend:       http://localhost:8000
 echo Vue Frontend:         http://localhost:5173
-echo.
-echo Logs: logs\
 echo.
 echo Stop: stop-all.bat
 echo ==========================================
