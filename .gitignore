@@ -1,0 +1,61 @@
+# Environment tools
+/environment/
+
+# Java
+*.class
+*.jar
+*.war
+*.ear
+*.logs
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+*.egg-info/
+dist/
+build/
+uploads/
+.pytest_cache/
+.mypy_cache/
+
+# Frontend
+node_modules/
+dist/
+*.local
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+.project
+.classpath
+.settings/
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# OS
+Thumbs.db
