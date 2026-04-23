@@ -6,6 +6,7 @@ import {
   deleteBatch as apiDeleteBatch,
   deleteFile as apiDeleteFile,
 } from '@/api/files'
+import { recognizeFromFile } from '@/api/ocr'
 
 export const useFilesStore = defineStore('files', {
   state: () => ({
@@ -74,6 +75,12 @@ export const useFilesStore = defineStore('files', {
 
     clearBatch(batchId) {
       delete this.batches[batchId]
+    },
+
+    async uploadAndRecognize(file, includeBoxes = false) {
+      const fileResult = await this.uploadFile(file, 'ocr')
+      const response = await recognizeFromFile(fileResult.file_id, includeBoxes)
+      return response.data
     },
   },
 })

@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
 from api.routes import ws_client, ws_teamspeak, control, files, tts
+from api.routes import ws_client, ws_teamspeak, control, files, ocr
 
 # 配置日志
 logging.basicConfig(
@@ -39,6 +40,7 @@ app.include_router(ws_teamspeak.router, tags=["teamspeak"])
 app.include_router(control.router, prefix="/api", tags=["control"])
 app.include_router(files.router, prefix="/api/files", tags=["files"])
 app.include_router(tts.router, prefix="/api", tags=["tts"])
+app.include_router(ocr.router, prefix="/api/ocr", tags=["ocr"])
 
 
 @app.get("/")
@@ -67,6 +69,7 @@ async def startup_event():
     logger.info(f"TeamSpeak WS URL: {settings.ts_ws_url}")
     logger.info(f"STT Provider: {settings.stt_provider}")
     logger.info(f"TTS Provider: {settings.tts_provider}")
+    logger.info(f"OCR Provider: {settings.ocr_provider}")
     logger.info("=" * 50)
 
     from api.routes.ws_teamspeak import ts_client
