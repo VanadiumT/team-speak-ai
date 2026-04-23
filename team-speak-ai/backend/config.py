@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     stt_provider: str = "sensevoice"
 
     # SenseVoice (本地 STT - 阿里开源)
-    sensevoice_model: str = "iic/SenseVoiceSmall"
+    sensevoice_model: str = "C:/Users/Fan/.cache/modelscope/models/iic/SenseVoiceSmall"
     sensevoice_device: str = "cpu"  # 默认使用 CPU
 
     # Whisper (本地 STT)
@@ -30,6 +30,21 @@ class Settings(BaseSettings):
 
     # TTS
     tts_provider: str = "edge"
+
+    # MiniMax TTS
+    minimax_tts_model: str = "speech-2.8-hd"
+    minimax_voice_id: str = "male-qn-qingse"
+    minimax_speed: float = 1.0
+    minimax_vol: float = 1
+
+    # LLM Provider (openai)
+    llm_provider: str = "openai"
+
+    # OpenAI (MiniMax OpenAI 兼容)
+    openai_api_key: str = ""
+    openai_base_url: str = "https://api.minimaxi.com/v1"
+    openai_model: str = "MiniMax-M2.7"
+    openai_reasoning_split: bool = True  # MiniMax 思考过程分离
 
     # 文件存储
     upload_dir: str = "./uploads"

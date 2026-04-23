@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
-from api.routes import ws_client, ws_teamspeak, control, files
+from api.routes import ws_client, ws_teamspeak, control, files, tts
 
 # 配置日志
 logging.basicConfig(
@@ -38,6 +38,7 @@ app.include_router(ws_client.router, tags=["client"])
 app.include_router(ws_teamspeak.router, tags=["teamspeak"])
 app.include_router(control.router, prefix="/api", tags=["control"])
 app.include_router(files.router, prefix="/api/files", tags=["files"])
+app.include_router(tts.router, prefix="/api", tags=["tts"])
 
 
 @app.get("/")

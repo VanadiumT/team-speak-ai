@@ -2,11 +2,11 @@ import io
 import asyncio
 import tempfile
 import os
+import wave
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, AsyncIterator
 import numpy as np
-import torchaudio
-import torch
+import soundfile as sf
 
 from funasr import AutoModel
 from funasr.utils.postprocess_utils import rich_transcription_postprocess
@@ -34,7 +34,7 @@ class SenseVoiceSTT(BaseSTT):
         self,
         model_dir: str = "iic/SenseVoiceSmall",
         device: str = "cpu",
-        disable_vad: bool = True,  # 实时模式默认禁用VAD
+        disable_vad: bool = True,
     ):
         """
         初始化 SenseVoice 模型
@@ -65,20 +65,21 @@ class SenseVoiceSTT(BaseSTT):
             重采样后的 PCM 音频数据 (bytes)
         """
         try:
-            # 从字节数据加载音频
-            waveform, sr = torchaudio.load(io.BytesIO(audio_data))
+            # 尝试用 soundfile 加载
+            audio_np, sr = sf.read(io.BytesIO(audio_data), dtype='float32')
 
             # 如果原始采样率不是目标采样率，则重采样
             if sr != self.TARGET_SAMPLE_RATE:
-                resampler = torchaudio.transforms.Resample(
-                    orig_freq=sr,
-                    new_freq=self.TARGET_SAMPLE_RATE
-                )
-                waveform = resampler(waveform)
+                from scipy import signal
+                num_samples = int(len(audio_np) * self.TARGET_SAMPLE_RATE / sr)
+                audio_np = signal.resample(audio_np, num_samples)
 
-            # 转换为 numpy 然后到 bytes (16-bit PCM)
-            audio_np = waveform.squeeze().numpy()
+            # 单声道
+            if len(audio_np.shape) > 1:
+                audio_np = audio_np[:, 0]
+
             # 归一化到 [-1, 1] 然后转换为 int16
+            audio_np = np.clip(audio_np, -1.0, 1.0)
             audio_int16 = (audio_np * 32767).astype(np.int16)
 
             return audio_int16.tobytes()
@@ -86,6 +87,14 @@ class SenseVoiceSTT(BaseSTT):
         except Exception as e:
             # 如果处理失败，返回原始数据
             return audio_data
+
+    def _write_wav(self, filepath: str, audio_data: bytes, sample_rate: int):
+        """使用标准库写入 WAV 文件"""
+        with wave.open(filepath, 'wb') as wf:
+            wf.setnchannels(1)  # mono
+            wf.setsampwidth(2)  # 16-bit
+            wf.setframerate(sample_rate)
+            wf.writeframes(audio_data)
 
     def _transcribe_sync(self, audio_data: bytes) -> str:
         """
@@ -97,14 +106,17 @@ class SenseVoiceSTT(BaseSTT):
         Returns:
             识别的文本
         """
-        # 创建临时文件
+        # 重采样到 16kHz
+        resampled_data = self._resample_audio(audio_data)
+
+        # 创建临时 WAV 文件
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as f:
-            # 重采样到 16kHz
-            resampled_data = self._resample_audio(audio_data)
-            f.write(resampled_data)
             temp_path = f.name
 
         try:
+            # 写入标准 WAV 文件
+            self._write_wav(temp_path, resampled_data, self.TARGET_SAMPLE_RATE)
+
             # 调用模型进行识别
             result = self.model.generate(
                 input=temp_path,

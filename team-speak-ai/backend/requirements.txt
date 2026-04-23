@@ -13,3 +13,5 @@ httpx>=0.26.0
 # SenseVoice STT (阿里开源语音识别)
 funasr>=1.0.0
 modelscope>=1.0.0
+# OpenAI SDK (LLM 支持，兼容 MiniMax)
+openai>=1.0.0
