@@ -1,0 +1,104 @@
+id: darkzone_championship
+name: 暗区锦标赛
+group: game_features
+icon: "🌑"
+skill_prompt: |
+  你是暗区锦标赛的 AI 裁判。
+  你需要根据图片识别结果和语音对话历史，做出公正判决。
+  回复要简短有力，适合语音播报。
+
+nodes:
+  # 1. 上传图片 → OCR（一次性）
+  - id: image_input
+    type: input_image
+    name: 上传图片
+    config:
+      input_type: image
+    listener: false
+
+  - id: ocr_01
+    type: ocr
+    name: 图片识别
+    config:
+      provider: default
+    input_mappings:
+      - from: image_input
+        as: file
+        required: true
+      - from: image_input
+        as: filename
+        required: false
+      - from: image_input
+        as: mime_type
+        required: false
+    trigger:
+      type: on_complete
+      source_node: image_input
+
+  # 2. TS 语音持续监听（常驻后台）
+  - id: stt_listen_01
+    type: stt_listen
+    name: 语音监听
+    config:
+      keywords: ["暗区", "裁判", "判决", "开始"]
+    listener: true
+
+  # 3. 上下文构建（由关键词触发）
+  - id: context_01
+    type: context_build
+    name: 上下文构建
+    config:
+      skill_prompt: ""
+    input_mappings:
+      - from: ocr_01
+        as: ocr_text
+        source_field: text
+        required: false
+      - from: stt_listen_01
+        as: stt_text
+        source_field: text
+        required: true
+    trigger:
+      type: on_keyword
+      source_node: stt_listen_01
+
+  # 4. LLM 生成
+  - id: llm_01
+    type: llm
+    name: AI 生成
+    config:
+      model: MiniMax-M2.7
+    input_mappings:
+      - from: context_01
+        as: messages
+        required: true
+    trigger:
+      type: on_complete
+      source_node: context_01
+
+  # 5. TTS 合成
+  - id: tts_01
+    type: tts
+    name: 语音合成
+    config:
+      provider: edge
+    input_mappings:
+      - from: llm_01
+        as: response
+        required: true
+    trigger:
+      type: on_complete
+      source_node: llm_01
+
+  # 6. TeamSpeak 播放
+  - id: ts_output_01
+    type: ts_output
+    name: TS 播放
+    config: {}
+    input_mappings:
+      - from: tts_01
+        as: audio_b64
+        required: true
+    trigger:
+      type: on_complete
+      source_node: tts_01

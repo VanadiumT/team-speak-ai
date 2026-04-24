@@ -37,6 +37,7 @@ public class TeamSpeakVoiceBridge implements TS3Listener {
     private Tomcat tomcat;
     private volatile boolean running = false;
     private final ConcurrentHashMap<Integer, String> clientNames = new ConcurrentHashMap<>();
+    private final Semaphore wsSendLock = new Semaphore(1);
 
     public TeamSpeakVoiceBridge(BridgeConfig config) {
         this.config = config;
@@ -173,30 +174,45 @@ public class TeamSpeakVoiceBridge implements TS3Listener {
     }
 
     private void dispatchVoiceQueue() {
-        Session session = wsSession.get();
-        if (session == null || !session.isOpen()) return;
+        if (!wsSendLock.tryAcquire()) return;
 
-        VoiceMessage msg;
-        while ((msg = sendQueue.poll()) != null) {
-            try {
-                String json = objectMapper.writeValueAsString(msg);
-                session.getAsyncRemote().sendText(json);
-            } catch (Exception e) {
-                log.error("发送 WebSocket 消息失败: {}", msg, e);
+        Session session = wsSession.get();
+        if (session == null || !session.isOpen()) {
+            wsSendLock.release();
+            return;
+        }
+
+        try {
+            VoiceMessage msg;
+            while ((msg = sendQueue.poll()) != null) {
+                try {
+                    String json = objectMapper.writeValueAsString(msg);
+                    session.getBasicRemote().sendText(json);
+                } catch (Exception e) {
+                    log.error("发送 WebSocket 消息失败: {}", msg, e);
+                }
             }
+        } finally {
+            wsSendLock.release();
         }
     }
 
     private void sendHeartbeat() {
+        if (!wsSendLock.tryAcquire()) return;
+
         Session session = wsSession.get();
         if (session != null && session.isOpen()) {
             try {
                 VoiceMessage heartbeat = new VoiceMessage(VoiceMessageType.HEARTBEAT);
                 heartbeat.setTimestamp(System.currentTimeMillis());
-                session.getAsyncRemote().sendText(objectMapper.writeValueAsString(heartbeat));
+                session.getBasicRemote().sendText(objectMapper.writeValueAsString(heartbeat));
             } catch (Exception e) {
                 log.warn("心跳发送失败", e);
+            } finally {
+                wsSendLock.release();
             }
+        } else {
+            wsSendLock.release();
         }
     }
 
@@ -205,13 +221,16 @@ public class TeamSpeakVoiceBridge implements TS3Listener {
         audioSource.setReady(true);
         log.info("WebSocket 连接已建立: {}", session.getId());
 
+        if (!wsSendLock.tryAcquire()) return;
         try {
             VoiceMessage connected = new VoiceMessage(VoiceMessageType.CONTROL);
             connected.setData("connected");
             connected.setTimestamp(System.currentTimeMillis());
-            session.getAsyncRemote().sendText(objectMapper.writeValueAsString(connected));
+            session.getBasicRemote().sendText(objectMapper.writeValueAsString(connected));
         } catch (Exception e) {
             log.warn("发送连接通知失败", e);
+        } finally {
+            wsSendLock.release();
         }
     }
 

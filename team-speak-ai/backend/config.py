@@ -46,14 +46,17 @@ class Settings(BaseSettings):
     openai_model: str = "MiniMax-M2.7"
     openai_reasoning_split: bool = True  # MiniMax 思考过程分离
 
-    # OCR Provider (paddleocr, easyocr)
-    ocr_provider: str = "paddleocr"
+    # OCR Provider (easyocr, paddleocr)
+    ocr_provider: str = "easyocr"
 
     # PaddleOCR
     paddleocr_det_model: str = "ch"
     paddleocr_rec_model: str = "ch"
     paddleocr_use_angle_cls: bool = True
     paddleocr_use_gpu: bool = False
+
+    # Pipeline
+    pipeline_config_dir: str = "config/pipelines"
 
     # 文件存储
     upload_dir: str = "./uploads"

@@ -1,20 +1,17 @@
 import logging
 import sys
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
-from api.routes import ws_client, ws_teamspeak, control, files, tts
-from api.routes import ws_client, ws_teamspeak, control, files, ocr
+from api.routes import ws_teamspeak, files, tts, ws_pipeline, ocr
 
-# 配置日志
 logging.basicConfig(
     level=logging.DEBUG if settings.debug else logging.INFO,
     format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
+    handlers=[logging.StreamHandler(sys.stdout)]
 )
 
 logger = logging.getLogger(__name__)
@@ -25,7 +22,6 @@ app = FastAPI(
     description="TeamSpeak Voice Bridge with AI capabilities"
 )
 
-# CORS 配置
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -34,10 +30,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 注册路由
-app.include_router(ws_client.router, tags=["client"])
-app.include_router(ws_teamspeak.router, tags=["teamspeak"])
-app.include_router(control.router, prefix="/api", tags=["control"])
+app.include_router(ws_teamspeak.router)
+app.include_router(ws_pipeline.router)
 app.include_router(files.router, prefix="/api/files", tags=["files"])
 app.include_router(tts.router, prefix="/api", tags=["tts"])
 app.include_router(ocr.router, prefix="/api/ocr", tags=["ocr"])
@@ -55,9 +49,11 @@ async def root():
 @app.get("/health")
 async def health():
     from api.routes.ws_teamspeak import ts_client
+    from core.pipeline.engine import engine
     return {
         "status": "healthy",
-        "teamspeak_connected": ts_client.connected
+        "teamspeak_connected": ts_client.connected,
+        "pipelines_loaded": len(engine.get_definitions()),
     }
 
 
@@ -72,15 +68,23 @@ async def startup_event():
     logger.info(f"OCR Provider: {settings.ocr_provider}")
     logger.info("=" * 50)
 
+    # 初始化 Pipeline 引擎
+    from core.pipeline.engine import engine
+    config_dir = getattr(settings, "pipeline_config_dir", "config/pipelines")
+    abs_dir = os.path.join(os.path.dirname(__file__), config_dir)
+    if os.path.exists(abs_dir):
+        engine.load_definitions_from_dir(abs_dir)
+    else:
+        logger.warning(f"Pipeline config dir not found: {abs_dir}")
+
+    # 连接 TeamSpeak Voice Bridge
     from api.routes.ws_teamspeak import ts_client
-    from api.routes.ws_client import event_bus
     logger.info("Attempting to connect to TeamSpeak Voice Bridge...")
     success = await ts_client.connect()
     if success:
         logger.info("Successfully connected to TeamSpeak Voice Bridge")
-        await event_bus.broadcast("teamspeak_connected", {})
     else:
-        logger.warning("Failed to connect to TeamSpeak Voice Bridge - will retry on first connection")
+        logger.warning("Failed to connect to TeamSpeak Voice Bridge")
 
 
 @app.on_event("shutdown")
