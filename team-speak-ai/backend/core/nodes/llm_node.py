@@ -75,6 +75,27 @@ class LLMNode(BaseNode):
                 },
             )
 
+            # 将对话历史存入 accumulated_context（结构化消息）
+            acc = context.accumulated_context
+            if "llm_messages" not in acc:
+                acc["llm_messages"] = []
+
+            # 存本次 user 消息
+            user_messages = [m for m in context.inputs.get("messages", []) if m.get("role") == "user"]
+            for um in user_messages:
+                if not any(m.get("role") == "user" and m.get("content") == um.get("content") for m in acc["llm_messages"]):
+                    acc["llm_messages"].append(um)
+
+            # 存 assistant 回复
+            acc["llm_messages"].append({
+                "role": "assistant",
+                "content": full_content,
+            })
+
+            # 保留最近 20 条（防无限增长）
+            if len(acc["llm_messages"]) > 20:
+                acc["llm_messages"] = acc["llm_messages"][-20:]
+
             return NodeOutput({
                 "response": full_content,
                 "reasoning": full_reasoning,

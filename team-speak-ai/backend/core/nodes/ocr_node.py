@@ -11,66 +11,35 @@ import base64
 import logging
 import io
 from PIL import Image
+import numpy as np
+
 from core.nodes.base import BaseNode
 from core.pipeline.context import NodeContext, NodeOutput
 from core.pipeline.emitter import EventEmitter
 from core.pipeline.registry import NodeRegistry
+from core.ocr.factory import create_ocr, OCRProvider
 from config import settings
 
 logger = logging.getLogger(__name__)
 
-
-def _load_easyocr():
-    import easyocr
-    return easyocr.Reader(['ch_sim', 'en'], gpu=False)
-
-
-def _load_paddleocr():
-    from paddleocr import PaddleOCR
-    return PaddleOCR(
-        det_model_dir=settings.paddleocr_det_model,
-        rec_model_dir=settings.paddleocr_rec_model,
-        use_angle_cls=settings.paddleocr_use_angle_cls,
-        use_gpu=settings.paddleocr_use_gpu,
-        lang='ch',
-    )
-
-
-_easyocr_reader = None
-_paddleocr_engine = None
+_ocr_instance = None
 
 
 def _get_ocr():
-    global _easyocr_reader, _paddleocr_engine
-    provider = settings.ocr_provider
-
-    if provider == "paddleocr":
-        if _paddleocr_engine is None:
-            _paddleocr_engine = _load_paddleocr()
-        return ("paddleocr", _paddleocr_engine)
-    else:
-        if _easyocr_reader is None:
-            _easyocr_reader = _load_easyocr()
-        return ("easyocr", _easyocr_reader)
-
-
-def _run_ocr(img_array):
-    import numpy as np
-
-    provider, engine = _get_ocr()
-
-    if provider == "paddleocr":
-        results = engine.ocr(img_array, cls=True)
-        if results and results[0]:
-            lines = [item[1][0] for item in results[0] if item[1][1] > 0.3]
-        else:
-            lines = []
-    else:
-        results = engine.readtext(img_array)
-        lines = [item[1] for item in results if item[2] > 0.3]
-
-    text = "\n".join(lines) if lines else "（未识别到文字）"
-    return text, lines, provider
+    global _ocr_instance
+    if _ocr_instance is None:
+        provider = OCRProvider(settings.ocr_provider)
+        config = {
+            "easyocr": {"lang_list": ['ch_sim', 'en'], "gpu": False},
+            "paddleocr": {
+                "det_model_dir": settings.paddleocr_det_model,
+                "rec_model_dir": settings.paddleocr_rec_model,
+                "use_angle_cls": settings.paddleocr_use_angle_cls,
+                "use_gpu": settings.paddleocr_use_gpu,
+            },
+        }
+        _ocr_instance = create_ocr(provider, config.get(settings.ocr_provider, {}))
+    return _ocr_instance
 
 
 @NodeRegistry.register("ocr")
@@ -96,8 +65,11 @@ class OCRNode(BaseNode):
             await emit.emit_node_update(context.node_id, "error", "图片数据为空")
             return NodeOutput({"text": "", "error": "empty_image_data"})
 
-        provider = settings.ocr_provider
-        await emit.emit_node_update(context.node_id, "processing", f"正在使用 {provider} 识别图片文字...")
+        provider_name = settings.ocr_provider
+        await emit.emit_node_update(
+            context.node_id, "processing",
+            f"正在使用 {provider_name} 识别图片文字...",
+        )
 
         try:
             img_bytes = base64.b64decode(b64)
@@ -108,21 +80,25 @@ class OCRNode(BaseNode):
             return NodeOutput({"text": "", "error": str(e)})
 
         try:
-            import numpy as np
             img_array = np.array(img)
-            text, lines, used_provider = _run_ocr(img_array)
+            ocr = _get_ocr()
+            result = ocr.recognize(img_array)
         except Exception as e:
             logger.exception("OCR recognition failed")
             await emit.emit_node_update(context.node_id, "error", f"OCR 识别失败: {e}")
             return NodeOutput({"text": "", "error": str(e)})
 
-        logger.info(f"OCR result [{used_provider}] from {filename}: {len(text)} chars, {len(lines)} lines")
+        logger.info(f"OCR result [{result.provider}] from {filename}: {len(result.text)} chars, {len(result.lines)} lines")
 
         await emit.emit_node_update(
             context.node_id,
             "completed",
-            f"[{used_provider}] 识别到 {len(lines)} 行文字",
-            data={"text": text, "line_count": len(lines), "provider": used_provider},
+            f"[{result.provider}] 识别到 {len(result.lines)} 行文字",
+            data={"text": result.text, "line_count": len(result.lines), "provider": result.provider},
         )
 
-        return NodeOutput({"text": text, "line_count": len(lines), "provider": used_provider})
+        return NodeOutput({
+            "text": result.text,
+            "line_count": len(result.lines),
+            "provider": result.provider,
+        })

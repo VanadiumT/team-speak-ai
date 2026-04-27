@@ -28,10 +28,10 @@ class ContextBuildNode(BaseNode):
 
         # 从 accumulated_context 获取（由 stt_listen 累积）
         if not stt_text and context.accumulated_context.get("stt_history"):
-            stt_text = "\n".join(context.accumulated_context["stt_history"][-10:])
+            stt_text = "\n".join(context.accumulated_context["stt_history"][-20:])
 
-        # Skill 提示词
-        skill_prompt = self.config.get("skill_prompt", "")
+        # 从 accumulated_context 读取 skill_prompt（由 engine.start_pipeline 存入）
+        skill_prompt = context.accumulated_context.get("skill_prompt", "")
 
         # 构建 system prompt
         system_parts = ["你是一个 TeamSpeak 语音助手，请用中文简洁回复。"]
@@ -56,10 +56,10 @@ class ContextBuildNode(BaseNode):
             {"role": "user", "content": user_message},
         ]
 
+        # 插入历史对话（结构化消息）
         llm_messages = context.accumulated_context.get("llm_messages", [])
-        if llm_messages:
-            # 插入历史对话
-            for msg in llm_messages[-4:]:  # 最近 2 轮
+        for msg in llm_messages[-6:]:  # 最近 3 轮
+            if isinstance(msg, dict) and "role" in msg:
                 messages.append(msg)
 
         await emit.emit_node_update(

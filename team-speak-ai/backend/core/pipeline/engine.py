@@ -24,6 +24,8 @@ from core.pipeline.definition import (
 from core.pipeline.context import NodeContext, NodeState, NodeOutput, NodeRuntime
 from core.pipeline.registry import NodeRegistry
 from core.pipeline.emitter import EventEmitter
+from core.logger.handler import log_pipeline_event
+from core.logger.base import PipelineEvent
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +46,7 @@ class PipelineInstance:
             "ocr_texts": [],
             "stt_history": [],
             "llm_messages": [],
+            "skill_prompt": "",
         }
 
     def get_runtime(self, node_id: str) -> Optional[NodeRuntime]:
@@ -222,6 +225,15 @@ class PipelineEngine:
         self._instances[execution_id] = instance
 
         logger.info(f"Pipeline started: {feature_id} [{execution_id}]")
+        log_pipeline_event(PipelineEvent(
+            event_type="pipeline_start",
+            pipeline_id=pd.id,
+            execution_id=execution_id,
+            data={"feature_id": feature_id},
+        ))
+
+        # 存入 skill_prompt 供 context_build 节点使用
+        instance.accumulated_context["skill_prompt"] = pd.skill_prompt
 
         # 后台自动启动 listener 节点
         for node_def in pd.get_listener_nodes():
@@ -233,7 +245,13 @@ class PipelineEngine:
 
     def delete_instance(self, execution_id: str):
         """删除 Pipeline 实例（重新开始 = 清除上下文）"""
-        self._instances.pop(execution_id, None)
+        instance = self._instances.pop(execution_id, None)
+        if instance:
+            log_pipeline_event(PipelineEvent(
+                event_type="pipeline_deleted",
+                pipeline_id=instance.pipeline_def.id,
+                execution_id=execution_id,
+            ))
         logger.info(f"Pipeline instance deleted: {execution_id}")
 
     # ── 节点执行 ──
@@ -288,6 +306,14 @@ class PipelineEngine:
         runtime.status = NodeState.PROCESSING
         await emit.emit_node_update(node_id, "processing", f"执行中...")
 
+        log_pipeline_event(PipelineEvent(
+            event_type="node_start",
+            pipeline_id=pd.id,
+            execution_id=execution_id,
+            node_id=node_id,
+            data={"node_type": node_def.type},
+        ))
+
         try:
             output = await node_cls.execute(ctx, emit)
             runtime.status = NodeState.COMPLETED
@@ -295,6 +321,13 @@ class PipelineEngine:
             runtime.summary = str(output.data)[:80] if output.data else "完成"
 
             await emit.emit_node_complete(node_id, output.data)
+            log_pipeline_event(PipelineEvent(
+                event_type="node_complete",
+                pipeline_id=pd.id,
+                execution_id=execution_id,
+                node_id=node_id,
+                data={"summary": runtime.summary},
+            ))
 
             # 累积到 instance context
             for k, v in output.data.items():
@@ -313,46 +346,80 @@ class PipelineEngine:
             await self._fail_node(instance, node_id, str(e), emit)
 
     async def _run_listener_node(self, execution_id: str, node_def: NodeDefinition):
-        """后台运行常驻监听节点（如 stt_listen）"""
+        """后台运行常驻监听节点（如 stt_listen），循环监听"""
         instance = self.get_instance(execution_id)
         if not instance:
             return
 
-        node_cls = self._node_registry.create(node_def.type, node_def.config)
-        runtime = instance.get_runtime(node_def.id)
-        ctx = NodeContext(
-            pipeline_id=instance.pipeline_def.id,
-            execution_id=execution_id,
-            node_id=node_def.id,
-            node_type=node_def.type,
-            node_config=node_def.config,
-            inputs={},
-            accumulated_context=instance.accumulated_context,
-        )
-        emit = EventEmitter(self, instance.pipeline_def.id)
+        while True:
+            node_cls = self._node_registry.create(node_def.type, node_def.config)
+            runtime = instance.get_runtime(node_def.id)
 
-        runtime.status = NodeState.PROCESSING
-        await emit.emit_node_update(node_def.id, "processing", "监听中...")
+            # 重置运行时状态（保留 accumulated_context）
+            runtime.output = None
+            runtime.error = None
+            runtime.summary = ""
+            runtime.data = {}
 
-        try:
-            output = await node_cls.execute(ctx, emit)
-            runtime.status = NodeState.COMPLETED
-            runtime.output = output
-            await emit.emit_node_complete(node_def.id, output.data)
+            ctx = NodeContext(
+                pipeline_id=instance.pipeline_def.id,
+                execution_id=execution_id,
+                node_id=node_def.id,
+                node_type=node_def.type,
+                node_config=node_def.config,
+                inputs={},
+                accumulated_context=instance.accumulated_context,
+            )
+            emit = EventEmitter(self, instance.pipeline_def.id)
 
-            # 累积到 context
-            for k, v in output.data.items():
-                if isinstance(instance.accumulated_context.get(k), list):
-                    instance.accumulated_context[k].append(v)
-                else:
-                    instance.accumulated_context[k] = v
+            runtime.status = NodeState.PROCESSING
+            await emit.emit_node_update(node_def.id, "processing", "监听中...")
 
-            # 触发下游
-            await self._trigger_downstream(instance, node_def.id)
+            log_pipeline_event(PipelineEvent(
+                event_type="listener_start",
+                pipeline_id=instance.pipeline_def.id,
+                execution_id=execution_id,
+                node_id=node_def.id,
+            ))
 
-        except Exception as e:
-            logger.exception(f"Listener node {node_def.id} error")
-            await self._fail_node(instance, node_def.id, str(e), emit)
+            try:
+                output = await node_cls.execute(ctx, emit)
+                runtime.status = NodeState.COMPLETED
+                runtime.output = output
+                await emit.emit_node_complete(node_def.id, output.data)
+
+                # 累积到 context
+                for k, v in output.data.items():
+                    if isinstance(instance.accumulated_context.get(k), list):
+                        instance.accumulated_context[k].append(v)
+                    else:
+                        instance.accumulated_context[k] = v
+
+                # 触发下游（context_build → llm → tts → ts_output）
+                await self._trigger_downstream(instance, node_def.id)
+
+                # 继续下一轮监听
+                log_pipeline_event(PipelineEvent(
+                    event_type="listener_cycle",
+                    pipeline_id=instance.pipeline_def.id,
+                    execution_id=execution_id,
+                    node_id=node_def.id,
+                ))
+                logger.info(f"Listener {node_def.id} loop next round")
+
+            except asyncio.CancelledError:
+                log_pipeline_event(PipelineEvent(
+                    event_type="listener_cancelled",
+                    pipeline_id=instance.pipeline_def.id,
+                    execution_id=execution_id,
+                    node_id=node_def.id,
+                ))
+                logger.info(f"Listener {node_def.id} cancelled")
+                break
+            except Exception as e:
+                logger.exception(f"Listener node {node_def.id} error")
+                await self._fail_node(instance, node_def.id, str(e), emit)
+                break
 
     async def _trigger_downstream(self, instance: PipelineInstance, completed_node_id: str):
         """节点完成后，自动触发符合条件的下游节点"""
@@ -372,6 +439,13 @@ class PipelineEngine:
             runtime.error = error
         if emit:
             await emit.emit_node_error(node_id, error)
+        log_pipeline_event(PipelineEvent(
+            event_type="node_error",
+            pipeline_id=instance.pipeline_def.id,
+            execution_id=instance.execution_id,
+            node_id=node_id,
+            data={"error": error},
+        ))
         logger.error(f"Node {node_id} failed: {error}")
 
     # ── 前端消息处理 ──

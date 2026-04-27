@@ -62,6 +62,11 @@ class Settings(BaseSettings):
     upload_dir: str = "./uploads"
     max_file_size: int = 10 * 1024 * 1024  # 10MB
 
+    # Logger
+    log_provider: str = "file"
+    log_dir: str = "logs"
+    log_keep_days: int = 30
+
     # WebSocket
     ws_reconnect_interval: int = 3000  # ms
     ws_max_reconnect_attempts: int = 10

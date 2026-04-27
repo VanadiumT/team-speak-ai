@@ -1,11 +1,11 @@
 """
-TS Output 节点 — 将音频输出到 TeamSpeak
+TS Output 节点 — 逐段发送音频到 TeamSpeak
 
-接收 TTS 节点的音频数据，通过 ws_teamspeak 的 TeamSpeakWebSocket
-发送 SEND_VOICE 消息到 TeamSpeak Voice Bridge，在频道内播放。
+接收 TTS 节点输出的 segments 数组，逐段通过 ts_client 发送到 TeamSpeak，
+每段之间间隔 0.2s 防止拥塞。
 """
 
-import base64
+import asyncio
 import logging
 
 from core.nodes.base import BaseNode
@@ -18,47 +18,49 @@ logger = logging.getLogger(__name__)
 
 @NodeRegistry.register("ts_output")
 class TSOutputNode(BaseNode):
-    """TeamSpeak 音频输出节点"""
+    """TeamSpeak 音频输出节点（逐段播放）"""
 
     node_type = "ts_output"
 
     async def execute(self, context: NodeContext, emit: EventEmitter) -> NodeOutput:
-        audio_b64 = context.inputs.get("audio_b64", "")
-        text = context.inputs.get("text", "")
-
-        if not audio_b64:
+        segments = context.inputs.get("segments", [])
+        if not segments:
             await emit.emit_node_update(context.node_id, "completed", "无音频数据")
-            return NodeOutput({"sent": False, "reason": "no_audio"})
+            return NodeOutput({"sent": False, "reason": "no_segments"})
+
+        # 通过 ws_teamspeak 发送到 TeamSpeak
+        from api.routes.ws_teamspeak import ts_client
+        if not ts_client or not ts_client.connected:
+            logger.warning("TeamSpeak not connected, cannot send audio")
+            await emit.emit_node_update(context.node_id, "error", "TeamSpeak 未连接")
+            return NodeOutput({"sent": False, "reason": "not_connected"}, trigger_next=False)
 
         await emit.emit_node_update(
-            context.node_id,
-            "processing",
-            "正在发送到 TeamSpeak...",
+            context.node_id, "processing",
+            f"TS 播放中 (0/{len(segments)})",
         )
 
-        try:
-            # 通过 ws_teamspeak 发送到 TeamSpeak
-            from api.routes.ws_teamspeak import ts_client
-            if ts_client and ts_client.connected:
-                await ts_client.send_voice_message(audio_b64)
-                logger.info(f"Audio sent to TeamSpeak ({len(audio_b64)} chars base64)")
-                await emit.emit_node_update(
-                    context.node_id,
-                    "completed",
-                    f"已发送到 TeamSpeak",
-                    data={"sent": True, "text_preview": text[:60] if text else ""},
-                )
-                return NodeOutput({"sent": True})
-            else:
-                logger.warning("TeamSpeak not connected, cannot send audio")
-                await emit.emit_node_update(
-                    context.node_id,
-                    "error",
-                    "TeamSpeak 未连接",
-                )
-                return NodeOutput({"sent": False, "reason": "not_connected"}, trigger_next=False)
+        sent_count = 0
+        for seg in segments:
+            audio_b64 = seg.get("audio_b64", "")
+            if not audio_b64:
+                continue
 
-        except Exception as e:
-            logger.exception(f"TS output error")
-            await emit.emit_node_error(context.node_id, str(e))
-            return NodeOutput({"sent": False, "reason": str(e)}, trigger_next=False)
+            try:
+                await ts_client.send_voice_message(audio_b64)
+                sent_count += 1
+
+                await emit.emit_node_update(
+                    context.node_id, "processing",
+                    f"TS 播放中 ({sent_count}/{len(segments)})",
+                    data={"sent_index": seg.get("index"), "segment_text": seg.get("text", "")},
+                )
+
+                await asyncio.sleep(0.2)  # 句间间隔
+            except Exception as e:
+                logger.exception(f"TS output error")
+                await emit.emit_node_error(context.node_id, str(e))
+                return NodeOutput({"sent": False, "reason": str(e), "sent_count": sent_count}, trigger_next=False)
+
+        await emit.emit_node_update(context.node_id, "completed", f"已发送 {sent_count} 段到 TeamSpeak")
+        return NodeOutput({"sent": True, "segment_count": sent_count})

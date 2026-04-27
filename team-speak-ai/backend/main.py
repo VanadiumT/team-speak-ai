@@ -66,6 +66,7 @@ async def startup_event():
     logger.info(f"STT Provider: {settings.stt_provider}")
     logger.info(f"TTS Provider: {settings.tts_provider}")
     logger.info(f"OCR Provider: {settings.ocr_provider}")
+    logger.info(f"Log Provider: {settings.log_provider} -> {settings.log_dir}")
     logger.info("=" * 50)
 
     # 初始化 Pipeline 引擎
@@ -76,6 +77,17 @@ async def startup_event():
         engine.load_definitions_from_dir(abs_dir)
     else:
         logger.warning(f"Pipeline config dir not found: {abs_dir}")
+
+    # 初始化结构化日志模块
+    from core.logger.factory import create_logger, LoggerProvider
+    from core.logger.handler import install_logger
+
+    log_instance = create_logger(
+        LoggerProvider(settings.log_provider),
+        {"log_dir": settings.log_dir, "keep_days": settings.log_keep_days},
+    )
+    install_logger(log_instance)
+    logger.info(f"Logger initialized: {settings.log_provider} -> {settings.log_dir}")
 
     # 连接 TeamSpeak Voice Bridge
     from api.routes.ws_teamspeak import ts_client
@@ -92,6 +104,8 @@ async def shutdown_event():
     logger.info("Shutting down...")
     from api.routes.ws_teamspeak import ts_client
     await ts_client.disconnect()
+    from core.logger.handler import close_logger
+    close_logger()
 
 
 if __name__ == "__main__":

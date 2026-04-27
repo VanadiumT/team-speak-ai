@@ -90,14 +90,14 @@ nodes:
       type: on_complete
       source_node: llm_01
 
-  # 6. TeamSpeak 播放
+  # 6. TeamSpeak 播放（逐段发送）
   - id: ts_output_01
     type: ts_output
     name: TS 播放
     config: {}
     input_mappings:
       - from: tts_01
-        as: audio_b64
+        as: segments
         required: true
     trigger:
       type: on_complete
