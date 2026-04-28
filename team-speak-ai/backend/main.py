@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
-from api.routes import ws_teamspeak, tts, ws_pipeline, ws_main
+from api.routes import ws_teamspeak, ws_pipeline, ws_main
 
 logging.basicConfig(
     level=logging.DEBUG if settings.debug else logging.INFO,
@@ -33,7 +33,6 @@ app.add_middleware(
 app.include_router(ws_teamspeak.router)
 app.include_router(ws_pipeline.router)
 app.include_router(ws_main.router)  # 统一 /ws 端点
-app.include_router(tts.router, prefix="/api", tags=["tts"])
 
 
 @app.get("/")
@@ -92,7 +91,6 @@ async def startup_event():
     from core.flow.manager import init_flow_manager
     data_dir = os.path.join(os.path.dirname(__file__), settings.data_dir)
     os.makedirs(data_dir, exist_ok=True)
-    init_flow_manager(data_dir)
     fm = init_flow_manager(data_dir)
     logger.info(f"FlowManager initialized: {data_dir} ({len(fm.list_flows())} flows)")
 
@@ -110,8 +108,12 @@ async def startup_event():
     from core.upload.chunk_receiver import init_chunk_receiver
     upload_dir = os.path.join(os.path.dirname(__file__), settings.upload_dir)
     os.makedirs(upload_dir, exist_ok=True)
-    init_chunk_receiver(upload_dir, settings.max_upload_size)
+    cr = init_chunk_receiver(upload_dir, settings.max_upload_size)
     logger.info(f"ChunkReceiver initialized: {upload_dir}")
+
+    # 启动上传会话超时清理后台任务
+    import asyncio
+    asyncio.create_task(cr.cleanup_timeouts())
 
     # 连接 TeamSpeak Voice Bridge
     from api.routes.ws_teamspeak import ts_client

@@ -64,6 +64,11 @@ class PipelineSocket {
     this.ws.onclose = () => {
       console.log('[PipelineWS] Disconnected')
       this._connected = false
+      this._ackResolvers.forEach(({ reject, timer }) => {
+        clearTimeout(timer)
+        reject(new Error('Connection lost'))
+      })
+      this._ackResolvers.clear()
       this.emit('disconnected')
       if (!this._intentionalClose) {
         this._scheduleReconnect()

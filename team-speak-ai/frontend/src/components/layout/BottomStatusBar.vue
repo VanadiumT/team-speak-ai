@@ -65,7 +65,7 @@ const displayServices = computed(() => {
   font-family: 'Inter', sans-serif;
   font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.2em;
 }
 
 .status-items {

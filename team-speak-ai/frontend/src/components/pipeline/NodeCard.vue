@@ -236,7 +236,7 @@ function onClick() {
 }
 
 .border-outline { border-color: rgba(65, 71, 84, 0.5); }
-.border-primary { border-color: rgba(173, 199, 255, 0.5); }
+.border-primary { border: 2px solid rgba(173, 199, 255, 0.5); }
 .border-secondary { border-color: rgba(78, 222, 163, 0.3); }
 .border-error { border-color: rgba(255, 180, 171, 0.5); }
 

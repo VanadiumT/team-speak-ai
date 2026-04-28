@@ -10,7 +10,7 @@
     @mouseenter="showLabel = true"
     @mouseleave="showLabel = false"
   >
-    <span v-if="showLabel" class="io-label">{{ label }}</span>
+    <span class="io-label" :class="{ visible: showLabel }">{{ label }}</span>
   </div>
 </template>
 
@@ -82,11 +82,18 @@ const showLabel = ref(false)
   transform: translateX(-50%);
   color: #c1c6d7;
   pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
   background: rgba(11, 14, 22, 0.95);
   padding: 3px 7px;
   border-radius: 3px;
   border: 1px solid #31353d;
   z-index: 50;
+}
+
+.io-label.visible {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .io-port.output-port .io-label {

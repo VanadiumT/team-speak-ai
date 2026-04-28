@@ -50,7 +50,7 @@ const props = defineProps({
   activeView: { type: String, default: 'all' },
 })
 
-defineEmits(['update:activeView', 'zoom', 'resetZoom'])
+const emit = defineEmits(['update:activeView', 'zoom', 'resetZoom'])
 
 const viewModes = [
   { value: 'all', label: '全部', icon: 'layers', title: '显示全部信息' },
@@ -62,9 +62,8 @@ function onZoomInput(event) {
   let num = parseFloat(event.target.value.replace('%', '')) / 100
   if (isNaN(num)) return
   num = Math.max(0.25, Math.min(3.0, num))
-  // Emit absolute zoom
-  const diff = num - props.zoom
   event.target.value = Math.round(num * 100) + '%'
+  emit('zoom', num - props.zoom)
 }
 </script>
 

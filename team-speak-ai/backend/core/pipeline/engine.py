@@ -263,6 +263,10 @@ class PipelineEngine:
     def is_running(self, flow_id: str) -> bool:
         return flow_id in self._running_flows
 
+    @property
+    def active_instance_count(self) -> int:
+        return len(self._instances)
+
     def _flowdef_to_pipeline_def(self, flow) -> PipelineDefinition:
         """将 FlowDef (PipelineDefinition from JSON) 转换为引擎可用的定义"""
         nodes = []
@@ -302,9 +306,8 @@ class PipelineEngine:
 
         return execution_id
 
-    def _unlock_flow(self, flow_id: str) -> None:
-        self._running_flows.discard(flow_id)
-        """删除 Pipeline 实例（重新开始 = 清除上下文）"""
+    def delete_instance(self, execution_id: str):
+        """删除 Pipeline 实例，同时释放编辑锁"""
         instance = self._instances.pop(execution_id, None)
         if instance:
             log_pipeline_event(PipelineEvent(
@@ -312,10 +315,8 @@ class PipelineEngine:
                 pipeline_id=instance.pipeline_def.id,
                 execution_id=execution_id,
             ))
-        # 释放编辑锁
-        flow_id = instance.pipeline_def.id if instance else None
-        if flow_id:
-            self._running_flows.discard(flow_id)
+            # 释放编辑锁
+            self._running_flows.discard(instance.pipeline_def.id)
         logger.info(f"Pipeline instance deleted: {execution_id}")
 
     # ── 节点执行 ──

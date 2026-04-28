@@ -198,7 +198,7 @@ async def _handle_command(websocket: WebSocket, msg: dict) -> None:
         await handler(websocket, flow_id, msg_id, params)
     except FileNotFoundError as e:
         await _send_error(websocket, flow_id, "FLOW_NOT_FOUND", str(e), msg_id)
-    except ValueError as e:
+    except (ValueError, KeyError) as e:
         await _send_error(websocket, flow_id, "INVALID_PARAMS", str(e), msg_id)
     except Exception as e:
         logger.exception(f"Error handling command {action}")
@@ -779,8 +779,8 @@ async def _broadcast_connection_status(websocket: WebSocket, flow_id: str) -> No
             {
                 "id": "pipeline",
                 "name": "Pipeline",
-                "status": "listening" if engine._instances else "healthy",
-                "detail": "就绪" if not engine._instances else f"{len(engine._instances)} 实例运行中",
+                "status": "listening" if engine.active_instance_count > 0 else "healthy",
+                "detail": "就绪" if engine.active_instance_count == 0 else f"{engine.active_instance_count} 实例运行中",
             },
         ]
     except Exception:
