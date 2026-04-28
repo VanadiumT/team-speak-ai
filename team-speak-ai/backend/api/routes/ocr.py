@@ -75,6 +75,12 @@ async def recognize_image(
         logger.exception("OCR 识别失败")
         raise HTTPException(status_code=500, detail=f"OCR 识别失败: {e}")
 
+    logger.info("=" * 50)
+    logger.info(f"OCR API 识别结果 [{result.provider}]")
+    logger.info(f"行数: {len(result.lines)} | 总字符: {len(result.text)}")
+    logger.info(f"识别文字:\n{result.text}")
+    logger.info("=" * 50)
+
     return {
         "success": True,
         "data": {
