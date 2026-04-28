@@ -1,238 +1,273 @@
 <template>
   <div class="dp" v-if="node">
-    <!-- 头部 -->
+    <!-- Header -->
     <div class="dp-head">
-      <span class="dp-icon">{{ nodeIcon }}</span>
-      <span class="dp-name">{{ node.name }}</span>
-      <span class="dp-st" :class="node.status">{{ statusText }}</span>
+      <span class="material-symbols-outlined dp-icon">{{ nodeIcon }}</span>
+      <span class="dp-name">{{ node.name || node.type }}</span>
+      <button class="dp-close" @click="$emit('close')">
+        <span class="material-symbols-outlined">close</span>
+      </button>
     </div>
 
-    <!-- 主体：按状态 + 类型 -->
+    <!-- Tab bar -->
+    <div v-if="tabs.length > 0" class="dp-tabs">
+      <button
+        v-for="tab in tabs"
+        :key="tab.id"
+        class="detail-tab-btn"
+        :class="{ active: activeTab === tab.id }"
+        @click="activeTab = tab.id"
+      >{{ tab.label }}</button>
+    </div>
+
+    <!-- Tab content -->
     <div class="dp-body">
-      <!-- Pending -->
-      <template v-if="node.status === 'pending'">
-        <AudioFileUploader
-          v-if="node.type === 'input_image'"
-          accept="image/*"
-          @upload="(file) => $emit('action', 'upload', file)"
-        />
-        <div v-else class="dp-empty">等待上游节点完成...</div>
-      </template>
-
-      <!-- Processing -->
-      <template v-else-if="node.status === 'processing'">
-        <StreamingText
-          v-if="node.type === 'llm'"
-          :content="node.summary || node.data?.content_full || ''"
-          :reasoning="node.data?.reasoning || ''"
-          :streaming="true"
-        />
-        <StreamingText
-          v-else-if="node.type === 'stt_listen'"
-          :content="node.data?.accumulated || node.data?.partial_text || ''"
-          :streaming="true"
-        />
-        <div v-else class="dp-load">
-          <span class="dp-spin"></span>
-          <span>{{ node.summary || '处理中...' }}</span>
-        </div>
-      </template>
-
-      <!-- Completed -->
-      <template v-else-if="node.status === 'completed'">
-        <div v-if="node.type === 'llm' || node.type === 'ocr'" class="dp-text-area">
-          <div v-if="node.data?.reasoning" class="dp-reason">
-            <div class="dp-rlbl">🤔 思考过程</div>
-            <div class="dp-rtxt">{{ node.data.reasoning }}</div>
-          </div>
-          <div class="dp-rlbl">💬 结果</div>
-          <div class="dp-txt">{{ node.data?.response || node.data?.content || node.data?.text || node.summary }}</div>
+      <!-- Detail tab: status-based rendering -->
+      <div v-if="activeTab === 'detail' || tabs.length === 0">
+        <!-- Pending -->
+        <div v-if="nodeStatus === 'pending'" class="dp-state dp-pending">
+          <span class="material-symbols-outlined dp-state-icon">schedule</span>
+          <span>等待上游节点完成...</span>
         </div>
 
-        <div v-else-if="node.type === 'context_build'" class="dp-triple">
-          <div class="dp-tr" v-if="node.data?.ocr_text">
-            <div class="dp-trl">📷 OCR</div>
-            <div class="dp-trt">{{ node.data.ocr_text }}</div>
-          </div>
-          <div class="dp-tr" v-if="node.data?.stt_text">
-            <div class="dp-trl">🎤 STT</div>
-            <div class="dp-trt">{{ node.data.stt_text }}</div>
-          </div>
-          <div class="dp-tr">
-            <div class="dp-trl">💡 Skill</div>
-            <div class="dp-trt">{{ skillPrompt || '已加载' }}</div>
+        <!-- Processing -->
+        <div v-else-if="nodeStatus === 'processing'" class="dp-state dp-processing">
+          <div class="dp-spin"></div>
+          <span>{{ nodeState.summary || '处理中...' }}</span>
+        </div>
+
+        <!-- Completed -->
+        <div v-else-if="nodeStatus === 'completed'" class="dp-done">
+          <span class="material-symbols-outlined dp-ok">check_circle</span>
+          <span>已完成</span>
+          <div v-if="nodeState.summary" class="dp-summary">{{ nodeState.summary }}</div>
+        </div>
+
+        <!-- Error -->
+        <div v-else-if="nodeStatus === 'error'" class="dp-err">
+          <span>错误</span>
+        </div>
+
+        <!-- Listening -->
+        <div v-else-if="nodeStatus === 'listening'" class="dp-state dp-listening">
+          <span class="material-symbols-outlined dp-state-icon animate-pulse">mic</span>
+          <span>监听中...</span>
+        </div>
+      </div>
+
+      <!-- Config tab -->
+      <div v-if="activeTab === 'config'" class="dp-config">
+        <div v-if="node.config" class="config-grid">
+          <div v-for="(val, key) in node.config" :key="key" class="config-row">
+            <span class="config-key">{{ key }}</span>
+            <span class="config-val">{{ formatConfigVal(val) }}</span>
           </div>
         </div>
+        <div v-else class="dp-state dp-pending">无配置</div>
+      </div>
 
-        <div v-else-if="node.type === 'tts'" class="dp-audio">
-          <span>{{ node.data?.audio_size ? `🔊 音频已生成 (${fmtSize(node.data.audio_size)})` : '已完成' }}</span>
+      <!-- Log tab -->
+      <div v-if="activeTab === 'log'" class="dp-log">
+        <div v-if="nodeLogs.length === 0" class="dp-empty-log">暂无日志</div>
+        <div v-for="(log, i) in nodeLogs" :key="i" class="log-line" :class="'log-' + log.level" :style="{ animation: log.highlight ? 'pulse 0.5s 2' : 'none' }">
+          <span class="log-time">[{{ log.timestamp }}]</span>
+          <span class="log-msg">{{ log.message }}</span>
         </div>
+      </div>
 
-        <div v-else-if="node.type === 'ts_output'" class="dp-done">
-          <span>{{ node.data?.sent ? '✅ 已发送到 TeamSpeak' : '已完成' }}</span>
-        </div>
-
-        <div v-else-if="node.type === 'stt_listen'" class="dp-text-area">
-          <div class="dp-txt">{{ node.data?.text || node.data?.accumulated || '已完成监听' }}</div>
-          <div class="dp-kw" v-if="node.data?.trigger_keyword">🎯 触发关键词: {{ node.data.trigger_keyword }}</div>
-        </div>
-
-        <div v-else class="dp-done">
-          <span>{{ node.summary || '已完成' }}</span>
-        </div>
-      </template>
-
-      <!-- Error -->
-      <template v-else-if="node.status === 'error'">
-        <div class="dp-err">
-          <span class="dp-err-ico">❌</span>
-          <span>{{ node.error || '未知错误' }}</span>
-        </div>
-      </template>
+      <!-- Fulltext tab -->
+      <div v-if="activeTab === 'fulltext'" class="dp-fulltext">
+        <div class="fulltext-content">{{ nodeState.data?.text || '无全文数据' }}</div>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
-import AudioFileUploader from '@/components/action/AudioFileUploader.vue'
-import StreamingText from '@/components/display/StreamingText.vue'
+import { ref, computed, watch } from 'vue'
+import { useEditorStore } from '@/stores/editor.js'
+import { useExecutionStore } from '@/stores/execution.js'
 
 const props = defineProps({
   node: { type: Object, default: null },
-  skillPrompt: { type: String, default: '' },
 })
 
-defineEmits(['action'])
+defineEmits(['close'])
 
-const nodeIcon = computed(() => ({
-  input_image: '🖼️', ocr: '📝', stt_listen: '🎙️',
-  context_build: '🔗', llm: '🧠', tts: '🔊', ts_output: '📡',
-}[props.node?.type] || '⚙️'))
+const editorStore = useEditorStore()
+const executionStore = useExecutionStore()
 
-const statusText = computed(() => ({
-  pending: '待执行', processing: '执行中', completed: '已完成', error: '出错',
-}[props.node?.status] || props.node?.status))
+const activeTab = ref('detail')
 
-const fmtSize = (b) => {
-  if (!b) return '0 B'
-  if (b < 1024) return b + ' B'
-  if (b < 1048576) return (b / 1024).toFixed(1) + ' KB'
-  return (b / 1048576).toFixed(1) + ' MB'
+// Reset tab when node changes
+watch(() => props.node?.id, () => {
+  activeTab.value = 'detail'
+})
+
+const nodeTypeDef = computed(() =>
+  editorStore.nodeTypes.find((t) => t.type === props.node?.type)
+)
+
+const tabs = computed(() => nodeTypeDef.value?.tabs || [])
+
+const nodeIcon = computed(() => nodeTypeDef.value?.icon || 'smart_toy')
+
+const nodeState = computed(() =>
+  props.node ? executionStore.getNodeStatus(props.node.id) : { status: 'pending' }
+)
+
+const nodeStatus = computed(() => nodeState.value.status)
+
+const nodeLogs = computed(() =>
+  props.node ? executionStore.getNodeLogs(props.node.id, 50) : []
+)
+
+function formatConfigVal(val) {
+  if (Array.isArray(val)) return val.join(', ')
+  if (typeof val === 'object') return JSON.stringify(val)
+  return String(val)
 }
 </script>
 
 <style scoped>
 .dp {
-  background: rgba(15,23,42,0.4);
-  border: 1px solid rgba(148,163,184,0.06);
-  border-radius: 8px;
-  overflow: hidden;
-  margin-bottom: 8px;
-  backdrop-filter: blur(8px);
+  display: flex; flex-direction: column;
+  height: 100%;
 }
 
-/* 头部 */
 .dp-head {
   display: flex; align-items: center; gap: 8px;
-  padding: 8px 14px;
-  background: rgba(255,255,255,0.02);
-  border-bottom: 1px solid rgba(255,255,255,0.04);
+  padding: 16px;
+  border-bottom: 1px solid rgba(65, 71, 84, 0.5);
+  flex-shrink: 0;
 }
-.dp-icon { font-size: 0.8rem; }
-.dp-name { flex: 1; font-size: 0.7rem; font-weight: 600; color: rgba(255,255,255,0.75); }
-.dp-st {
-  font-size: 0.55rem; padding: 1px 8px; border-radius: 8px;
-  text-transform: uppercase; letter-spacing: 0.3px;
-}
-.dp-st.pending { background: rgba(255,255,255,0.03); color: rgba(255,255,255,0.25); }
-.dp-st.processing { background: rgba(56,189,248,0.1); color: #38bdf8; }
-.dp-st.completed { background: rgba(52,211,153,0.08); color: #34d399; }
-.dp-st.error { background: rgba(239,68,68,0.1); color: #ef4444; }
 
-/* 主体 */
-.dp-body { padding: 10px 14px; max-height: 180px; overflow-y: auto; }
+.dp-icon { font-size: 20px; color: #adc7ff; }
+.dp-name { flex: 1; font-size: 16px; font-weight: 600; color: #e0e2ed; }
 
-/* 空态/加载 */
-.dp-empty {
-  text-align: center; padding: 16px 0;
-  font-size: 0.7rem; color: rgba(255,255,255,0.15);
+.dp-close {
+  color: #8b90a0; background: none; border: none;
+  cursor: pointer; padding: 4px;
 }
-.dp-load {
-  display: flex; align-items: center; justify-content: center;
-  gap: 8px; padding: 16px 0;
-  font-size: 0.7rem; color: rgba(255,255,255,0.3);
+.dp-close:hover { color: #e0e2ed; }
+
+/* Tabs */
+.dp-tabs {
+  display: flex; border-bottom: 1px solid rgba(65, 71, 84, 0.5);
+  flex-shrink: 0;
 }
+
+.detail-tab-btn {
+  flex: 1; padding: 8px 0; text-align: center;
+  font-size: 11px; font-family: 'Space Grotesk', sans-serif;
+  letter-spacing: 0.05em; font-weight: 500;
+  color: #8b90a0; cursor: pointer;
+  transition: color 0.2s; border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+}
+
+.detail-tab-btn:hover { color: #c1c6d7; }
+
+.detail-tab-btn.active {
+  color: #adc7ff;
+  border-bottom-color: #adc7ff;
+}
+
+/* Body */
+.dp-body { flex: 1; overflow-y: auto; padding: 16px; }
+
+/* States */
+.dp-state {
+  display: flex; align-items: center; gap: 8px;
+  padding: 24px 0; font-size: 13px;
+  color: #c1c6d7;
+}
+
+.dp-state-icon { font-size: 20px; }
+
+.dp-pending { color: #8b90a0; }
+.dp-processing { color: #adc7ff; }
+.dp-listening { color: #adc7ff; }
+
 .dp-spin {
-  width: 14px; height: 14px;
-  border: 1.5px solid rgba(56,189,248,0.15);
-  border-top-color: #38bdf8;
+  width: 16px; height: 16px;
+  border: 2px solid rgba(173, 199, 255, 0.15);
+  border-top-color: #adc7ff;
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
 }
+
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* 文本区 */
-.dp-text-area { }
-.dp-rlbl {
-  font-size: 0.55rem; color: rgba(255,255,255,0.2);
-  text-transform: uppercase; letter-spacing: 0.4px;
-  margin-bottom: 3px; margin-top: 6px;
-}
-.dp-rlbl:first-child { margin-top: 0; }
-.dp-txt {
-  font-size: 0.72rem; color: rgba(255,255,255,0.65);
-  line-height: 1.5; white-space: pre-wrap;
-}
-.dp-reason {
-  background: rgba(0,0,0,0.15);
-  border-left: 2px solid rgba(251,191,36,0.3);
-  border-radius: 4px;
-  padding: 6px 10px;
-  margin-bottom: 8px;
-}
-.dp-rtxt {
-  font-size: 0.65rem; color: rgba(255,255,255,0.35);
-  font-style: italic; white-space: pre-wrap; line-height: 1.4;
-}
-
-/* 三列上下文 */
-.dp-triple {
-  display: flex; gap: 8px;
-}
-.dp-tr {
-  flex: 1; min-width: 0;
-  background: rgba(0,0,0,0.12);
-  border-radius: 6px;
-  padding: 6px 8px;
-}
-.dp-trl {
-  font-size: 0.5rem; color: rgba(255,255,255,0.25);
-  margin-bottom: 2px; white-space: nowrap;
-}
-.dp-trt {
-  font-size: 0.6rem; color: rgba(255,255,255,0.5);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-
-/* 完成/音频/关键词 */
 .dp-done {
-  text-align: center; padding: 12px 0;
-  font-size: 0.72rem; color: rgba(255,255,255,0.4);
-}
-.dp-audio {
-  text-align: center; padding: 12px 0;
-  font-size: 0.72rem; color: #34d399;
-}
-.dp-kw {
-  margin-top: 6px; font-size: 0.62rem; color: #fbbf24;
+  padding: 24px 0;
+  display: flex; flex-direction: column;
+  align-items: center; gap: 8px;
+  color: #4edea3; font-size: 14px;
 }
 
-/* 错误 */
-.dp-err {
-  display: flex; align-items: center; gap: 8px;
-  padding: 8px 0;
-  font-size: 0.7rem; color: #ef4444;
+.dp-ok { font-size: 32px; }
+
+.dp-summary {
+  font-size: 12px; color: #c1c6d7;
+  text-align: center; margin-top: 8px;
+  padding: 8px; background: rgba(11, 14, 22, 0.5);
+  border-radius: 4px; width: 100%;
 }
-.dp-err-ico { font-size: 1rem; }
+
+.dp-err {
+  text-align: center; padding: 24px 0;
+  color: #ffb4ab; font-size: 13px;
+}
+
+/* Config */
+.config-grid { display: flex; flex-direction: column; gap: 8px; }
+
+.config-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(65, 71, 84, 0.2);
+}
+
+.config-key {
+  font-size: 11px; color: #8b90a0;
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+.config-val {
+  font-size: 11px; color: #adc7ff;
+  font-family: 'Space Grotesk', sans-serif;
+  max-width: 180px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* Log */
+.dp-log {
+  font-size: 10px; font-family: 'Space Grotesk', sans-serif;
+  display: flex; flex-direction: column; gap: 4px;
+}
+
+.dp-empty-log { color: #64748b; text-align: center; padding: 24px; }
+
+.log-line { display: flex; gap: 6px; }
+
+.log-time { color: #64748b; flex-shrink: 0; }
+
+.log-muted .log-msg { color: #64748b; }
+.log-info .log-msg { color: #adc7ff; }
+.log-success .log-msg { color: #4edea3; }
+.log-warn .log-msg { color: #ef6719; }
+.log-error .log-msg { color: #ffb4ab; }
+
+/* Fulltext */
+.dp-fulltext { padding: 4px 0; }
+
+.fulltext-content {
+  font-size: 11px; color: #c1c6d7;
+  font-family: 'Space Grotesk', sans-serif;
+  line-height: 1.6; white-space: pre-wrap;
+  padding: 8px; background: rgba(11, 14, 22, 0.5);
+  border-radius: 4px;
+}
 </style>

@@ -84,6 +84,7 @@ class PipelineEngine:
         self._instances: dict[str, PipelineInstance] = {}
         self._ws_connections: dict[str, set] = {}  # feature_id → {ws, ...}
         self._node_registry = NodeRegistry()
+        self._running_flows: set[str] = set()  # 编辑锁
 
     # ── 定义管理 ──
 
@@ -243,7 +244,66 @@ class PipelineEngine:
 
         return execution_id
 
-    def delete_instance(self, execution_id: str):
+    def start_pipeline_from_flow(self, flow_id: str, initial_input: dict = None) -> str:
+        """从 FlowManager 加载流程并启动执行"""
+        from core.flow.manager import get_flow_manager
+        fm = get_flow_manager()
+        flow = fm.load_flow(flow_id)
+
+        # 转换为 PipelineDefinition
+        pd = self._flowdef_to_pipeline_def(flow)
+        self._definitions[flow_id] = pd
+
+        # 编辑锁
+        self._running_flows.add(flow_id)
+
+        execution_id = self._start(pd, initial_input)
+        return execution_id
+
+    def is_running(self, flow_id: str) -> bool:
+        return flow_id in self._running_flows
+
+    def _flowdef_to_pipeline_def(self, flow) -> PipelineDefinition:
+        """将 FlowDef (PipelineDefinition from JSON) 转换为引擎可用的定义"""
+        nodes = []
+        for n in flow.nodes:
+            nodes.append(NodeDefinition(
+                id=n.id, type=n.type, name=n.name,
+                position=n.position, config=n.config,
+                input_mappings=n.input_mappings,
+                trigger=n.trigger, listener=n.listener,
+            ))
+        return PipelineDefinition(
+            id=flow.id, name=flow.name, group=flow.group,
+            icon=flow.icon, skill_prompt=flow.skill_prompt,
+            canvas=flow.canvas, nodes=nodes, connections=flow.connections,
+        )
+
+    def _start(self, pd: PipelineDefinition, initial_input: dict = None) -> str:
+        """内部启动方法"""
+        execution_id = f"{pd.id}_{uuid.uuid4().hex[:8]}"
+        instance = PipelineInstance(execution_id, pd)
+        self._instances[execution_id] = instance
+
+        logger.info(f"Pipeline started: {pd.id} [{execution_id}]")
+        log_pipeline_event(PipelineEvent(
+            event_type="pipeline_start",
+            pipeline_id=pd.id,
+            execution_id=execution_id,
+            data={"feature_id": pd.id},
+        ))
+
+        instance.accumulated_context["skill_prompt"] = pd.skill_prompt
+
+        for node_def in pd.get_listener_nodes():
+            asyncio.ensure_future(
+                self._run_listener_node(execution_id, node_def)
+            )
+
+        return execution_id
+
+    def _unlock_flow(self, flow_id: str) -> None:
+        self._running_flows.discard(flow_id)
         """删除 Pipeline 实例（重新开始 = 清除上下文）"""
         instance = self._instances.pop(execution_id, None)
         if instance:
@@ -252,6 +312,10 @@ class PipelineEngine:
                 pipeline_id=instance.pipeline_def.id,
                 execution_id=execution_id,
             ))
+        # 释放编辑锁
+        flow_id = instance.pipeline_def.id if instance else None
+        if flow_id:
+            self._running_flows.discard(flow_id)
         logger.info(f"Pipeline instance deleted: {execution_id}")
 
     # ── 节点执行 ──
@@ -305,6 +369,7 @@ class PipelineEngine:
         # 执行
         runtime.status = NodeState.PROCESSING
         await emit.emit_node_update(node_id, "processing", f"执行中...")
+        await emit.emit_node_log_entry(node_id, "info", f"开始执行: {node_def.name}")
 
         log_pipeline_event(PipelineEvent(
             event_type="node_start",
@@ -321,6 +386,7 @@ class PipelineEngine:
             runtime.summary = str(output.data)[:80] if output.data else "完成"
 
             await emit.emit_node_complete(node_id, output.data)
+            await emit.emit_node_log_entry(node_id, "success", f"完成: {runtime.summary}")
             log_pipeline_event(PipelineEvent(
                 event_type="node_complete",
                 pipeline_id=pd.id,
@@ -373,7 +439,8 @@ class PipelineEngine:
             emit = EventEmitter(self, instance.pipeline_def.id)
 
             runtime.status = NodeState.PROCESSING
-            await emit.emit_node_update(node_def.id, "processing", "监听中...")
+            await emit.emit_node_update(node_def.id, "listening", "监听中...")
+            await emit.emit_node_log_entry(node_def.id, "info", "开始监听...")
 
             log_pipeline_event(PipelineEvent(
                 event_type="listener_start",

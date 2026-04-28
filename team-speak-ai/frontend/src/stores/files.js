@@ -1,86 +1,34 @@
+/**
+ * Files Store — 基于 WebSocket 的文件上传进度跟踪
+ */
+
 import { defineStore } from 'pinia'
-import {
-  uploadFile as apiUploadFile,
-  uploadBatch as apiUploadBatch,
-  getBatch as apiGetBatch,
-  deleteBatch as apiDeleteBatch,
-  deleteFile as apiDeleteFile,
-} from '@/api/files'
-import { recognizeFromFile } from '@/api/ocr'
+import { ref } from 'vue'
+import { pipelineSocket } from '@/api/pipeline.js'
 
-export const useFilesStore = defineStore('files', {
-  state: () => ({
-    batches: {},
-    currentBatchId: null,
-    uploading: false,
-  }),
+export const useFilesStore = defineStore('files', () => {
+  const uploads = ref({})
 
-  actions: {
-    async uploadFile(file, functionId, batchId = null) {
-      this.uploading = true
-      try {
-        const response = await apiUploadFile(file, functionId, batchId)
-        const result = response.data
+  function onUploadProgress({ upload_id, received, total }) {
+    uploads.value[upload_id] = {
+      ...uploads.value[upload_id],
+      upload_id, received, total, status: 'uploading',
+    }
+  }
 
-        if (!this.batches[result.batch_id]) {
-          this.batches[result.batch_id] = { files: [], info: {} }
-        }
-        this.batches[result.batch_id].files.push(result)
+  function onUploadDone({ upload_id, file_id, name, size }) {
+    uploads.value[upload_id] = { upload_id, file_id, name, size, received: size, total: size, status: 'done' }
+  }
 
-        return result
-      } finally {
-        this.uploading = false
-      }
-    },
+  function onUploadError({ upload_id, error }) {
+    uploads.value[upload_id] = { ...uploads.value[upload_id], upload_id, status: 'error', error }
+  }
 
-    async uploadBatch(files, functionId) {
-      this.uploading = true
-      try {
-        const response = await apiUploadBatch(files, functionId)
-        const result = response.data
+  function init() {
+    pipelineSocket.on('file.upload_progress', onUploadProgress)
+    pipelineSocket.on('file.upload_done', onUploadDone)
+    pipelineSocket.on('file.upload_error', onUploadError)
+  }
 
-        this.batches[result.batch_id] = {
-          files: result.files,
-          info: { batch_id: result.batch_id },
-        }
-
-        return result
-      } finally {
-        this.uploading = false
-      }
-    },
-
-    async getBatch(batchId) {
-      const response = await apiGetBatch(batchId)
-      this.batches[batchId] = {
-        files: response.data,
-        info: { batch_id: batchId },
-      }
-      return response.data
-    },
-
-    async deleteBatch(batchId) {
-      await apiDeleteBatch(batchId)
-      delete this.batches[batchId]
-    },
-
-    async deleteFile(batchId, fileId) {
-      await apiDeleteFile(fileId)
-      if (this.batches[batchId]) {
-        this.batches[batchId].files = this.batches[batchId].files.filter(
-          (f) => f.file_id !== fileId
-        )
-      }
-    },
-
-    clearBatch(batchId) {
-      delete this.batches[batchId]
-    },
-
-    async uploadAndRecognize(file, includeBoxes = false) {
-      const fileResult = await this.uploadFile(file, 'ocr')
-      const response = await recognizeFromFile(fileResult.file_id, includeBoxes)
-      return response.data
-    },
-  },
+  return { uploads, init }
 })

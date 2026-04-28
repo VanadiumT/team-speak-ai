@@ -1,223 +1,372 @@
 <template>
-  <div class="pipeline-graph">
-    <!-- 空态 -->
-    <div class="graph-empty" v-if="!hasLayout">
-      <span class="emp-ico">⚡</span>
-      加载中...
-    </div>
+  <div
+    class="pipeline-canvas"
+    ref="canvasRef"
+    :class="{ 'is-panning': isPanning }"
+    @wheel.prevent="onWheel"
+    @mousedown="onPanStart"
+  >
+    <!-- Grid background -->
+    <div class="canvas-grid" :style="gridStyle"></div>
 
-    <!-- 图表 -->
-    <div class="graph-scroll" v-else>
-      <div class="graph-inner" :style="{ width: svgW + 'px', height: svgH + 'px' }">
-        <!-- SVG 箭头 -->
-        <svg class="g-svg" :width="svgW" :height="svgH" :viewBox="`0 0 ${svgW} ${svgH}`">
-          <defs>
-            <marker id="a" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
-              <polygon points="0 0,7 2.5,0 5" fill="rgba(148,163,184,0.35)"/>
-            </marker>
-            <marker id="a-live" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
-              <polygon points="0 0,7 2.5,0 5" fill="#38bdf8"/>
-            </marker>
-            <marker id="a-ok" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
-              <polygon points="0 0,7 2.5,0 5" fill="#34d399"/>
-            </marker>
-          </defs>
-          <g class="arrow-layer">
-            <path
-              v-for="(ap,i) in arrowPaths" :key="i"
-              :d="ap.d" fill="none"
-              :class="['arrow', arrowStatus(ap.from, ap.to), ap.type]"
-              :marker-end="arrowMrk(ap.from, ap.to)"
-            />
-          </g>
-        </svg>
+    <!-- Main content (zoomable) -->
+    <div
+      id="canvas-content"
+      class="canvas-content flow-view"
+      :data-flow="activeFlowView"
+      :style="contentStyle"
+    >
+      <!-- SVG connections -->
+      <svg
+        class="connections-svg"
+        :width="canvasWidth"
+        :height="canvasHeight"
+      >
+        <defs>
+          <marker id="arrowEvent" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+            <polygon points="0,2 10,5 0,8" fill="#adc7ff" opacity="0.6" />
+          </marker>
+          <marker id="arrowData" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+            <polygon points="0,2 10,5 0,8" fill="#4edea3" opacity="0.8" />
+          </marker>
+          <marker id="arrowDataFlow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+            <polygon points="0,2 10,5 0,8" fill="#4a8eff" opacity="0.8" />
+          </marker>
+        </defs>
 
-        <!-- 节点 -->
-        <div
-          v-for="pos in nodePosList" :key="pos.id"
-          class="node-place"
-          :style="{ left: pos.x + 'px', top: pos.y + 'px', width: pos.w + 'px' }"
-        >
-          <PipelineNode
-            :node="getNode(pos.id)"
-            :active="pos.id === activeNodeId"
-            @select="$emit('select-node', pos.id)"
+        <!-- Connection lines -->
+        <g v-for="conn in connectionPaths" :key="conn.id" :class="conn.groupClass">
+          <path
+            :d="conn.path"
+            fill="none"
+            :stroke="conn.stroke"
+            :stroke-width="conn.width"
+            :stroke-dasharray="conn.dash"
+            :class="conn.lineClass"
+            :marker-end="conn.marker"
+            :opacity="conn.opacity"
           />
-        </div>
+          <!-- Label -->
+          <rect
+            v-if="conn.label"
+            :x="conn.labelX - conn.labelW / 2 - 6"
+            :y="conn.labelY - 9"
+            :width="conn.labelW + 12"
+            height="17"
+            rx="3"
+            fill="rgba(11, 14, 22, 0.92)"
+          />
+          <text
+            v-if="conn.label"
+            :x="conn.labelX"
+            :y="conn.labelY + 3"
+            text-anchor="middle"
+            :fill="conn.stroke"
+            font-size="10"
+            font-family="Space Grotesk"
+            font-weight="bold"
+          >{{ conn.label }}</text>
+        </g>
+      </svg>
 
-        <!-- 技能提示标签 (非节点，标注在 context 附近) -->
-        <div v-if="skillBadge" class="skill-badge">
-          💡 Skill
-        </div>
-      </div>
+      <!-- Node cards -->
+      <NodeCard
+        v-for="node in editorStore.nodes"
+        :key="node.id"
+        :node="node"
+        :step-number="getStepNumber(node.id)"
+        @select="onNodeSelect"
+      />
     </div>
 
-    <!-- 操作栏 -->
-    <div class="g-toolbar" v-if="hasRestart">
-      <button class="btn-rst" @click="$emit('restart')">
-        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 8a6 6 0 0 1 10.47-4M14 8a6 6 0 0 1-10.47 4"/><path d="M13 2v3h-3M3 14v-3h3"/></svg>
-        重新开始
-      </button>
-    </div>
+    <!-- Zoom controls -->
+    <CanvasControls
+      :zoom="currentZoom"
+      :activeView="activeFlowView"
+      @update:active-view="activeFlowView = $event"
+      @zoom="zoomBy"
+      @reset-zoom="resetZoom"
+    />
   </div>
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
-import PipelineNode from './PipelineNode.vue'
-import { computePipelineLayout } from '@/utils/layout.js'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import NodeCard from './NodeCard.vue'
+import CanvasControls from './CanvasControls.vue'
+import { useEditorStore } from '@/stores/editor.js'
+import { useExecutionStore } from '@/stores/execution.js'
 
-const props = defineProps({
-  nodes: { type: Array, default: () => [] },
-  activeNodeId: { type: String, default: null },
-  skillPrompt: { type: String, default: '' },
-})
-const emit = defineEmits(['select-node', 'restart'])
+const editorStore = useEditorStore()
+const executionStore = useExecutionStore()
 
-const positionsMap = ref({})
-const arrowPaths = ref([])
-const svgW = ref(0)
-const svgH = ref(0)
-const mergeNode = ref(null)
+const canvasRef = ref(null)
+const currentZoom = ref(1.0)
+const activeFlowView = ref('all')
+const isPanning = ref(false)
 
-watch(() => props.nodes, (nodes) => {
-  const l = computePipelineLayout(nodes)
-  positionsMap.value = l.positions || {}
-  arrowPaths.value = l.arrowPaths || []
-  svgW.value = l.svgW || 200
-  svgH.value = l.svgH || 100
-  mergeNode.value = l.mergeNode
-}, { immediate: true })
+const ZOOM_MIN = 0.25
+const ZOOM_MAX = 3.0
 
-const hasLayout = computed(() => Object.keys(positionsMap.value).length > 0)
-const nodePosList = computed(() => Object.values(positionsMap.value).sort((a, b) => a.row - b.row || a.col - b.col))
+const canvasWidth = computed(() => editorStore.canvasSize.width)
+const canvasHeight = computed(() => editorStore.canvasSize.height)
 
-const getNode = (id) => props.nodes.find((n) => n.id === id) || { id, type: '?', name: id, status: 'pending' }
-const nStatus = (id) => getNode(id).status
+// ── Zoom ──
+const contentStyle = computed(() => ({
+  transform: `scale(${currentZoom.value})`,
+  transformOrigin: '0 0',
+  width: canvasWidth.value + 'px',
+  height: canvasHeight.value + 'px',
+}))
 
-const arrowStatus = (from, to) => {
-  const f = nStatus(from), t = nStatus(to)
-  if (f === 'completed') return 'ok'
-  if (f === 'processing' || t === 'processing') return 'live'
-  return ''
-}
-const arrowMrk = (from, to) => {
-  const f = nStatus(from), t = nStatus(to)
-  if (f === 'completed') return 'url(#a-ok)'
-  if (f === 'processing' || t === 'processing') return 'url(#a-live)'
-  return 'url(#a)'
+const gridStyle = computed(() => ({
+  width: (canvasWidth.value * currentZoom.value) + 'px',
+  height: (canvasHeight.value * currentZoom.value) + 'px',
+  backgroundSize: (32 * currentZoom.value) + 'px ' + (32 * currentZoom.value) + 'px',
+}))
+
+function zoomBy(delta) {
+  currentZoom.value = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, currentZoom.value + delta))
 }
 
-const hasRestart = computed(() => props.nodes.some((n) => n.status === 'completed' || n.status === 'error'))
-
-// Skill badge position: near merge node
-const skillBadge = computed(() => {
-  if (!props.skillPrompt || !mergeNode.value) return null
-  const mp = positionsMap.value[mergeNode.value]
-  if (!mp) return null
-  return {
-    left: mp.x - 60 + 'px',
-    top: mp.y - 20 + 'px',
+function resetZoom() {
+  currentZoom.value = 1.0
+  if (canvasRef.value) {
+    canvasRef.value.scrollLeft = 0
+    canvasRef.value.scrollTop = 0
   }
+}
+
+function onWheel(e) {
+  const delta = e.deltaY > 0 ? -0.05 : 0.05
+  zoomBy(delta)
+}
+
+// ── Pan (middle mouse button) ──
+let panStart = { x: 0, y: 0, scrollX: 0, scrollY: 0 }
+
+function onPanStart(e) {
+  if (e.button !== 1) return
+  e.preventDefault()
+  isPanning.value = true
+  panStart = {
+    x: e.clientX, y: e.clientY,
+    scrollX: canvasRef.value.scrollLeft,
+    scrollY: canvasRef.value.scrollTop,
+  }
+}
+
+function onPanMove(e) {
+  if (!isPanning.value) return
+  canvasRef.value.scrollLeft = panStart.scrollX - (e.clientX - panStart.x)
+  canvasRef.value.scrollTop = panStart.scrollY - (e.clientY - panStart.y)
+}
+
+function onPanEnd() {
+  isPanning.value = false
+}
+
+onMounted(() => {
+  window.addEventListener('mousemove', onPanMove)
+  window.addEventListener('mouseup', onPanEnd)
 })
+
+onUnmounted(() => {
+  window.removeEventListener('mousemove', onPanMove)
+  window.removeEventListener('mouseup', onPanEnd)
+})
+
+// ── Connection lines ──
+const connectionPaths = computed(() => {
+  return editorStore.connections.map((conn) => {
+    const fromNode = editorStore.nodes.find((n) => n.id === conn.from_node)
+    const toNode = editorStore.nodes.find((n) => n.id === conn.to_node)
+    if (!fromNode || !toNode) return null
+
+    const fromPos = getPortPosition(fromNode, conn.from_port, 'output')
+    const toPos = getPortPosition(toNode, conn.to_port, 'input')
+    if (!fromPos || !toPos) return null
+
+    const fromX = fromPos.x
+    const fromY = fromPos.y
+    const toX = toPos.x
+    const toY = toPos.y
+
+    // Determine line style based on type and status
+    const fromStatus = executionStore.getNodeStatus(conn.from_node).status
+    const isActive = fromStatus === 'processing'
+    const isData = conn.type === 'data'
+
+    let stroke, width, dash, marker, lineClass, opacity, groupClass
+    if (conn.type === 'event') {
+      stroke = '#adc7ff'
+      width = 2.5
+      dash = 'none'
+      marker = 'url(#arrowEvent)'
+      lineClass = ''
+      opacity = 1
+      groupClass = 'event-only'
+    } else if (isActive) {
+      stroke = '#4a8eff'
+      width = 2.5
+      dash = 'none'
+      marker = 'url(#arrowDataFlow)'
+      lineClass = 'flow-line'
+      opacity = 1
+      groupClass = 'data-only'
+    } else {
+      stroke = '#4edea3'
+      width = 2.5
+      dash = '10 5'
+      marker = 'url(#arrowData)'
+      lineClass = 'flow-line'
+      opacity = 1
+      groupClass = 'data-only'
+    }
+
+    // Path: straight if same row (similar y), bezier if cross-row
+    const yDiff = Math.abs(fromY - toY)
+    let path
+    if (yDiff < 80) {
+      // Straight line with horizontal middle
+      const midX = (fromX + toX) / 2
+      path = `M ${fromX} ${fromY} L ${midX} ${fromY} L ${midX} ${toY} L ${toX} ${toY}`
+    } else {
+      // Bezier curve
+      const cpOffset = Math.abs(fromX - toX) * 0.5
+      path = `M ${fromX} ${fromY} C ${fromX + cpOffset} ${fromY}, ${toX - cpOffset} ${toY}, ${toX} ${toY}`
+    }
+
+    // Label at midpoint
+    const labelX = (fromX + toX) / 2
+    const labelY = (fromY + toY) / 2
+    const label = getPortLabel(fromNode, conn.from_port)
+
+    return {
+      id: conn.id,
+      path,
+      stroke, width, dash, marker, lineClass, opacity, groupClass,
+      label,
+      labelX, labelY,
+      labelW: label ? label.length * 7 : 0,
+    }
+  }).filter(Boolean)
+})
+
+// ── Helpers ──
+function getNodeTypeDef(node) {
+  return editorStore.nodeTypes.find((t) => t.type === node.type)
+}
+
+function getPortPosition(node, portId, side) {
+  const typeDef = getNodeTypeDef(node)
+  if (!typeDef) return null
+
+  const ports = side === 'input' ? typeDef.ports?.inputs : typeDef.ports?.outputs
+  const port = ports?.find((p) => p.id === portId)
+  if (!port) {
+    // Fallback: center of node edge
+    return {
+      x: side === 'input' ? node.position.x : node.position.x + getNodeWidth(node),
+      y: node.position.y + 30,
+    }
+  }
+
+  const nodeW = getNodeWidth(node)
+  return {
+    x: side === 'input' ? node.position.x : node.position.x + nodeW,
+    y: node.position.y + port.position.top + 7, // 7 = half port height
+  }
+}
+
+function getPortLabel(node, portId) {
+  const typeDef = getNodeTypeDef(node)
+  if (!typeDef) return ''
+  const port = typeDef.ports?.outputs?.find((p) => p.id === portId)
+  return port?.label || ''
+}
+
+function getNodeWidth(node) {
+  const widthMap = {
+    input_image: 220, ocr: 220, tts: 220, ts_output: 220,
+    context_build: 250, llm: 250,
+    stt_history: 280,
+    stt_listen: 320,
+  }
+  return widthMap[node.type] || 250
+}
+
+function getStepNumber(nodeId) {
+  const idx = editorStore.nodes.findIndex((n) => n.id === nodeId)
+  return idx >= 0 ? String.fromCharCode(0x2460 + idx) : ''
+}
+
+const emit = defineEmits(['select-node'])
+
+function onNodeSelect(node) {
+  emit('select-node', node.id)
+}
 </script>
 
 <style scoped>
-.pipeline-graph {
-  margin-bottom: 10px;
-}
-.graph-empty {
-  display: flex; align-items: center; justify-content: center;
-  gap: 6px; min-height: 50px;
-  font-size: 0.72rem; color: rgba(255,255,255,0.15);
-}
-.emp-ico { font-size: 0.9rem; }
-.graph-scroll {
-  overflow-x: auto; overflow-y: hidden;
-  padding-bottom: 4px;
-}
-.graph-inner {
+.pipeline-canvas {
+  flex: 1;
+  margin-left: 256px;
   position: relative;
-  min-width: 100%;
+  background: #121417;
+  overflow: auto;
+  height: calc(100vh - 88px);
 }
 
-/* SVG */
-.g-svg {
-  position: absolute; top:0; left:0;
-  pointer-events: none; z-index: 1;
-  overflow: visible;
+.pipeline-canvas.is-panning {
+  cursor: grabbing;
+  user-select: none;
 }
-.arrow {
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  transition: stroke 0.4s, stroke-width 0.3s;
+
+.canvas-grid {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.15;
+  background-image:
+    linear-gradient(#31353d 1px, transparent 1px),
+    linear-gradient(90deg, #31353d 1px, transparent 1px);
 }
-.arrow.trigger {
-  stroke: rgba(148,163,184,0.25);
-  stroke-width: 1.3;
+
+.canvas-content {
+  position: relative;
+  z-index: 10;
+  padding: 32px;
+  transition: transform 0.2s ease;
 }
-.arrow.data {
-  stroke: rgba(148,163,184,0.15);
-  stroke-width: 1;
-  stroke-dasharray: 3 3;
+
+/* Flow view system */
+.flow-view[data-flow="data"] .event-only { display: none !important; }
+.flow-view[data-flow="event"] .data-only { display: none !important; }
+
+/* Connections SVG */
+.connections-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 0;
 }
-.arrow.live {
-  stroke: #38bdf8;
-  stroke-width: 1.6;
+
+/* Flow animations */
+.flow-line {
+  animation: flowDash 1.0s linear infinite;
 }
-.arrow.live.trigger {
-  animation: flowDash 0.6s linear infinite;
-}
-.arrow.live.data {
-  stroke-dasharray: 3 3;
-  animation: flowDash 0.6s linear infinite;
-}
-.arrow.ok {
-  stroke: #34d399;
-  stroke-width: 1.4;
-}
+
 @keyframes flowDash {
-  to { stroke-dashoffset: -20; }
-}
-.arrow.trigger.live { stroke-dasharray: 5 3; }
-.arrow.trigger.ok { stroke-dasharray: none; }
-
-/* 节点占位 */
-.node-place {
-  position: absolute;
-  z-index: 2;
+  to { stroke-dashoffset: -24; }
 }
 
-/* 技能标签 */
-.skill-badge {
-  position: absolute;
-  font-size: 0.55rem;
-  padding: 1px 6px;
-  border-radius: 6px;
-  background: rgba(251,191,36,0.08);
-  border: 1px solid rgba(251,191,36,0.15);
-  color: rgba(251,191,36,0.5);
-}
-
-/* 工具栏 */
-.g-toolbar {
-  display: flex; justify-content: flex-end;
-  padding: 4px 0 0;
-}
-.btn-rst {
-  display: flex; align-items: center; gap: 4px;
-  padding: 4px 10px;
-  background: rgba(239,68,68,0.06);
-  border: 1px solid rgba(239,68,68,0.12);
-  border-radius: 6px;
-  color: rgba(255,255,255,0.3);
-  font-size: 0.65rem;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.btn-rst:hover {
-  background: rgba(239,68,68,0.12);
-  border-color: rgba(239,68,68,0.25);
-  color: #ef4444;
-}
+/* Scrollbar */
+.pipeline-canvas::-webkit-scrollbar { width: 6px; height: 6px; }
+.pipeline-canvas::-webkit-scrollbar-track { background: #10131b; }
+.pipeline-canvas::-webkit-scrollbar-thumb { background: #31353d; border-radius: 3px; }
+.pipeline-canvas::-webkit-scrollbar-thumb:hover { background: #414754; }
 </style>

@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
-from api.routes import ws_teamspeak, files, tts, ws_pipeline, ocr
+from api.routes import ws_teamspeak, tts, ws_pipeline, ws_main
 
 logging.basicConfig(
     level=logging.DEBUG if settings.debug else logging.INFO,
@@ -32,9 +32,8 @@ app.add_middleware(
 
 app.include_router(ws_teamspeak.router)
 app.include_router(ws_pipeline.router)
-app.include_router(files.router, prefix="/api/files", tags=["files"])
+app.include_router(ws_main.router)  # 统一 /ws 端点
 app.include_router(tts.router, prefix="/api", tags=["tts"])
-app.include_router(ocr.router, prefix="/api/ocr", tags=["ocr"])
 
 
 @app.get("/")
@@ -88,6 +87,31 @@ async def startup_event():
     )
     install_logger(log_instance)
     logger.info(f"Logger initialized: {settings.log_provider} -> {settings.log_dir}")
+
+    # 初始化 FlowManager（流程数据持久化）
+    from core.flow.manager import init_flow_manager
+    data_dir = os.path.join(os.path.dirname(__file__), settings.data_dir)
+    os.makedirs(data_dir, exist_ok=True)
+    init_flow_manager(data_dir)
+    fm = init_flow_manager(data_dir)
+    logger.info(f"FlowManager initialized: {data_dir} ({len(fm.list_flows())} flows)")
+
+    # 初始化 HistoryManager（撤销/重做）
+    from core.history.manager import init_history_manager
+    init_history_manager(data_dir)
+    logger.info("HistoryManager initialized")
+
+    # 初始化 ConfigDefaultsManager（默认配置）
+    from core.config.defaults import init_defaults_manager
+    init_defaults_manager(data_dir)
+    logger.info("ConfigDefaultsManager initialized")
+
+    # 初始化 ChunkReceiver（文件分块上传）
+    from core.upload.chunk_receiver import init_chunk_receiver
+    upload_dir = os.path.join(os.path.dirname(__file__), settings.upload_dir)
+    os.makedirs(upload_dir, exist_ok=True)
+    init_chunk_receiver(upload_dir, settings.max_upload_size)
+    logger.info(f"ChunkReceiver initialized: {upload_dir}")
 
     # 连接 TeamSpeak Voice Bridge
     from api.routes.ws_teamspeak import ts_client

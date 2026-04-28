@@ -3,282 +3,334 @@
     <!-- ═══ Header ═══ -->
     <header class="header">
       <div class="h-left">
-        <svg class="h-logo" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#e94560" stroke-width="1.8">
-          <circle cx="12" cy="12" r="10"/>
-          <path d="M7 12 L10 15 L17 9" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
+        <span class="material-symbols-outlined h-logo" style="font-size: 22px;">smart_toy</span>
         <span class="h-title">TeamSpeak AI</span>
+        <span class="h-version">v2.4.0-Stable</span>
       </div>
       <div class="h-right">
-        <span class="h-badge" :class="{ on: connected }">
-          <span class="h-dot"></span>
-          {{ connected ? '已连接' : '未连接' }}
-        </span>
+        <NotificationBell />
       </div>
     </header>
 
     <!-- ═══ Body ═══ -->
     <div class="body">
-      <!-- ── Sidebar ── -->
+      <!-- Sidebar -->
       <aside class="sidebar">
-        <div class="sb-head">
-          <span class="sb-title">功能列表</span>
-          <span class="sb-badge" v-if="totalFeatures">{{ totalFeatures }}</span>
-        </div>
-
-        <div v-if="sidebarStore.groups.length === 0" class="sb-loading">
-          <span>加载中...</span>
-        </div>
+        <div v-if="sidebarTree.length === 0" class="sb-loading">加载中...</div>
 
         <nav class="sb-nav" v-else>
-          <template v-for="group in sidebarStore.groups" :key="group.id">
-            <div class="sb-group" @click="sidebarStore.toggleGroup(group.id)">
-              <svg class="sb-arrow" :class="{ open: sidebarStore.expandedGroups.has(group.id) }" viewBox="0 0 16 16" width="10" height="10">
-                <path d="M6 4 L10 8 L6 12" fill="currentColor"/>
-              </svg>
-              <span class="sb-gname">{{ group.name }}</span>
-            </div>
-            <div class="sb-items" v-if="sidebarStore.expandedGroups.has(group.id)">
-              <button
-                v-for="feat in group.children" :key="feat.id"
-                class="sb-item"
-                :class="{ active: activeFeatureId === feat.id }"
-                @click="selectFeature(feat.id)"
-              >
-                <span class="sb-ico">{{ feat.icon || '📋' }}</span>
-                <span class="sb-lbl">{{ feat.name }}</span>
-                <span class="sb-run" v-if="featureRunning(feat.id)" title="运行中"></span>
+          <template v-for="section in sidebarTree" :key="section.id">
+            <div class="sb-section">
+              <button class="sb-section-btn" @click="toggleSection(section.id)">
+                <span class="material-symbols-outlined sb-section-icon">{{ section.icon }}</span>
+                <span class="sb-section-name">{{ section.name }}</span>
+                <span class="material-symbols-outlined sb-chevron" :class="{ expanded: isExpanded(section.id) }">chevron_right</span>
               </button>
+              <div class="sb-children" v-if="isExpanded(section.id)">
+                <template v-for="child in section.children" :key="child.id">
+                  <button
+                    v-if="child.type === 'flow_ref'"
+                    class="sb-item"
+                    :class="{ active: activeFlowId === child.flow_id }"
+                    @click="selectFlow(child.flow_id)"
+                  >
+                    <span class="material-symbols-outlined sb-item-icon">{{ child.icon }}</span>
+                    <span class="sb-item-name">{{ child.name }}</span>
+                    <span class="sb-run" v-if="isFlowRunning(child.flow_id)"></span>
+                  </button>
+                  <div v-else-if="child.type === 'group'" class="sb-subgroup">
+                    <button class="sb-section-btn sb-sub-btn" @click="toggleSection(child.id)">
+                      <span class="material-symbols-outlined sb-section-icon">{{ child.icon }}</span>
+                      <span class="sb-section-name">{{ child.name }}</span>
+                      <span class="material-symbols-outlined sb-chevron" :class="{ expanded: isExpanded(child.id) }">chevron_right</span>
+                    </button>
+                    <div class="sb-children sb-sub" v-if="isExpanded(child.id)">
+                      <button
+                        v-for="gc in child.children" :key="gc.id"
+                        class="sb-item"
+                        :class="{ active: activeFlowId === gc.flow_id }"
+                        @click="selectFlow(gc.flow_id)"
+                      >
+                        <span class="material-symbols-outlined sb-item-icon">{{ gc.icon }}</span>
+                        <span class="sb-item-name">{{ gc.name }}</span>
+                      </button>
+                    </div>
+                  </div>
+                  <button
+                    v-else-if="child.type === 'action'"
+                    class="sb-item sb-action"
+                    @click="onAction(child.id)"
+                  >
+                    <span class="material-symbols-outlined sb-item-icon">{{ child.icon }}</span>
+                    <span class="sb-item-name">{{ child.name }}</span>
+                  </button>
+                </template>
+              </div>
             </div>
           </template>
         </nav>
       </aside>
 
-      <!-- ── Content ── -->
+      <!-- Content -->
       <main class="content">
-        <FeaturePage :feature-id="activeFeatureId" />
+        <PipelineView
+          v-if="activeFlowId"
+          :key="activeFlowId"
+          @select-node="onSelectNode"
+        />
+        <div v-else class="no-flow">
+          <span class="material-symbols-outlined" style="font-size: 48px; opacity: 0.2;">account_tree</span>
+          <p>选择左侧工作流以开始</p>
+        </div>
       </main>
+
+      <!-- Detail panel (right) -->
+      <aside v-if="selectedNode" class="detail-panel" id="detail-panel">
+        <DynamicPanel :node="selectedNode" @close="selectedNode = null" />
+      </aside>
     </div>
 
     <!-- ═══ Footer ═══ -->
-    <footer class="footer">
-      <div class="ft-head">
-        <span class="ft-title">事件日志</span>
-        <span class="ft-count" v-if="recentEvents.length">{{ recentEvents.length }}</span>
-      </div>
-      <div class="ft-log">
-        <div v-for="(evt, i) in recentEvents" :key="evt.id || i" class="ft-item" :class="evt.type">
-          <span class="ft-time">{{ fmt(evt.timestamp) }}</span>
-          <span class="ft-badge" :class="evt.type">{{ evt.type }}</span>
-          <span class="ft-msg">{{ evt.title }} {{ evt.content }}</span>
-        </div>
-        <div v-if="recentEvents.length === 0" class="ft-item ft-empty">
-          <span class="ft-msg">— 等待事件 —</span>
-        </div>
-      </div>
-    </footer>
+    <BottomStatusBar />
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useSidebarStore } from '@/stores/sidebar'
-import { usePipelineStore } from '@/stores/pipeline'
-import { pipelineSocket } from '@/api/pipeline'
-import FeaturePage from '@/views/FeaturePage.vue'
+import { ref, onMounted, onUnmounted } from 'vue'
+import { pipelineSocket } from '@/api/pipeline.js'
+import { useEditorStore } from '@/stores/editor.js'
+import { useExecutionStore } from '@/stores/execution.js'
+import { useNotificationsStore } from '@/stores/notifications.js'
+import { useConnectionStore } from '@/stores/connection.js'
+import PipelineView from '@/components/pipeline/PipelineView.vue'
+import DynamicPanel from '@/components/panels/DynamicPanel.vue'
+import BottomStatusBar from '@/components/layout/BottomStatusBar.vue'
+import NotificationBell from '@/components/layout/NotificationBell.vue'
 
-const sidebarStore = useSidebarStore()
-const pipelineStore = usePipelineStore()
+const editorStore = useEditorStore()
+const executionStore = useExecutionStore()
+const notificationsStore = useNotificationsStore()
+const connectionStore = useConnectionStore()
 
-const activeFeatureId = ref(null)
-const connected = ref(false)
+const sidebarTree = ref([])
+const expandedSections = ref(new Set())
+const activeFlowId = ref(null)
+const selectedNode = ref(null)
 
-const recentEvents = computed(() => pipelineStore.importantEvents.slice(0, 30))
-const totalFeatures = computed(() => sidebarStore.groups.reduce((s, g) => s + g.children.length, 0))
-const featureRunning = (id) => pipelineStore.features[id]?.status === 'running'
-const selectFeature = (id) => { activeFeatureId.value = id; sidebarStore.setActive(id) }
-const fmt = (ts) => ts ? new Date(ts).toLocaleTimeString() : ''
+// ── Sidebar ──
+function isExpanded(id) { return expandedSections.value.has(id) }
+function toggleSection(id) {
+  if (expandedSections.value.has(id)) {
+    expandedSections.value.delete(id)
+  } else {
+    expandedSections.value.add(id)
+  }
+  // trigger reactivity
+  expandedSections.value = new Set(expandedSections.value)
+}
 
-onMounted(() => {
-  pipelineSocket.on('connected', () => { connected.value = true; pipelineSocket.send('get_config') })
-  pipelineSocket.on('disconnected', () => { connected.value = false })
-  pipelineSocket.on('feature_config', (cfgs) => {
-    if (Array.isArray(cfgs)) {
-      cfgs.forEach((c) => pipelineStore.registerFeature(c))
-      sidebarStore.loadFromConfig(cfgs)
-      if (!activeFeatureId.value && cfgs.length > 0) activeFeatureId.value = cfgs[0].id
+async function selectFlow(flowId) {
+  activeFlowId.value = flowId
+  selectedNode.value = null
+  try {
+    await editorStore.loadFlow(flowId)
+  } catch (e) {
+    console.error('Failed to load flow:', e)
+  }
+}
+
+function isFlowRunning(flowId) {
+  return executionStore.status === 'running' && editorStore.flowId === flowId
+}
+
+function onAction(actionId) {
+  if (actionId === 'action:new_flow') {
+    const name = prompt('流程名称：')
+    if (name) {
+      pipelineSocket.sendCommand('_system', 'flow.create', { name, group: '', icon: 'account_tree' })
     }
+  }
+}
+
+function onSelectNode(nodeId) {
+  selectedNode.value = editorStore.nodes.find((n) => n.id === nodeId) || null
+}
+
+// ── Lifecycle ──
+onMounted(() => {
+  // Init stores
+  editorStore.init()
+  executionStore.init()
+  notificationsStore.init()
+  connectionStore.init()
+
+  // Sidebar events
+  pipelineSocket.on('sidebar.tree', ({ groups }) => {
+    sidebarTree.value = groups || []
+    // Auto-expand all sections
+    groups?.forEach((s) => {
+      expandedSections.value.add(s.id)
+      s.children?.forEach((c) => {
+        if (c.type === 'group') expandedSections.value.add(c.id)
+      })
+    })
   })
-  pipelineSocket.on('pipeline_start', (d) => pipelineStore.handlePipelineStart(d))
-  pipelineSocket.on('pipeline_complete', (d) => pipelineStore.handlePipelineComplete(d))
-  pipelineSocket.on('pipeline_state', (d) => pipelineStore.handlePipelineState(d))
-  pipelineSocket.on('node_update', (d) => pipelineStore.handleNodeUpdate(d))
-  pipelineSocket.on('node_complete', (d) => pipelineStore.handleNodeComplete(d))
-  pipelineSocket.on('node_error', (d) => pipelineStore.handleNodeError(d))
-  pipelineSocket.on('important_update', (d) => pipelineStore.handleImportantUpdate(d))
+
+  // Handle flow loaded
+  pipelineSocket.on('flow.loaded', ({ flow }) => {
+    editorStore.onFlowLoaded({ flow })
+  })
+
+  // Handle flow created
+  pipelineSocket.on('flow.created', () => {
+    // Re-request sidebar tree
+    pipelineSocket.sendCommand('_system', 'flow.list', {})
+  })
+
+  // Connect
   pipelineSocket.connect()
 })
-onUnmounted(() => pipelineSocket.disconnect())
+
+onUnmounted(() => {
+  editorStore.flushPendingUpdates()
+  pipelineSocket.disconnect()
+})
 </script>
 
 <style scoped>
 .layout {
   display: flex; flex-direction: column;
   height: 100vh;
-  background: #080c14;
-  color: rgba(255,255,255,0.85);
+  background: #10131b;
+  color: #e0e2ed;
+  font-family: 'Inter', sans-serif;
 }
 
 /* ── Header ── */
 .header {
   display: flex; align-items: center; justify-content: space-between;
-  height: 44px; padding: 0 16px;
-  background: rgba(8,12,20,0.95);
-  border-bottom: 1px solid rgba(255,255,255,0.06);
-  backdrop-filter: blur(8px);
-  z-index: 10; flex-shrink: 0;
-}
-.h-left { display: flex; align-items: center; gap: 8px; }
-.h-logo { flex-shrink: 0; }
-.h-title {
-  font-size: 0.85rem; font-weight: 700;
-  background: linear-gradient(135deg, #e94560, #f97316);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-.h-right { display: flex; align-items: center; gap: 8px; }
-.h-badge {
-  display: flex; align-items: center; gap: 5px;
-  font-size: 0.65rem;
-  padding: 2px 10px; border-radius: 10px;
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.06);
-  color: rgba(255,255,255,0.3);
-}
-.h-badge.on {
-  background: rgba(52,211,153,0.08);
-  border-color: rgba(52,211,153,0.15);
-  color: #6ee7b7;
-}
-.h-dot {
-  width: 5px; height: 5px; border-radius: 50%;
-  background: #555;
-  transition: all 0.3s;
-}
-.h-badge.on .h-dot {
-  background: #34d399;
-  box-shadow: 0 0 4px rgba(52,211,153,0.5);
+  height: 56px; padding: 0 24px;
+  background: rgba(2, 6, 23, 0.8);
+  backdrop-filter: blur(24px);
+  border-bottom: 1px solid rgba(65, 71, 84, 0.5);
+  z-index: 50; flex-shrink: 0;
+  position: fixed; top: 0; left: 0; width: 100%;
 }
 
+.h-left { display: flex; align-items: center; gap: 12px; }
+.h-logo { color: #4a8eff; }
+.h-title { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; }
+.h-version {
+  font-size: 10px; font-family: 'Space Grotesk', sans-serif;
+  color: #64748b; font-weight: 500; letter-spacing: 0.05em;
+  align-self: flex-end; margin-bottom: 4px; margin-left: 4px;
+}
+
+.h-right { display: flex; align-items: center; gap: 16px; }
+
 /* ── Body ── */
-.body { display: flex; flex: 1; overflow: hidden; }
+.body {
+  display: flex; flex: 1;
+  padding-top: 56px;
+  overflow: hidden;
+}
 
 /* ── Sidebar ── */
 .sidebar {
-  width: 200px; flex-shrink: 0;
-  background: rgba(8,12,20,0.5);
-  border-right: 1px solid rgba(255,255,255,0.05);
-  display: flex; flex-direction: column;
+  width: 256px; flex-shrink: 0;
+  position: fixed; left: 0; top: 56px;
+  height: calc(100vh - 88px);
+  background: rgba(2, 6, 23, 0.9);
+  backdrop-filter: blur(16px);
+  border-right: 1px solid rgba(65, 71, 84, 0.5);
+  z-index: 40;
+  overflow-y: auto;
+  padding: 16px 0;
 }
-.sb-head {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 12px 12px 8px;
-}
-.sb-title {
-  font-size: 0.62rem; text-transform: uppercase;
-  letter-spacing: 1px; color: rgba(255,255,255,0.25);
-}
-.sb-badge {
-  font-size: 0.58rem;
-  background: rgba(255,255,255,0.04);
-  padding: 1px 6px; border-radius: 6px;
-  color: rgba(255,255,255,0.25);
-}
-.sb-loading {
-  padding: 24px 12px; text-align: center;
-  font-size: 0.72rem; color: rgba(255,255,255,0.15);
-}
-.sb-nav { flex: 1; overflow-y: auto; padding: 0 6px 12px; }
-.sb-group {
-  display: flex; align-items: center; gap: 6px;
-  padding: 6px 8px; cursor: pointer;
-  color: rgba(255,255,255,0.35); font-size: 0.7rem;
-  transition: color 0.15s; user-select: none;
-}
-.sb-group:hover { color: rgba(255,255,255,0.65); }
-.sb-arrow { transition: transform 0.2s; opacity: 0.5; }
-.sb-arrow.open { transform: rotate(90deg); }
-.sb-gname { flex: 1; }
 
-.sb-items { display: flex; flex-direction: column; gap: 1px; }
+.sb-loading {
+  padding: 24px 16px; text-align: center;
+  font-size: 13px; color: #94a3b8;
+}
+
+.sb-nav { display: flex; flex-direction: column; }
+
+.sb-section { margin-bottom: 4px; }
+
+.sb-section-btn {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; padding: 8px 12px;
+  background: none; border: none;
+  color: #cbd5e1; font-size: 14px; font-weight: 500;
+  cursor: pointer; text-align: left;
+  transition: background 0.15s;
+}
+
+.sb-section-btn:hover { background: rgba(15, 23, 42, 0.5); }
+
+.sb-section-icon { font-size: 18px; color: #94a3b8; }
+.sb-section-name { flex: 1; }
+
+.sb-chevron {
+  font-size: 16px; color: #94a3b8;
+  transition: transform 0.2s ease;
+}
+
+.sb-chevron.expanded { transform: rotate(90deg); }
+
+.sb-children { padding-left: 4px; }
+.sb-sub { padding-left: 12px; }
+.sb-sub-btn { padding-left: 16px; font-size: 13px; }
+
 .sb-item {
-  display: flex; align-items: center; gap: 6px;
-  padding: 7px 8px 7px 22px;
-  background: none; border: none; border-radius: 6px;
-  color: rgba(255,255,255,0.55); cursor: pointer;
-  font-size: 0.72rem; text-align: left;
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 8px 12px 8px 24px;
+  background: none; border: none;
+  color: #94a3b8; font-size: 11px;
+  cursor: pointer; text-align: left;
   transition: all 0.15s;
+  border-left: 2px solid transparent;
 }
-.sb-item:hover { background: rgba(255,255,255,0.03); color: rgba(255,255,255,0.85); }
+
+.sb-item:hover { background: rgba(15, 23, 42, 0.5); color: #cbd5e1; }
+
 .sb-item.active {
-  background: rgba(233,69,96,0.12);
-  color: #e94560;
+  color: #adc7ff;
+  border-left-color: #adc7ff;
+  background: rgba(173, 199, 255, 0.05);
 }
-.sb-ico { font-size: 0.85rem; flex-shrink: 0; }
-.sb-lbl { flex: 1; }
+
+.sb-item-icon { font-size: 16px; }
+.sb-item-name { flex: 1; }
+
+.sb-action .sb-item-icon { font-size: 14px; }
+
 .sb-run {
-  width: 5px; height: 5px; border-radius: 50%;
-  background: #34d399;
-  animation: dotPulse 1s ease-in-out infinite;
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #4edea3;
+  box-shadow: 0 0 8px rgba(78, 222, 163, 0.6);
+  animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
 
 /* ── Content ── */
-.content {
-  flex: 1; padding: 14px 18px;
-  overflow-y: auto; overflow-x: hidden;
+.content { flex: 1; overflow: hidden; position: relative; }
+
+.no-flow {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  height: 100%; gap: 16px;
+  color: #64748b; font-size: 14px;
 }
 
-/* ── Footer ── */
-.footer {
-  height: 72px; flex-shrink: 0;
-  background: rgba(8,12,20,0.8);
-  border-top: 1px solid rgba(255,255,255,0.04);
-  display: flex; flex-direction: column;
-}
-.ft-head {
-  display: flex; align-items: center; gap: 6px;
-  padding: 4px 14px;
-  border-bottom: 1px solid rgba(255,255,255,0.02);
-}
-.ft-title {
-  font-size: 0.58rem; text-transform: uppercase;
-  letter-spacing: 0.5px; color: rgba(255,255,255,0.2);
-}
-.ft-count {
-  font-size: 0.52rem;
-  background: rgba(255,255,255,0.03);
-  padding: 0 5px; border-radius: 4px;
-  color: rgba(255,255,255,0.2);
-}
-.ft-log { flex: 1; overflow-y: auto; padding: 3px 14px; }
-.ft-item {
-  display: flex; align-items: center; gap: 6px;
-  padding: 1px 0; font-size: 0.65rem;
-  font-family: ui-monospace, 'Cascadia Code', monospace;
-}
-.ft-time { color: rgba(255,255,255,0.15); flex-shrink: 0; }
-.ft-badge {
-  font-size: 0.52rem; padding: 0 4px; border-radius: 3px;
-  text-transform: uppercase; flex-shrink: 0;
-}
-.ft-badge.info { background: rgba(56,189,248,0.1); color: #38bdf8; }
-.ft-badge.warning { background: rgba(251,191,36,0.1); color: #fbbf24; }
-.ft-badge.error { background: rgba(239,68,68,0.1); color: #ef4444; }
-.ft-msg { color: rgba(255,255,255,0.3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ft-empty .ft-msg { color: rgba(255,255,255,0.08); }
-
-@keyframes dotPulse {
-  0%,100%{opacity:1;transform:scale(1)}
-  50%{opacity:0.4;transform:scale(1.4)}
+/* ── Detail Panel ── */
+.detail-panel {
+  width: 320px; flex-shrink: 0;
+  background: #020617;
+  border-left: 1px solid rgba(65, 71, 84, 0.3);
+  overflow-y: auto;
 }
 </style>

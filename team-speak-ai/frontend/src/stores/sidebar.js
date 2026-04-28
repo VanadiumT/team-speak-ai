@@ -1,50 +1,55 @@
-import { defineStore } from 'pinia'
-import { pipelineSocket } from '@/api/pipeline'
-
 /**
- * 侧边栏 Store — 从后端配置动态渲染
+ * Sidebar Store — 直接从 sidebar.tree 事件数据渲染侧栏
  */
-export const useSidebarStore = defineStore('sidebar', {
-  state: () => ({
-    groups: [],
-    activeFeatureId: null,
-    expandedGroups: new Set(),
-    loading: false,
-  }),
 
-  actions: {
-    loadFromConfig(configs) {
-      // configs = backend PipelineDefinition list
-      // 按 group 分组
-      const groupMap = {}
-      configs.forEach((cfg) => {
-        const g = cfg.group || 'default'
-        if (!groupMap[g]) groupMap[g] = { id: g, name: this._groupName(g), icon: '📋', children: [] }
-        groupMap[g].children.push(cfg)
+import { defineStore } from 'pinia'
+import { ref } from 'vue'
+import { pipelineSocket } from '@/api/pipeline.js'
+
+export const useSidebarStore = defineStore('sidebar', () => {
+  const tree = ref([])             // SidebarNode[] from sidebar.tree event
+  const activeFeatureId = ref(null)
+  const expandedGroups = ref(new Set())
+  const recentFlows = ref(loadRecentFlows())
+
+  function setActive(id) { activeFeatureId.value = id }
+
+  function toggleGroup(id) {
+    if (expandedGroups.value.has(id)) {
+      expandedGroups.value.delete(id)
+    } else {
+      expandedGroups.value.add(id)
+    }
+    expandedGroups.value = new Set(expandedGroups.value)
+  }
+
+  function addRecentFlow(flowId, name) {
+    const existing = recentFlows.value.find((f) => f.id === flowId)
+    if (existing) recentFlows.value = recentFlows.value.filter((f) => f.id !== flowId)
+    recentFlows.value.unshift({ id: flowId, name })
+    if (recentFlows.value.length > 5) recentFlows.value = recentFlows.value.slice(0, 5)
+    saveRecentFlows(recentFlows.value)
+  }
+
+  function init() {
+    pipelineSocket.on('sidebar.tree', ({ groups }) => {
+      tree.value = groups || []
+      groups?.forEach((s) => {
+        expandedGroups.value.add(s.id)
+        s.children?.forEach((c) => {
+          if (c.type === 'group') expandedGroups.value.add(c.id)
+        })
       })
-      this.groups = Object.values(groupMap)
-      this.groups.forEach((g) => this.expandedGroups.add(g.id))
-    },
+    })
+  }
 
-    _groupName(g) {
-      const names = {
-        game_features: '游戏功能',
-        core_features: '核心功能',
-        default: '其他',
-      }
-      return names[g] || g
-    },
-
-    setActive(featureId) {
-      this.activeFeatureId = featureId
-    },
-
-    toggleGroup(groupId) {
-      if (this.expandedGroups.has(groupId)) {
-        this.expandedGroups.delete(groupId)
-      } else {
-        this.expandedGroups.add(groupId)
-      }
-    },
-  },
+  return { tree, activeFeatureId, expandedGroups, recentFlows, setActive, toggleGroup, addRecentFlow, init }
 })
+
+function loadRecentFlows() {
+  try { return JSON.parse(localStorage.getItem('recentFlows') || '[]') } catch { return [] }
+}
+
+function saveRecentFlows(flows) {
+  localStorage.setItem('recentFlows', JSON.stringify(flows))
+}

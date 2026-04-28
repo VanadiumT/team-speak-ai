@@ -58,9 +58,13 @@ class Settings(BaseSettings):
     # Pipeline
     pipeline_config_dir: str = "config/pipelines"
 
+    # 数据目录（流程 JSON、默认配置、操作历史、上传文件）
+    data_dir: str = "./data"
+
     # 文件存储
-    upload_dir: str = "./uploads"
+    upload_dir: str = "./data/uploads"
     max_file_size: int = 10 * 1024 * 1024  # 10MB
+    max_upload_size: int = 100 * 1024 * 1024  # 100MB (WebSocket binary upload)
 
     # Logger
     log_provider: str = "file"
@@ -70,6 +74,7 @@ class Settings(BaseSettings):
     # WebSocket
     ws_reconnect_interval: int = 3000  # ms
     ws_max_reconnect_attempts: int = 10
+    ws_max_connections_per_ip: int = 5
 
     class Config:
         env_file = ".env"

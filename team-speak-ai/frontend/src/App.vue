@@ -9,12 +9,20 @@ import AppLayout from './components/layout/AppLayout.vue'
 </script>
 
 <style>
+/* ── Fonts ── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&family=Space+Grotesk:wght@500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
+
+/* ── Reset ── */
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+/* ── Body ── */
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  background: radial-gradient(ellipse at 50% 0%, #0d1117 0%, #0a0a1a 100%);
-  color: rgba(255, 255, 255, 0.87);
+  font-family: 'Inter', sans-serif;
+  background: #10131b;
+  color: #e0e2ed;
+  font-size: 16px;
+  line-height: 1.6;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -22,36 +30,46 @@ body {
 
 #app { min-height: 100vh; }
 
-/* 优雅滚动条 */
-::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(79, 195, 247, 0.2); border-radius: 3px; transition: all 0.3s; }
-::-webkit-scrollbar-thumb:hover { background: rgba(79, 195, 247, 0.4); }
-::-webkit-scrollbar-corner { background: transparent; }
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #10131b; }
+::-webkit-scrollbar-thumb { background: #31353d; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #414754; }
 
-/* 选中颜色 */
+/* ── Selection ── */
 ::selection {
   background: rgba(233, 69, 96, 0.3);
   color: #fff;
 }
 
-/* 全局过渡 */
-* {
-  transition-property: background-color, border-color, color;
-  transition-duration: 0.2s;
-  transition-timing-function: ease;
-}
+/* ── Button reset ── */
+button { font-family: inherit; }
 
-/* 按钮重置 */
-button {
-  font-family: inherit;
-}
-
-/* 卡片通用样式 */
+/* ── Glass card ── */
 .glass-card {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(28, 32, 39, 0.85);
   backdrop-filter: blur(12px);
-  border-radius: 14px;
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 8px;
+  border: 1px solid rgba(65, 71, 84, 0.5);
+}
+
+/* ── Global node card hover ── */
+.node-card { transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s; }
+.node-card:hover { transform: translateY(-2px); z-index: 20 !important; }
+
+/* ── Streaming text cursor ── */
+@keyframes blink { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
+.stream-cursor { animation: blink 0.8s step-end infinite; color: #4a8eff; }
+
+/* ── Node pulse ── */
+@keyframes nodePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(173, 199, 255, 0.4); }
+  50% { box-shadow: 0 0 20px 4px rgba(173, 199, 255, 0.15); }
+}
+
+/* ── Flow dash ── */
+@keyframes flowDash {
+  to { stroke-dashoffset: -24; }
 }
 </style>
