@@ -71,6 +71,9 @@ class ChunkReceiver:
 
         # 打开文件（追加模式，支持断点续传）
         mode = "ab" if received > 0 else "wb"
+        # Windows 兼容：ab 模式下 seek 行为不可靠，使用 ab+ 替代
+        if mode == "ab" and received > 0:
+            mode = "ab+"
         session.fh = open(filepath, mode)
         if received > 0:
             session.received = received
@@ -88,12 +91,17 @@ class ChunkReceiver:
             raise ValueError(f"No upload session for msg_id: {msg_id}")
 
         session = self._sessions[upload_id]
-        session.fh.write(data)
-        session.received += len(data)
-        session.last_chunk_time = datetime.now(timezone.utc)
 
-        if session.received > session.size:
-            session.received = session.size  # 防止溢出
+        # 限制写入量：不超出声明的文件大小
+        remaining = session.size - session.received
+        if remaining <= 0:
+            logger.warning(f"Upload {upload_id} exceeded declared size {session.size}, discarding extra data")
+            return session.received
+
+        to_write = data[:remaining]
+        session.fh.write(to_write)
+        session.received += len(to_write)
+        session.last_chunk_time = datetime.now(timezone.utc)
 
         return session.received
 
@@ -173,6 +181,8 @@ class ChunkReceiver:
         if len(data) < 4:
             raise ValueError("Binary frame too short (missing header)")
         header_len = struct.unpack(">I", data[:4])[0]
+        if header_len == 0:
+            raise ValueError("Binary frame has empty msg_id")
         if len(data) < 4 + header_len:
             raise ValueError("Binary frame truncated")
         msg_id = data[4:4 + header_len].decode("utf-8")

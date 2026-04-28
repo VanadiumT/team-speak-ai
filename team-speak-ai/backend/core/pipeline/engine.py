@@ -42,6 +42,7 @@ class PipelineInstance:
         }
         self.status: str = "running"  # running | completed | error
         self.started_at = datetime.now()
+        self.listener_tasks: list[asyncio.Task] = []  # 后台监听任务引用
         self.accumulated_context: dict = {
             "ocr_texts": [],
             "stt_history": [],
@@ -85,6 +86,7 @@ class PipelineEngine:
         self._ws_connections: dict[str, set] = {}  # feature_id → {ws, ...}
         self._node_registry = NodeRegistry()
         self._running_flows: set[str] = set()  # 编辑锁
+        self._use_envelope: bool = False  # 启用信封协议格式
 
     # ── 定义管理 ──
 
@@ -250,12 +252,11 @@ class PipelineEngine:
         fm = get_flow_manager()
         flow = fm.load_flow(flow_id)
 
-        # 转换为 PipelineDefinition
         pd = self._flowdef_to_pipeline_def(flow)
         self._definitions[flow_id] = pd
 
-        # 编辑锁
         self._running_flows.add(flow_id)
+        self._use_envelope = True  # 新端点使用信封协议
 
         execution_id = self._start(pd, initial_input)
         return execution_id
@@ -300,16 +301,21 @@ class PipelineEngine:
         instance.accumulated_context["skill_prompt"] = pd.skill_prompt
 
         for node_def in pd.get_listener_nodes():
-            asyncio.ensure_future(
+            task = asyncio.ensure_future(
                 self._run_listener_node(execution_id, node_def)
             )
+            instance.listener_tasks.append(task)
 
         return execution_id
 
     def delete_instance(self, execution_id: str):
-        """删除 Pipeline 实例，同时释放编辑锁"""
+        """删除 Pipeline 实例，同时释放编辑锁并取消后台任务"""
         instance = self._instances.pop(execution_id, None)
         if instance:
+            # 取消所有后台监听任务
+            for task in instance.listener_tasks:
+                if not task.done():
+                    task.cancel()
             log_pipeline_event(PipelineEvent(
                 event_type="pipeline_deleted",
                 pipeline_id=instance.pipeline_def.id,

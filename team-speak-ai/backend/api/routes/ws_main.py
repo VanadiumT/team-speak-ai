@@ -27,6 +27,7 @@ router = APIRouter()
 
 # 已连接的客户端
 _connected_clients: dict[str, WebSocket] = {}
+_flow_subscribers: dict[str, set[WebSocket]] = {}  # flow_id → {ws, ...}
 
 
 # ── 工具函数 ───────────────────────────────────────────────────
@@ -144,6 +145,7 @@ async def ws_main(websocket: WebSocket):
         logger.error(f"WS error for client {client_id}: {e}")
     finally:
         _connected_clients.pop(client_id, None)
+        _unsubscribe_all_flows(websocket)
 
 
 # ── 二进制帧处理 ───────────────────────────────────────────────
@@ -228,8 +230,12 @@ async def handle_flow_load(websocket: WebSocket, flow_id: str, msg_id: str,
                            params: dict) -> None:
     fm = get_flow_manager()
     target_flow_id = params.get("flow_id", flow_id)
+    if not target_flow_id:
+        raise ValueError("Missing required param: flow_id")
     flow = fm.load_flow(target_flow_id)
     flow_data = fm._serialize_flow(flow)
+    # 订阅该 flow 的编辑事件
+    await _subscribe_flow(websocket, target_flow_id)
     await _send_ack(websocket, flow_id, msg_id)
     await _send(websocket, target_flow_id, "event", "flow.loaded", {"flow": flow_data})
 
@@ -298,16 +304,16 @@ async def handle_node_create(websocket: WebSocket, flow_id: str, msg_id: str,
     # 记录操作历史
     try:
         hm = get_history_manager()
-        hm.record_operation(flow_id, "node.create",
+        await hm.record_operation(flow_id, "node.create",
                             forward={"node_id": node_id, "node_type": node_type, "position": position},
                             reverse={"node_id": node_id})
     except RuntimeError:
         pass  # history manager not yet initialized
 
     await _send_ack(websocket, flow_id, msg_id)
-    await _send(websocket, flow_id, "event", "node.created", {
-        "node": fm._serialize_flow(fm.load_flow(flow_id))["nodes"][-1],
-    })
+    node_data = fm._serialize_flow(fm.load_flow(flow_id))["nodes"][-1]
+    await _send(websocket, flow_id, "event", "node.created", {"node": node_data})
+    await _broadcast_to_flow(flow_id, "node.created", {"node": node_data})
     await _push_history_state(websocket, flow_id)
 
 
@@ -328,14 +334,14 @@ async def handle_node_delete(websocket: WebSocket, flow_id: str, msg_id: str,
 
     try:
         hm = get_history_manager()
-        hm.record_operation(flow_id, "node.delete",
+        await hm.record_operation(flow_id, "node.delete",
                             forward={"node_id": node_id},
                             reverse={"node": saved_node})
     except RuntimeError:
         pass
 
     await _send_ack(websocket, flow_id, msg_id)
-    await _send(websocket, flow_id, "event", "node.deleted", {"node_id": node_id})
+    await _broadcast_to_flow(flow_id, "node.deleted", {"node_id": node_id})
     await _push_history_state(websocket, flow_id)
 
 
@@ -355,14 +361,14 @@ async def handle_node_move(websocket: WebSocket, flow_id: str, msg_id: str,
 
     try:
         hm = get_history_manager()
-        hm.record_operation(flow_id, "node.move",
+        await hm.record_operation(flow_id, "node.move",
                             forward={"node_id": node_id, "position": pos},
                             reverse={"node_id": node_id, "position": old_pos})
     except RuntimeError:
         pass
 
     await _send_ack(websocket, flow_id, msg_id)
-    await _send(websocket, flow_id, "event", "node.moved", {
+    await _broadcast_to_flow(flow_id, "node.moved", {
         "node_id": node_id, "position": pos,
     })
     await _push_history_state(websocket, flow_id)
@@ -384,14 +390,14 @@ async def handle_node_update_config(websocket: WebSocket, flow_id: str, msg_id: 
 
     try:
         hm = get_history_manager()
-        hm.record_operation(flow_id, "node.update_config",
+        await hm.record_operation(flow_id, "node.update_config",
                             forward={"node_id": node_id, "config": new_config},
                             reverse={"node_id": node_id, "config": old_config})
     except RuntimeError:
         pass
 
     await _send_ack(websocket, flow_id, msg_id)
-    await _send(websocket, flow_id, "event", "node.config_updated", {
+    await _broadcast_to_flow(flow_id, "node.config_updated", {
         "node_id": node_id,
         "config": fm.load_flow(flow_id).get_node(node_id).config,
     })
@@ -414,7 +420,7 @@ async def handle_node_rename(websocket: WebSocket, flow_id: str, msg_id: str,
 
     try:
         hm = get_history_manager()
-        hm.record_operation(flow_id, "node.rename",
+        await hm.record_operation(flow_id, "node.rename",
                             forward={"node_id": node_id, "name": new_name},
                             reverse={"node_id": node_id, "name": old_name})
     except RuntimeError:
@@ -460,16 +466,15 @@ async def handle_connection_create(websocket: WebSocket, flow_id: str, msg_id: s
 
     try:
         hm = get_history_manager()
-        hm.record_operation(flow_id, "connection.create",
+        await hm.record_operation(flow_id, "connection.create",
                             forward={"connection_id": conn_id},
                             reverse={"connection_id": conn_id})
     except RuntimeError:
         pass
 
     await _send_ack(websocket, flow_id, msg_id)
-    await _send(websocket, flow_id, "event", "connection.created", {
-        "connection": fm._serialize_flow(fm.load_flow(flow_id))["connections"][-1],
-    })
+    conn_data = fm._serialize_flow(fm.load_flow(flow_id))["connections"][-1]
+    await _broadcast_to_flow(flow_id, "connection.created", {"connection": conn_data})
     await _push_history_state(websocket, flow_id)
 
 
@@ -489,14 +494,14 @@ async def handle_connection_delete(websocket: WebSocket, flow_id: str, msg_id: s
 
     try:
         hm = get_history_manager()
-        hm.record_operation(flow_id, "connection.delete",
+        await hm.record_operation(flow_id, "connection.delete",
                             forward={"connection_id": conn_id},
                             reverse={"connection": saved_conn})
     except RuntimeError:
         pass
 
     await _send_ack(websocket, flow_id, msg_id)
-    await _send(websocket, flow_id, "event", "connection.deleted", {"connection_id": conn_id})
+    await _broadcast_to_flow(flow_id, "connection.deleted", {"connection_id": conn_id})
     await _push_history_state(websocket, flow_id)
 
 
@@ -505,7 +510,7 @@ async def handle_connection_delete(websocket: WebSocket, flow_id: str, msg_id: s
 async def handle_undo(websocket: WebSocket, flow_id: str, msg_id: str,
                       params: dict) -> None:
     hm = get_history_manager()
-    op = hm.undo(flow_id)
+    op = await hm.undo(flow_id)
 
     if not op:
         await _send_ack(websocket, flow_id, msg_id)
@@ -525,7 +530,7 @@ async def handle_undo(websocket: WebSocket, flow_id: str, msg_id: str,
 async def handle_redo(websocket: WebSocket, flow_id: str, msg_id: str,
                       params: dict) -> None:
     hm = get_history_manager()
-    op = hm.redo(flow_id)
+    op = await hm.redo(flow_id)
 
     if not op:
         await _send_ack(websocket, flow_id, msg_id)
@@ -815,6 +820,37 @@ async def broadcast_connection_status_to_all() -> None:
     for ws in list(_connected_clients.values()):
         try:
             await _send(ws, "_system", "event", "connection.status", {"services": services})
+        except Exception:
+            pass
+
+
+# ── Flow 订阅管理 ─────────────────────────────────────────────
+
+async def _subscribe_flow(websocket: WebSocket, flow_id: str) -> None:
+    """订阅某个 flow 的编辑事件"""
+    if flow_id not in _flow_subscribers:
+        _flow_subscribers[flow_id] = set()
+    _flow_subscribers[flow_id].add(websocket)
+
+
+def _unsubscribe_flow(websocket: WebSocket, flow_id: str) -> None:
+    """取消订阅"""
+    if flow_id in _flow_subscribers:
+        _flow_subscribers[flow_id].discard(websocket)
+
+
+def _unsubscribe_all_flows(websocket: WebSocket) -> None:
+    """取消所有订阅（连接断开时调用）"""
+    for flow_id in list(_flow_subscribers.keys()):
+        _flow_subscribers[flow_id].discard(websocket)
+
+
+async def _broadcast_to_flow(flow_id: str, action: str, params: dict) -> None:
+    """向订阅了某个 flow 的所有连接广播事件（并发编辑）"""
+    subs = _flow_subscribers.get(flow_id, set())
+    for ws in list(subs):
+        try:
+            await _send(ws, flow_id, "event", action, params)
         except Exception:
             pass
 
