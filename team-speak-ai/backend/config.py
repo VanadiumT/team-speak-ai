@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     stt_provider: str = "sensevoice"
 
     # SenseVoice (本地 STT - 阿里开源)
-    sensevoice_model: str = "C:/Users/Fan/.cache/modelscope/models/iic/SenseVoiceSmall"
+    sensevoice_model: str = "iic/SenseVoiceSmall"
     sensevoice_device: str = "cpu"  # 默认使用 CPU
 
     # Whisper (本地 STT)

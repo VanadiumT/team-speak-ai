@@ -88,7 +88,11 @@ class OCRNode(BaseNode):
             await emit.emit_node_update(context.node_id, "error", f"OCR 识别失败: {e}")
             return NodeOutput({"text": "", "error": str(e)})
 
-        logger.info(f"OCR result [{result.provider}] from {filename}: {len(result.text)} chars, {len(result.lines)} lines")
+        logger.info("=" * 50)
+        logger.info(f"OCR 识别结果 [{result.provider}] | 文件: {filename}")
+        logger.info(f"行数: {len(result.lines)} | 总字符: {len(result.text)}")
+        logger.info(f"识别文字:\n{result.text}")
+        logger.info("=" * 50)
 
         await emit.emit_node_update(
             context.node_id,

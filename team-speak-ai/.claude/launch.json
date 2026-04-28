@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Teamspeak Bot (Java)",
+      "runtimeExecutable": "java",
+      "runtimeArgs": ["-jar", "../team-speak-bot/target/teamspeak-voice-bridge-1.0.0-SNAPSHOT.jar"],
+      "port": 8080
+    },
+    {
+      "name": "Backend (FastAPI)",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["backend/main.py"],
+      "port": 8000
+    },
+    {
+      "name": "Frontend (Vite)",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "frontend"],
+      "port": 5173
+    }
+  ]
+}
