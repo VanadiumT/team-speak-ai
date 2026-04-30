@@ -76,7 +76,7 @@ defineEmits(['select-flow', 'toggle', 'menu', 'action'])
   display: flex; align-items: center;
   padding-right: 4px;
 }
-.sb-sub-row { padding-left: 16px; }
+.sb-sub-row { padding-left: 8px; }
 
 .sb-section-btn {
   display: flex; align-items: center; gap: 10px;
@@ -87,7 +87,7 @@ defineEmits(['select-flow', 'toggle', 'menu', 'action'])
   transition: background 0.15s;
 }
 .sb-section-btn:hover { background: rgba(15, 23, 42, 0.5); }
-.sb-sub-btn { padding-left: 28px; font-size: 13px; }
+.sb-sub-btn { padding-left: 20px; font-size: 13px; }
 
 .sb-section-icon { font-size: 18px; color: #94a3b8; }
 .sb-section-name { flex: 1; }
@@ -99,7 +99,7 @@ defineEmits(['select-flow', 'toggle', 'menu', 'action'])
 .sb-chevron.expanded { transform: rotate(90deg); }
 
 .sb-children { padding-left: 4px; }
-.sb-sub { padding-left: 24px; }
+.sb-sub { padding-left: 16px; }
 
 .sb-item-row {
   display: flex; align-items: center;
@@ -108,7 +108,7 @@ defineEmits(['select-flow', 'toggle', 'menu', 'action'])
 
 .sb-item {
   display: flex; align-items: center; gap: 8px;
-  flex: 1; padding: 8px 12px 8px 24px;
+  flex: 1; padding: 8px 12px 8px 32px;
   background: none; border: none;
   color: #94a3b8; font-size: 11px;
   cursor: pointer; text-align: left;
