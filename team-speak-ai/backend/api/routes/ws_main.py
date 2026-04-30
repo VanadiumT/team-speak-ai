@@ -293,6 +293,7 @@ async def handle_flow_create(websocket: WebSocket, flow_id: str, msg_id: str,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         },
     })
+    await _broadcast_sidebar_tree(websocket)
 
 
 async def handle_flow_delete(websocket: WebSocket, flow_id: str, msg_id: str,
@@ -302,6 +303,7 @@ async def handle_flow_delete(websocket: WebSocket, flow_id: str, msg_id: str,
     fm.delete_flow(target_flow_id)
     await _send_ack(websocket, flow_id, msg_id)
     await _send(websocket, flow_id, "event", "flow.deleted", {"flow_id": target_flow_id})
+    await _broadcast_sidebar_tree(websocket)
 
 
 async def handle_flow_rename(websocket: WebSocket, flow_id: str, msg_id: str,
@@ -316,6 +318,104 @@ async def handle_flow_rename(websocket: WebSocket, flow_id: str, msg_id: str,
     await _send(websocket, flow_id, "event", "flow.renamed", {
         "flow_id": target_flow_id, "name": new_name,
     })
+    await _broadcast_sidebar_tree(websocket)
+
+
+async def handle_flow_copy(websocket: WebSocket, flow_id: str, msg_id: str,
+                           params: dict) -> None:
+    fm = get_flow_manager()
+    target_flow_id = params.get("flow_id", flow_id)
+    new_name = params.get("name")
+    flow = fm.copy_flow(target_flow_id, new_name)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _send(websocket, flow_id, "event", "flow.copied", {
+        "flow": {
+            "id": flow.id, "name": flow.name, "group": flow.group,
+            "icon": flow.icon, "node_count": len(flow.nodes),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        },
+    })
+    await _broadcast_sidebar_tree(websocket)
+
+
+async def handle_flow_update_group(websocket: WebSocket, flow_id: str, msg_id: str,
+                                    params: dict) -> None:
+    """移动流程到指定分组"""
+    fm = get_flow_manager()
+    target_flow_id = params.get("flow_id", flow_id)
+    group = params.get("group", "")
+    flow = fm.update_flow_group(target_flow_id, group)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _send(websocket, flow_id, "event", "flow.group_updated", {
+        "flow_id": target_flow_id, "group": group,
+    })
+    await _broadcast_sidebar_tree(websocket)
+
+
+async def handle_flow_rename_group(websocket: WebSocket, flow_id: str, msg_id: str,
+                                    params: dict) -> None:
+    """重命名分组（批量更新所有相关 flow 的 group 字段）"""
+    fm = get_flow_manager()
+    old_path = params["old_path"]
+    new_path = params["new_path"]
+    count = fm.rename_group(old_path, new_path)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _send(websocket, flow_id, "event", "flow.group_renamed", {
+        "old_path": old_path, "new_path": new_path, "count": count,
+    })
+    await _broadcast_sidebar_tree(websocket)
+
+
+async def handle_flow_delete_group(websocket: WebSocket, flow_id: str, msg_id: str,
+                                    params: dict) -> None:
+    """删除分组及其所有流程"""
+    fm = get_flow_manager()
+    group_path = params["group_path"]
+    count = fm.delete_flows_in_group(group_path)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _send(websocket, flow_id, "event", "flow.group_deleted", {
+        "group_path": group_path, "count": count,
+    })
+    await _broadcast_sidebar_tree(websocket)
+
+
+async def handle_flow_update(websocket: WebSocket, flow_id: str, msg_id: str,
+                              params: dict) -> None:
+    """更新流程级设置（画布尺寸等）"""
+    fm = get_flow_manager()
+    if "canvas" in params:
+        fm.update_flow_canvas(flow_id, params["canvas"])
+    await _send_ack(websocket, flow_id, msg_id)
+
+
+async def handle_flow_export(websocket: WebSocket, flow_id: str, msg_id: str,
+                              params: dict) -> None:
+    """导出流程为 JSON"""
+    fm = get_flow_manager()
+    target_flow_id = params.get("flow_id", flow_id)
+    data = fm.export_flow(target_flow_id)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _send(websocket, flow_id, "event", "flow.exported", {
+        "flow_id": target_flow_id, "data": data,
+    })
+
+
+async def handle_flow_import(websocket: WebSocket, flow_id: str, msg_id: str,
+                              params: dict) -> None:
+    """导入流程 JSON"""
+    fm = get_flow_manager()
+    data = params["data"]
+    overwrite = params.get("overwrite", False)
+    flow = fm.import_flow(data, overwrite)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _send(websocket, flow_id, "event", "flow.imported", {
+        "flow": {
+            "id": flow.id, "name": flow.name, "group": flow.group,
+            "icon": flow.icon, "node_count": len(flow.nodes),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        },
+    })
+    await _broadcast_sidebar_tree(websocket)
 
 
 # ── Phase 2: 节点 CRUD ────────────────────────────────────────
@@ -800,6 +900,13 @@ _COMMAND_HANDLERS = {
     "flow.create": handle_flow_create,
     "flow.delete": handle_flow_delete,
     "flow.rename": handle_flow_rename,
+    "flow.copy": handle_flow_copy,
+    "flow.update_group": handle_flow_update_group,
+    "flow.rename_group": handle_flow_rename_group,
+    "flow.delete_group": handle_flow_delete_group,
+    "flow.update": handle_flow_update,
+    "flow.export": handle_flow_export,
+    "flow.import": handle_flow_import,
     # Phase 2: 节点 CRUD
     "node.create": handle_node_create,
     "node.delete": handle_node_delete,
@@ -940,6 +1047,14 @@ def _register_engine_broadcast():
 
 
 _register_engine_broadcast()
+
+
+async def _broadcast_sidebar_tree(websocket: WebSocket) -> None:
+    """刷新当前连接的侧栏树"""
+    fm = get_flow_manager()
+    tree = fm.build_sidebar_tree()
+    tree_data = [_sidebar_node_to_dict(n) for n in tree]
+    await _send(websocket, "_system", "event", "sidebar.tree", {"groups": tree_data})
 
 
 async def _push_history_state(websocket: WebSocket, flow_id: str) -> None:

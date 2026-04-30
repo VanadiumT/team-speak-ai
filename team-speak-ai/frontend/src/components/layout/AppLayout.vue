@@ -53,66 +53,23 @@
                   <span class="sb-section-name">{{ section.name }}</span>
                   <span class="material-symbols-outlined sb-chevron" :class="{ expanded: isExpanded(section.id) }">chevron_right</span>
                 </button>
-                <button class="sb-more-btn" @click.stop="openSidebarMenu($event, section)" title="更多操作">
+                <button v-if="section.id === 'workflows'" class="sb-more-btn" @click.stop="openSidebarMenu($event, section)" title="更多操作">
                   <span class="material-symbols-outlined">more_vert</span>
                 </button>
               </div>
               <div class="sb-children" v-if="isExpanded(section.id)">
-                <template v-for="child in section.children" :key="child.id">
-                  <!-- Flow ref -->
-                  <div v-if="child.type === 'flow_ref'" class="sb-item-row">
-                    <button
-                      class="sb-item"
-                      :class="{ active: activeFlowId === child.flow_id }"
-                      @click="selectFlow(child.flow_id)"
-                    >
-                      <span class="material-symbols-outlined sb-item-icon">{{ child.icon }}</span>
-                      <span class="sb-item-name">{{ child.name }}</span>
-                      <span class="sb-run" v-if="isFlowRunning(child.flow_id)"></span>
-                    </button>
-                    <button class="sb-more-btn sb-more-sm" @click.stop="openSidebarMenu($event, child)" title="更多操作">
-                      <span class="material-symbols-outlined">more_vert</span>
-                    </button>
-                  </div>
-                  <!-- Sub group -->
-                  <div v-else-if="child.type === 'group'" class="sb-subgroup">
-                    <div class="sb-section-row sb-sub-row">
-                      <button class="sb-section-btn sb-sub-btn" @click="toggleSection(child.id)">
-                        <span class="material-symbols-outlined sb-section-icon">{{ child.icon }}</span>
-                        <span class="sb-section-name">{{ child.name }}</span>
-                        <span class="material-symbols-outlined sb-chevron" :class="{ expanded: isExpanded(child.id) }">chevron_right</span>
-                      </button>
-                      <button class="sb-more-btn sb-more-sm" @click.stop="openSidebarMenu($event, child)" title="更多操作">
-                        <span class="material-symbols-outlined">more_vert</span>
-                      </button>
-                    </div>
-                    <div class="sb-children sb-sub" v-if="isExpanded(child.id)">
-                      <div v-for="gc in child.children" :key="gc.id" class="sb-item-row">
-                        <button
-                          v-if="gc.type === 'flow_ref'"
-                          class="sb-item"
-                          :class="{ active: activeFlowId === gc.flow_id }"
-                          @click="selectFlow(gc.flow_id)"
-                        >
-                          <span class="material-symbols-outlined sb-item-icon">{{ gc.icon }}</span>
-                          <span class="sb-item-name">{{ gc.name }}</span>
-                        </button>
-                        <button class="sb-more-btn sb-more-sm" @click.stop="openSidebarMenu($event, gc)" title="更多操作">
-                          <span class="material-symbols-outlined">more_vert</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                  <!-- Action -->
-                  <button
-                    v-else-if="child.type === 'action'"
-                    class="sb-item sb-action"
-                    @click="onAction(child.id)"
-                  >
-                    <span class="material-symbols-outlined sb-item-icon">{{ child.icon }}</span>
-                    <span class="sb-item-name">{{ child.name }}</span>
-                  </button>
-                </template>
+                <SidebarTreeNode
+                  v-for="child in section.children"
+                  :key="child.id"
+                  :node="child"
+                  :activeFlowId="activeFlowId"
+                  :expandedSet="expandedSections"
+                  :runningFlowIds="runningFlowIds"
+                  @select-flow="selectFlow"
+                  @toggle="toggleSection"
+                  @menu="openSidebarMenu"
+                  @action="onAction"
+                />
               </div>
             </div>
           </template>
@@ -219,6 +176,45 @@
       </div>
     </div>
 
+    <!-- ═══ Rename Modal ═══ -->
+    <div v-if="renameDialog.visible" class="modal-overlay" @click.self="renameDialog.visible = false">
+      <div class="modal-card modal-sm">
+        <h3 class="modal-title"><span class="material-symbols-outlined">edit</span> {{ renameDialog.title }}</h3>
+        <div class="modal-field">
+          <label>名称 <span class="required">*</span></label>
+          <input v-model="renameDialog.value" class="modal-input" maxlength="50" @keyup.enter="doRename" />
+        </div>
+        <div class="modal-actions">
+          <button class="btn-cancel" @click="renameDialog.visible = false">取消</button>
+          <button class="btn-save" @click="doRename" :disabled="!renameDialog.value.trim()">确认</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ Move-to-Group Modal ═══ -->
+    <div v-if="moveDialog.visible" class="modal-overlay" @click.self="moveDialog.visible = false">
+      <div class="modal-card modal-sm">
+        <h3 class="modal-title"><span class="material-symbols-outlined">drive_file_move</span> 移动到分组</h3>
+        <div class="modal-field">
+          <label>目标分组 <span class="hint">（用 / 分隔层级，如 游戏/暗区）</span></label>
+          <input v-model="moveDialog.groupPath" class="modal-input" placeholder="留空为默认分组" maxlength="100" @keyup.enter="doMoveToGroup" />
+        </div>
+        <div class="modal-field" v-if="availableGroups.length > 0">
+          <label>现有分组</label>
+          <div class="group-list">
+            <button v-for="g in availableGroups" :key="g" class="group-chip" @click="moveDialog.groupPath = g">{{ g || '(默认)' }}</button>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn-cancel" @click="moveDialog.visible = false">取消</button>
+          <button class="btn-save" @click="doMoveToGroup">移动</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ Hidden file input for import ═══ -->
+    <input ref="importInput" type="file" accept=".json" style="display:none" @change="onImportFile" />
+
     <!-- ═══ Footer ═══ -->
     <BottomStatusBar />
   </div>
@@ -236,6 +232,7 @@ import DynamicPanel from '@/components/panels/DynamicPanel.vue'
 import NodePalette from '@/components/pipeline/NodePalette.vue'
 import BottomStatusBar from '@/components/layout/BottomStatusBar.vue'
 import NotificationBell from '@/components/layout/NotificationBell.vue'
+import SidebarTreeNode from '@/components/layout/SidebarTreeNode.vue'
 
 const editorStore = useEditorStore()
 const executionStore = useExecutionStore()
@@ -248,9 +245,34 @@ const activeFlowId = ref(null)
 const selectedNode = ref(null)
 const showFlowCreate = ref(false)
 const showCanvasSettings = ref(false)
+const importInput = ref(null)
 
 const flowForm = reactive({ name: '', group: '', icon: 'sports_esports' })
 const canvasForm = reactive({ width: 1700, height: 1250 })
+
+// Rename dialog
+const renameDialog = reactive({ visible: false, title: '', value: '', flowId: '', groupPath: '' })
+
+// Move-to-group dialog
+const moveDialog = reactive({ visible: false, groupPath: '', flowId: '' })
+
+// Collect all available group paths from sidebar tree
+const availableGroups = computed(() => {
+  const paths = new Set()
+  function walk(nodes, prefix = '') {
+    for (const n of nodes) {
+      if (n.type === 'group') {
+        const path = prefix ? prefix + '/' + n.name : n.name
+        paths.add(path)
+        if (n.children) walk(n.children, path)
+      }
+    }
+  }
+  for (const s of sidebarTree.value) {
+    if (s.children) walk(s.children)
+  }
+  return [...paths].sort()
+})
 
 const iconOptions = [
   'sports_esports', 'account_tree', 'smart_toy', 'psychology', 'mic',
@@ -298,9 +320,13 @@ async function selectFlow(flowId) {
   }
 }
 
-function isFlowRunning(flowId) {
-  return executionStore.status === 'running' && editorStore.flowId === flowId
-}
+const runningFlowIds = computed(() => {
+  const ids = new Set()
+  if (executionStore.status === 'running' && editorStore.flowId) {
+    ids.add(editorStore.flowId)
+  }
+  return ids
+})
 
 function onAction(actionId) {
   if (actionId === 'action:new_flow') {
@@ -342,6 +368,12 @@ watch(() => editorStore.flowMeta.canvas, (c) => {
 // ── Sidebar ⋮ context menu ──
 const contextMenu = reactive({ visible: false, x: 0, y: 0, items: [] })
 
+/** Get full group path for a node. Group IDs are already full paths like "游戏/暗区". */
+function getGroupPath(node) {
+  if (node.type === 'group') return node.id || ''
+  return ''
+}
+
 function openSidebarMenu(event, node) {
   contextMenu.x = event.clientX
   contextMenu.y = event.clientY
@@ -354,29 +386,32 @@ function openSidebarMenu(event, node) {
     contextMenu.items = [
       { icon: 'add', label: '新建工作流', action: () => { showFlowCreate.value = true } },
       { separator: true },
-      { icon: 'download', label: '导出全部', action: () => {} },
-      { icon: 'upload', label: '导入工作流', action: () => {} },
+      { icon: 'download', label: '导出全部', action: () => { /* TODO: batch export */ } },
+      { icon: 'upload', label: '导入工作流', action: () => { importInput.value?.click() } },
     ]
   } else if (isGroup) {
+    const groupPath = getGroupPath(node)
     contextMenu.items = [
-      { icon: 'add', label: '新建子分组', action: () => {} },
-      { icon: 'edit', label: '重命名', action: () => {} },
+      { icon: 'add', label: '新建子分组', action: () => { flowForm.group = groupPath ? groupPath + '/' : ''; showFlowCreate.value = true } },
+      { icon: 'edit', label: '重命名', action: () => { renameDialog.title = '重命名分组'; renameDialog.value = node.name; renameDialog.flowId = null; renameDialog.groupPath = groupPath; renameDialog.visible = true } },
       { separator: true },
-      { icon: 'download', label: '导出该分组', action: () => {} },
-      { icon: 'upload', label: '导入到该分组', action: () => {} },
+      { icon: 'download', label: '导出该分组', action: () => { /* TODO: group export */ } },
+      { icon: 'upload', label: '导入到该分组', action: () => { flowForm.group = groupPath || ''; importInput.value?.click() } },
+      { separator: true },
+      { icon: 'delete', label: '删除分组', danger: true, action: () => { if (confirm(`确认删除「${node.name}」分组及其所有工作流？此操作不可恢复。`)) { pipelineSocket.sendCommand('_system', 'flow.delete_group', { group_path: groupPath }) } } },
     ]
   } else if (isFlow) {
     const flowId = node.flow_id
     contextMenu.items = [
-      { icon: 'edit', label: '重命名', action: () => {} },
-      { icon: 'content_copy', label: '复制', action: () => {} },
+      { icon: 'edit', label: '重命名', action: () => { renameDialog.title = '重命名工作流'; renameDialog.value = node.name; renameDialog.flowId = flowId; renameDialog.groupPath = null; renameDialog.visible = true } },
+      { icon: 'content_copy', label: '复制', action: () => { if (confirm('确认复制此工作流？')) { pipelineSocket.sendCommand(flowId, 'flow.copy', {}).catch(() => {}) } } },
       { separator: true },
-      { icon: 'download', label: '导出', action: () => {} },
-      { icon: 'upload', label: '导入替换', action: () => {} },
+      { icon: 'download', label: '导出', action: () => { pipelineSocket.sendCommand(flowId, 'flow.export', {}).then(() => {}).catch(() => {}) } },
+      { icon: 'upload', label: '导入替换', action: () => { /* handled via import */ } },
       { separator: true },
-      { icon: 'drive_file_move', label: '移动到分组', action: () => {} },
+      { icon: 'drive_file_move', label: '移动到分组', action: () => { moveDialog.flowId = flowId; moveDialog.groupPath = ''; moveDialog.visible = true } },
       { separator: true },
-      { icon: 'block', label: '禁用', action: () => {} },
+      { icon: 'block', label: '禁用', action: () => { /* TODO: disable flow */ } },
       { separator: true },
       { icon: 'delete', label: '删除', danger: true, action: () => { if (confirm('确认删除此工作流？此操作不可恢复。')) { pipelineSocket.sendCommand(flowId, 'flow.delete', {}) } } },
     ]
@@ -388,6 +423,60 @@ function closeContextMenu() {
   contextMenu.visible = false
 }
 
+// ── Rename ──
+async function doRename() {
+  const val = renameDialog.value.trim()
+  if (!val) return
+  if (renameDialog.flowId) {
+    // Rename a single flow
+    pipelineSocket.sendCommand(renameDialog.flowId, 'flow.rename', { name: val }).catch(() => {})
+  } else if (renameDialog.groupPath) {
+    // Rename a group: compute new path by replacing last segment
+    const parts = renameDialog.groupPath.split('/')
+    parts[parts.length - 1] = val
+    const newPath = parts.join('/')
+    pipelineSocket.sendCommand('_system', 'flow.rename_group', {
+      old_path: renameDialog.groupPath,
+      new_path: newPath,
+    }).catch(() => {})
+  }
+  renameDialog.visible = false
+}
+
+// ── Move to group ──
+async function doMoveToGroup() {
+  if (!moveDialog.flowId) return
+  pipelineSocket.sendCommand(moveDialog.flowId, 'flow.update_group', {
+    group: moveDialog.groupPath.trim(),
+  }).catch(() => {})
+  moveDialog.visible = false
+}
+
+// ── Import ──
+async function onImportFile(e) {
+  const file = e.target.files?.[0]
+  if (!file) return
+  try {
+    const text = await file.text()
+    const data = JSON.parse(text)
+    pipelineSocket.sendCommand('_system', 'flow.import', { data, overwrite: false }).catch(() => {})
+  } catch (err) {
+    alert('导入失败：无效的 JSON 文件')
+    console.error('Import error:', err)
+  }
+  // Reset so same file can be re-selected
+  if (importInput.value) importInput.value.value = ''
+}
+
+// ── Export handler (listen for flow.exported event) ──
+function downloadFlowJSON(data, filename) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = filename; a.click()
+  URL.revokeObjectURL(url)
+}
+
 // ── Lifecycle ──
 onMounted(() => {
   editorStore.init()
@@ -397,21 +486,99 @@ onMounted(() => {
 
   // 以下 handler 只在 onMounted 注册一次，不会被重复添加
   pipelineSocket.on('sidebar.tree', ({ groups }) => {
+    // Save currently expanded IDs so we can restore them
+    const prevExpanded = new Set(expandedSections.value)
     sidebarTree.value = groups || []
-    groups?.forEach((s) => {
-      expandedSections.value.add(s.id)
-      s.children?.forEach((c) => {
-        if (c.type === 'group') expandedSections.value.add(c.id)
-      })
-    })
+
+    // Recursively expand all sections and groups so no flow is hidden after tree refresh.
+    // Clear stale IDs first, then expand everything in the new tree.
+    const fresh = new Set()
+    function expandAll(nodes) {
+      for (const n of nodes) {
+        if (n.type === 'section' || n.type === 'group') {
+          fresh.add(n.id)
+          if (n.children) expandAll(n.children)
+        }
+      }
+    }
+    expandAll(groups || [])
+    expandedSections.value = fresh
   })
 
   pipelineSocket.on('flow.loaded', ({ flow }) => {
     editorStore.onFlowLoaded({ flow })
   })
 
-  pipelineSocket.on('flow.created', () => {
-    pipelineSocket.sendCommand('_system', 'flow.list', {})
+  let _pendingAutoOpen = null
+  pipelineSocket.on('flow.created', ({ flow }) => {
+    // Auto-open the newly created flow
+    if (flow && flow.id) {
+      _pendingAutoOpen = flow.id
+      // sidebar.tree will arrive next; select after a short delay to let tree render
+      setTimeout(() => {
+        if (_pendingAutoOpen === flow.id) {
+          selectFlow(flow.id)
+          _pendingAutoOpen = null
+        }
+      }, 100)
+    }
+  })
+
+  pipelineSocket.on('flow.deleted', ({ flow_id }) => {
+    if (activeFlowId.value === flow_id) {
+      activeFlowId.value = null
+      selectedNode.value = null
+      editorStore.exitEditMode()
+    }
+  })
+
+  pipelineSocket.on('flow.copied', ({ flow }) => {
+    // Auto-open the copied flow
+    if (flow && flow.id) {
+      _pendingAutoOpen = flow.id
+      setTimeout(() => {
+        if (_pendingAutoOpen === flow.id) {
+          selectFlow(flow.id)
+          _pendingAutoOpen = null
+        }
+      }, 100)
+    }
+  })
+
+  pipelineSocket.on('flow.renamed', ({ flow_id, name }) => {
+    if (editorStore.flowId === flow_id) {
+      editorStore.flowMeta.name = name
+    }
+  })
+
+  pipelineSocket.on('flow.group_updated', ({ flow_id, group }) => {
+    if (editorStore.flowId === flow_id) {
+      editorStore.flowMeta.group = group
+    }
+  })
+
+  pipelineSocket.on('flow.group_renamed', () => {
+    // sidebar.tree will be broadcast by backend
+  })
+
+  pipelineSocket.on('flow.group_deleted', ({ group_path }) => {
+    // Clear active flow if it was in the deleted group
+    const flowGroup = editorStore.flowMeta.group || ''
+    if (flowGroup === group_path || flowGroup.startsWith(group_path + '/')) {
+      activeFlowId.value = null
+      selectedNode.value = null
+      editorStore.exitEditMode()
+      editorStore.nodes = []
+      editorStore.connections = []
+    }
+  })
+
+  pipelineSocket.on('flow.exported', ({ flow_id, data }) => {
+    downloadFlowJSON(data, `${flow_id}.json`)
+  })
+
+  pipelineSocket.on('flow.imported', () => {
+    // sidebar.tree will be broadcast by backend
   })
 
   // Load recent flows
@@ -741,4 +908,21 @@ onUnmounted(() => {
 .icon-option:hover { background: rgba(173, 199, 255, 0.05); border-color: #adc7ff; }
 .icon-option.selected { background: rgba(173, 199, 255, 0.12); border-color: #adc7ff; color: #adc7ff; }
 .icon-option .material-symbols-outlined { font-size: 18px; }
+
+/* ── Move-to-group ── */
+.group-list {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  margin-top: 6px;
+}
+.group-chip {
+  padding: 4px 10px; border-radius: 12px;
+  background: rgba(173, 199, 255, 0.08);
+  border: 1px solid rgba(173, 199, 255, 0.2);
+  color: #adc7ff; font-size: 11px; cursor: pointer;
+  transition: all 0.15s;
+}
+.group-chip:hover {
+  background: rgba(173, 199, 255, 0.16);
+  border-color: rgba(173, 199, 255, 0.4);
+}
 </style>

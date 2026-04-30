@@ -102,6 +102,114 @@ class FlowManager:
         self.save_flow(flow)
         return flow
 
+    def copy_flow(self, flow_id: str, new_name: str = None) -> PipelineDefinition:
+        """复制流程，生成新 ID"""
+        original = self.load_flow(flow_id)
+        base_name = new_name or f"{original.name} (副本)"
+        new_id = self._slugify(base_name)
+        filepath = self._flow_path(new_id)
+        if filepath.exists():
+            i = 2
+            while True:
+                new_id = f"{self._slugify(base_name)}_{i}"
+                filepath = self._flow_path(new_id)
+                if not filepath.exists():
+                    break
+                i += 1
+        copy_flow = PipelineDefinition(
+            id=new_id,
+            name=base_name,
+            group=original.group,
+            icon=original.icon,
+            skill_prompt=original.skill_prompt,
+            canvas=dict(original.canvas) if original.canvas else {"width": 1700, "height": 1250},
+            nodes=[NodeDefinition(
+                id=n.id, type=n.type, name=n.name,
+                position=dict(n.position), config=dict(n.config),
+                input_mappings=list(n.input_mappings),
+                trigger=n.trigger, listener=n.listener,
+            ) for n in original.nodes],
+            connections=[ConnectionDef(
+                id=c.id, from_node=c.from_node, from_port=c.from_port,
+                to_node=c.to_node, to_port=c.to_port, type=c.type,
+            ) for c in original.connections],
+        )
+        self.save_flow(copy_flow)
+        return copy_flow
+
+    def update_flow_group(self, flow_id: str, group: str) -> PipelineDefinition:
+        """更新流程的分组"""
+        flow = self.load_flow(flow_id)
+        flow.group = group
+        self.save_flow(flow)
+        return flow
+
+    def update_flow_canvas(self, flow_id: str, canvas: dict) -> PipelineDefinition:
+        """更新流程的画布尺寸"""
+        flow = self.load_flow(flow_id)
+        flow.canvas = canvas
+        self.save_flow(flow)
+        return flow
+
+    def rename_group(self, old_group_path: str, new_group_path: str) -> int:
+        """重命名分组：批量更新所有匹配路径的 flow 的 group 字段。返回更新数量。"""
+        count = 0
+        for filepath in sorted(self.flows_dir.glob("*.json")):
+            try:
+                flow = self.load_flow(filepath.stem)
+                if flow.group == old_group_path or flow.group.startswith(old_group_path + "/"):
+                    # 替换路径前缀
+                    if flow.group == old_group_path:
+                        flow.group = new_group_path
+                    else:
+                        flow.group = new_group_path + flow.group[len(old_group_path):]
+                    self.save_flow(flow)
+                    count += 1
+            except Exception:
+                pass
+        return count
+
+    def delete_flows_in_group(self, group_path: str) -> int:
+        """删除分组下所有流程。返回删除数量。"""
+        count = 0
+        for filepath in sorted(self.flows_dir.glob("*.json")):
+            try:
+                flow = self.load_flow(filepath.stem)
+                if flow.group == group_path or flow.group.startswith(group_path + "/"):
+                    filepath.unlink()
+                    count += 1
+            except Exception:
+                pass
+        return count
+
+    def export_flow(self, flow_id: str) -> dict:
+        """导出流程为 JSON 字典"""
+        flow = self.load_flow(flow_id)
+        return self._serialize_flow(flow)
+
+    def import_flow(self, data: dict, overwrite: bool = False) -> PipelineDefinition:
+        """从 JSON 字典导入流程"""
+        flow_id = data.get("id", "")
+        if not flow_id:
+            raise ValueError("Missing flow id in import data")
+        filepath = self._flow_path(flow_id)
+        if filepath.exists() and not overwrite:
+            # 生成新 ID
+            i = 2
+            while True:
+                flow_id = f"{self._slugify(data.get('name', flow_id))}_{i}"
+                filepath = self._flow_path(flow_id)
+                if not filepath.exists():
+                    break
+                i += 1
+        elif filepath.exists() and overwrite:
+            # 备份原文件
+            pass
+        flow = self._deserialize_flow(data)
+        flow.id = flow_id
+        self.save_flow(flow)
+        return flow
+
     # ── 节点 CRUD ──────────────────────────────────────────────
 
     async def add_node(self, flow_id: str, node: NodeDefinition) -> PipelineDefinition:
@@ -308,7 +416,7 @@ class FlowManager:
         ]
 
     def _insert_into_tree(self, siblings: list[SidebarNode], parts: list[str],
-                          flows: list[FlowSummary]) -> None:
+                          flows: list[FlowSummary], prefix: str = "") -> None:
         if not parts:
             for f in flows:
                 siblings.append(SidebarNode(
@@ -318,15 +426,16 @@ class FlowManager:
             return
 
         current_part = parts[0]
+        full_path = prefix + "/" + current_part if prefix else current_part
         existing = next((c for c in siblings if c.name == current_part and c.type == "group"), None)
         if not existing:
             existing = SidebarNode(
-                id=self._slugify(current_part), name=current_part,
+                id=full_path, name=current_part,
                 icon="folder", type="group",
             )
             siblings.append(existing)
 
-        self._insert_into_tree(existing.children, parts[1:], flows)
+        self._insert_into_tree(existing.children, parts[1:], flows, full_path)
 
     # ── 内部工具方法 ────────────────────────────────────────────
 
