@@ -57,5 +57,9 @@ dist/
 logs/
 *.log.*
 
+# MCP cache
+.playwright-mcp/
+.claude/worktrees/
+
 # OS
 Thumbs.db
