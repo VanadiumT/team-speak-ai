@@ -118,14 +118,28 @@ const iconColor = computed(() => {
 const inputPorts = computed(() => nodeTypeDef.value?.ports?.inputs || [])
 const outputPorts = computed(() => nodeTypeDef.value?.ports?.outputs || [])
 
+// 端口 top 值参考原型 pipeline-prototype_flow.html
 function defaultPortTop(portId, side) {
-  const ports = side === 'input' ? inputPorts.value : outputPorts.value
-  const count = ports.length
-  if (count <= 1) return 92 // middle
-  const headerH = 40, nodeH = 140, padding = 12
-  const area = nodeH - headerH - padding
-  const idx = ports.findIndex((p) => p.id === portId)
-  return Math.round(headerH + area * (idx + 1) / (count + 1))
+  // 每个节点类型的端口位置固定，与原型一致
+  const nodeType = props.node.type
+  if (side === 'input') {
+    if (nodeType === 'context_build') {
+      const idx = inputPorts.value.findIndex((p) => p.id === portId)
+      return [30, 58, 86, 114][idx] || 30
+    }
+    return 30
+  }
+  // output side
+  if (nodeType === 'input_image') {
+    const idx = outputPorts.value.findIndex((p) => p.id === portId)
+    return [30, 72][idx] || 30
+  }
+  if (nodeType === 'stt_history') {
+    const idx = outputPorts.value.findIndex((p) => p.id === portId)
+    return [72, 110][idx] || 55
+  }
+  if (nodeType === 'ts_output') return 72
+  return 55
 }
 
 function getPortState(portId) {

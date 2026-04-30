@@ -20,7 +20,6 @@
       </template>
     </div>
 
-    <!-- Ghost (teleported to body) -->
     <Teleport to="body">
       <div v-if="ghost" class="drag-ghost" :style="{ left: ghost.x + 'px', top: ghost.y + 'px' }">
         <span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle;margin-right:4px;">{{ ghost.icon }}</span>
@@ -58,19 +57,31 @@ const categorizedTypes = computed(() => {
   })
   const result = {}
   categoryOrder.forEach((c) => { if (cats[c]) result[c] = cats[c] })
-  // add any unknown
   Object.keys(cats).forEach((c) => { if (!result[c]) result[c] = cats[c] })
   return result
 })
 
+let dragActive = false
+
 function startDrag(e, nodeType) {
+  if (dragActive) return  // 防止重复拖拽
   const nt = nodeType
+  const startX = e.clientX
+  const startY = e.clientY
+  let hasMoved = false
+
   ghost.value = { x: e.clientX, y: e.clientY, icon: nt.icon, name: nt.name }
 
   const onMove = (ev) => {
+    const dx = Math.abs(ev.clientX - startX)
+    const dy = Math.abs(ev.clientY - startY)
+    if (dx > 3 || dy > 3) {
+      hasMoved = true
+      dragActive = true
+    }
+    if (!hasMoved) return
     ghost.value = { ...ghost.value, x: ev.clientX, y: ev.clientY }
 
-    // Check if over canvas
     const canvas = document.querySelector('.pipeline-canvas')
     if (canvas) {
       const rect = canvas.getBoundingClientRect()
@@ -82,20 +93,22 @@ function startDrag(e, nodeType) {
   }
 
   const onUp = (ev) => {
-    // Check if dropped on canvas
-    const canvas = document.querySelector('.pipeline-canvas')
-    if (canvas) {
-      const rect = canvas.getBoundingClientRect()
-      const over = ev.clientX > rect.left && ev.clientX < rect.right &&
-                   ev.clientY > rect.top && ev.clientY < rect.bottom
-      if (over) {
-        const zoom = 1.0 // Stored in PipelineView, approximate
-        const x = Math.max(0, (ev.clientX - rect.left + canvas.scrollLeft) - 110)
-        const y = Math.max(0, (ev.clientY - rect.top + canvas.scrollTop) - 20)
-        editorStore.createNode(nt.type, { x: Math.round(x), y: Math.round(y) })
+    if (hasMoved) {
+      const canvas = document.querySelector('.pipeline-canvas')
+      if (canvas) {
+        const rect = canvas.getBoundingClientRect()
+        const over = ev.clientX > rect.left && ev.clientX < rect.right &&
+                     ev.clientY > rect.top && ev.clientY < rect.bottom
+        if (over) {
+          const zoom = 1.0
+          const x = Math.max(32, (ev.clientX - rect.left + canvas.scrollLeft) / zoom - 110)
+          const y = Math.max(32, (ev.clientY - rect.top + canvas.scrollTop) / zoom - 20)
+          editorStore.createNode(nt.type, { x: Math.round(x), y: Math.round(y) })
+        }
       }
     }
     ghost.value = null
+    dragActive = false
     window.removeEventListener('mousemove', onMove)
     window.removeEventListener('mouseup', onUp)
   }
@@ -155,7 +168,6 @@ function startDrag(e, nodeType) {
 .np-name { flex: 1; font-size: 11px; color: #c1c6d7; }
 .np-ports { font-size: 9px; color: rgba(139, 144, 160, 0.4); font-family: 'Space Grotesk', sans-serif; }
 
-/* Ghost */
 .drag-ghost {
   position: fixed; pointer-events: none; z-index: 9999;
   transform: translate(-50%, -50%);

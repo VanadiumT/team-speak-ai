@@ -6,20 +6,16 @@
     @wheel.prevent="onWheel"
     @mousedown="onPanStart"
   >
-    <!-- Grid background -->
     <div class="canvas-grid" :style="gridStyle"></div>
 
-    <!-- Main content (zoomable) -->
     <div
       id="canvas-content"
       class="canvas-content flow-view"
       :data-flow="activeFlowView"
       :style="contentStyle"
     >
-      <!-- SVG connections -->
       <svg
         class="connections-svg"
-        ref="svgRef"
         :width="canvasWidth"
         :height="canvasHeight"
       >
@@ -36,7 +32,7 @@
         </defs>
 
         <!-- Connection lines -->
-        <g v-for="conn in connectionPaths" :key="conn.id" :class="conn.groupClass" class="conn-hit-area" @click="onConnectionClick(conn)">
+        <g v-for="conn in connectionPaths" :key="conn.id" :class="conn.groupClass" class="conn-hit-area" @click.stop="onConnectionClick(conn)">
           <path
             :d="conn.path"
             fill="none"
@@ -70,17 +66,17 @@
           >{{ conn.label }}</text>
         </g>
 
-        <!-- Temporary line while dragging -->
+        <!-- Temp drag line (canvas coordinates) -->
         <line
           v-if="dragLine.visible"
           :x1="dragLine.x1" :y1="dragLine.y1"
           :x2="dragLine.x2" :y2="dragLine.y2"
           stroke="#4a8eff" stroke-width="2.5"
           stroke-dasharray="8 4"
+          style="pointer-events:none"
         />
       </svg>
 
-      <!-- Node cards -->
       <NodeCard
         v-for="node in editorStore.nodes"
         :key="node.id"
@@ -92,14 +88,12 @@
         @port-click="onPortClick"
       />
 
-      <!-- Empty hint -->
       <div v-if="editorStore.nodes.length === 0" class="empty-hint">
         <span class="material-symbols-outlined">dashboard_customize</span>
         <p>从左侧<span class="hl">工具面板</span>拖拽节点到画布</p>
       </div>
     </div>
 
-    <!-- Zoom controls -->
     <CanvasControls
       :zoom="currentZoom"
       :activeView="activeFlowView"
@@ -117,15 +111,13 @@ import CanvasControls from './CanvasControls.vue'
 import { useEditorStore } from '@/stores/editor.js'
 import { useExecutionStore } from '@/stores/execution.js'
 
-const props = defineProps({
-  editMode: { type: Boolean, default: false },
-})
+const props = defineProps({ editMode: { type: Boolean, default: false } })
+const emit = defineEmits(['select-node'])
 
 const editorStore = useEditorStore()
 const executionStore = useExecutionStore()
 
 const canvasRef = ref(null)
-const svgRef = ref(null)
 const currentZoom = ref(1.0)
 const activeFlowView = ref('all')
 const isPanning = ref(false)
@@ -151,56 +143,38 @@ const gridStyle = computed(() => ({
   backgroundSize: (32 * currentZoom.value) + 'px ' + (32 * currentZoom.value) + 'px',
 }))
 
-function zoomBy(delta) {
-  currentZoom.value = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, currentZoom.value + delta))
-}
+function zoomBy(delta) { currentZoom.value = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, currentZoom.value + delta)) }
+function resetZoom() { currentZoom.value = 1.0; if (canvasRef.value) { canvasRef.value.scrollLeft = 0; canvasRef.value.scrollTop = 0 } }
+function onWheel(e) { zoomBy(e.deltaY > 0 ? -0.05 : 0.05) }
 
-function resetZoom() {
-  currentZoom.value = 1.0
-  if (canvasRef.value) {
-    canvasRef.value.scrollLeft = 0
-    canvasRef.value.scrollTop = 0
-  }
-}
-
-function onWheel(e) {
-  const delta = e.deltaY > 0 ? -0.05 : 0.05
-  zoomBy(delta)
-}
-
-// ── Pan (middle mouse button) ──
+// ── Pan ──
 let panStart = { x: 0, y: 0, scrollX: 0, scrollY: 0 }
-
 function onPanStart(e) {
   if (e.button !== 1) return
-  e.preventDefault()
-  isPanning.value = true
-  panStart = {
-    x: e.clientX, y: e.clientY,
-    scrollX: canvasRef.value.scrollLeft,
-    scrollY: canvasRef.value.scrollTop,
-  }
+  e.preventDefault(); isPanning.value = true
+  panStart = { x: e.clientX, y: e.clientY, scrollX: canvasRef.value.scrollLeft, scrollY: canvasRef.value.scrollTop }
 }
-
 function onPanMove(e) {
   if (!isPanning.value) return
   canvasRef.value.scrollLeft = panStart.scrollX - (e.clientX - panStart.x)
   canvasRef.value.scrollTop = panStart.scrollY - (e.clientY - panStart.y)
 }
+function onPanEnd() { isPanning.value = false }
 
-function onPanEnd() {
-  isPanning.value = false
+onMounted(() => { window.addEventListener('mousemove', onPanMove); window.addEventListener('mouseup', onPanEnd) })
+onUnmounted(() => { window.removeEventListener('mousemove', onPanMove); window.removeEventListener('mouseup', onPanEnd) })
+
+// ── Convert screen coords to canvas coords ──
+function screenToCanvas(clientX, clientY) {
+  const content = canvasRef.value?.querySelector('#canvas-content')
+  if (!content) return { x: clientX, y: clientY }
+  const rect = content.getBoundingClientRect()
+  const zoom = currentZoom.value
+  return {
+    x: (clientX - rect.left) / zoom,
+    y: (clientY - rect.top) / zoom,
+  }
 }
-
-onMounted(() => {
-  window.addEventListener('mousemove', onPanMove)
-  window.addEventListener('mouseup', onPanEnd)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('mousemove', onPanMove)
-  window.removeEventListener('mouseup', onPanEnd)
-})
 
 // ── Connection lines ──
 const connectionPaths = computed(() => {
@@ -209,31 +183,23 @@ const connectionPaths = computed(() => {
     const toNode = editorStore.nodes.find((n) => n.id === conn.to_node)
     if (!fromNode || !toNode) return null
 
-    const fromPos = getPortPosition(fromNode, conn.from_port, 'output')
-    const toPos = getPortPosition(toNode, conn.to_port, 'input')
+    const fromPos = getPortCanvasPos(fromNode, conn.from_port, 'output')
+    const toPos = getPortCanvasPos(toNode, conn.to_port, 'input')
     if (!fromPos || !toPos) return null
 
-    const fromX = fromPos.x
-    const fromY = fromPos.y
-    const toX = toPos.x
-    const toY = toPos.y
+    const fromX = fromPos.x; const fromY = fromPos.y
+    const toX = toPos.x; const toY = toPos.y
 
     const fromStatus = executionStore.getNodeStatus(conn.from_node).status
     const isActive = fromStatus === 'processing'
 
-    let stroke, width, dash, marker, lineClass, opacity, groupClass
+    let stroke, dash, marker, lineClass, groupClass
     if (conn.type === 'event') {
-      stroke = '#adc7ff'; width = 2.5; dash = 'none'
-      marker = 'url(#arrowEvent)'; lineClass = ''; opacity = 1
-      groupClass = 'event-only'
+      stroke = '#adc7ff'; dash = 'none'; marker = 'url(#arrowEvent)'; lineClass = ''; groupClass = 'event-only'
     } else if (isActive) {
-      stroke = '#4a8eff'; width = 2.5; dash = 'none'
-      marker = 'url(#arrowDataFlow)'; lineClass = 'flow-line'; opacity = 1
-      groupClass = 'data-only'
+      stroke = '#4a8eff'; dash = 'none'; marker = 'url(#arrowDataFlow)'; lineClass = 'flow-line'; groupClass = 'data-only'
     } else {
-      stroke = '#4edea3'; width = 2.5; dash = '10 5'
-      marker = 'url(#arrowData)'; lineClass = 'flow-line'; opacity = 1
-      groupClass = 'data-only'
+      stroke = '#4edea3'; dash = '10 5'; marker = 'url(#arrowData)'; lineClass = 'flow-line'; groupClass = 'data-only'
     }
 
     const yDiff = Math.abs(fromY - toY)
@@ -251,10 +217,8 @@ const connectionPaths = computed(() => {
     const label = getPortLabel(fromNode, conn.from_port)
 
     return {
-      id: conn.id, path,
-      stroke, width, dash, marker, lineClass, opacity, groupClass,
-      label, labelX, labelY,
-      labelW: label ? label.length * 7 : 0,
+      id: conn.id, path, stroke, width: 2.5, dash, marker, lineClass, opacity: 1, groupClass,
+      label, labelX, labelY, labelW: label ? label.length * 7 : 0,
       selected: selectedConnId.value === conn.id,
     }
   }).filter(Boolean)
@@ -262,32 +226,39 @@ const connectionPaths = computed(() => {
 
 function onConnectionClick(conn) {
   if (!props.editMode) return
-  if (selectedConnId.value === conn.id) {
-    selectedConnId.value = null
-  } else {
-    selectedConnId.value = conn.id
-  }
+  selectedConnId.value = selectedConnId.value === conn.id ? null : conn.id
+}
+
+// ── Port click ──
+function onPortClick({ nodeId, portId, event }) {
+  if (!props.editMode) return
+  selectedConnId.value = null
 }
 
 // ── Port-to-port connection drag ──
 const dragLine = ref({ visible: false, x1: 0, y1: 0, x2: 0, y2: 0 })
+let connDragFrom = { nodeId: '', portId: '' }
 
 function onPortDragStart({ nodeId, portId, event }) {
   if (!props.editMode) return
-  const portEl = event.target.closest('.io-port')
+  const portEl = event.target?.closest('.io-port')
   if (!portEl || portEl.classList.contains('input-port')) return
 
-  const rect = portEl.getBoundingClientRect()
-  const x1 = rect.left + 7
-  const y1 = rect.top + 7
-  dragLine.value = { visible: true, x1, y1, x2: event.clientX, y2: event.clientY }
+  const node = editorStore.nodes.find((n) => n.id === nodeId)
+  if (!node) return
 
-  const fromNode = nodeId
-  const fromPort = portId
+  // Start position in canvas coords
+  const pos = getPortCanvasPos(node, portId, 'output')
+  if (!pos) return
 
-  function onMove(ev) {
-    dragLine.value = { ...dragLine.value, x2: ev.clientX, y2: ev.clientY }
-    // Highlight compatible ports
+  connDragFrom = { nodeId, portId }
+  const startCanvas = screenToCanvas(event.clientX, event.clientY)
+  dragLine.value = { visible: true, x1: pos.x, y1: pos.y, x2: startCanvas.x, y2: startCanvas.y }
+
+  const onMove = (ev) => {
+    const pt = screenToCanvas(ev.clientX, ev.clientY)
+    dragLine.value = { visible: true, x1: pos.x, y1: pos.y, x2: pt.x, y2: pt.y }
+
     document.querySelectorAll('.io-port.input-port').forEach((el) => {
       const r = el.getBoundingClientRect()
       const over = ev.clientX > r.left - 6 && ev.clientX < r.right + 6 &&
@@ -295,27 +266,23 @@ function onPortDragStart({ nodeId, portId, event }) {
       el.classList.remove('drag-over', 'valid', 'invalid')
       if (over) {
         el.classList.add('drag-over')
-        const toNode = el.dataset.nodeId
-        const toPort = el.dataset.portId
-        const valid = editorStore.arePortsCompatible(fromNode, fromPort, toNode, toPort)
-        el.classList.add(valid ? 'valid' : 'invalid')
+        const toN = el.dataset.nodeId; const toP = el.dataset.portId
+        el.classList.add(editorStore.arePortsCompatible(nodeId, portId, toN, toP) ? 'valid' : 'invalid')
       }
     })
   }
 
-  function onUp(ev) {
+  const onUp = (ev) => {
     dragLine.value.visible = false
     document.querySelectorAll('.io-port').forEach((el) => el.classList.remove('drag-over', 'valid', 'invalid'))
-    // Check target
+
     const target = document.elementFromPoint(ev.clientX, ev.clientY)
-    const portEl = target?.closest('.io-port.input-port')
-    if (portEl) {
-      const toNode = portEl.dataset.nodeId
-      const toPort = portEl.dataset.portId
-      if (toNode && toPort && editorStore.arePortsCompatible(fromNode, fromPort, toNode, toPort)) {
-        const fromPortDef = getPortDef(fromNode, fromPort, 'output')
-        const type = fromPortDef?.data_type === 'event' ? 'event' : 'data'
-        editorStore.createConnection(fromNode, fromPort, toNode, toPort, type)
+    const tgtPort = target?.closest('.io-port.input-port')
+    if (tgtPort) {
+      const toN = tgtPort.dataset.nodeId; const toP = tgtPort.dataset.portId
+      if (toN && toP && toN !== nodeId && editorStore.arePortsCompatible(nodeId, portId, toN, toP)) {
+        const pf = editorStore.getPortDef(node, portId, 'output')
+        editorStore.createConnection(nodeId, portId, toN, toP, pf?.data_type === 'event' ? 'event' : 'data')
       }
     }
     window.removeEventListener('mousemove', onMove)
@@ -326,53 +293,28 @@ function onPortDragStart({ nodeId, portId, event }) {
   window.addEventListener('mouseup', onUp)
 }
 
-// ── Port click ──
-function onPortClick({ nodeId, portId, event }) {
-  if (!props.editMode) return
-  // Deselect connection
-  selectedConnId.value = null
-}
-
-function getPortDef(nodeId, portId, side) {
-  const node = editorStore.nodes.find((n) => n.id === nodeId)
-  if (!node) return null
-  return editorStore.getPortDef(node, portId, side)
-}
-
-// ── Helpers ──
-function getPortPosition(node, portId, side) {
-  const typeDef = editorStore.getNodeTypeDef(node.type)
-  if (!typeDef) return null
-  const ports = side === 'input' ? typeDef.ports?.inputs : typeDef.ports?.outputs
+// ── Port helpers ──
+function getPortCanvasPos(node, portId, side) {
+  const tdef = editorStore.getNodeTypeDef(node.type)
+  if (!tdef) return null
+  const ports = side === 'input' ? tdef.ports?.inputs : tdef.ports?.outputs
   const port = ports?.find((p) => p.id === portId)
-  if (!port) {
-    return {
-      x: side === 'input' ? node.position.x : node.position.x + getNodeWidth(node),
-      y: node.position.y + 30,
-    }
-  }
-  const nodeW = getNodeWidth(node)
+  const top = port?.position?.top || 30
+  const w = getNodeWidth(node)
   return {
-    x: side === 'input' ? node.position.x : node.position.x + nodeW,
-    y: node.position.y + port.position.top + 7,
+    x: side === 'input' ? node.position.x : node.position.x + w,
+    y: node.position.y + top + 7,
   }
 }
 
 function getPortLabel(node, portId) {
-  const typeDef = editorStore.getNodeTypeDef(node.type)
-  if (!typeDef) return ''
-  const port = typeDef.ports?.outputs?.find((p) => p.id === portId)
-  return port?.label || ''
+  const tdef = editorStore.getNodeTypeDef(node.type)
+  return tdef?.ports?.outputs?.find((p) => p.id === portId)?.label || ''
 }
 
 function getNodeWidth(node) {
-  const widthMap = {
-    input_image: 220, ocr: 220, tts: 220, ts_output: 220, ts_input: 220,
-    context_build: 250, llm: 250,
-    stt_history: 280,
-    stt_listen: 320,
-  }
-  return widthMap[node.type] || 250
+  const m = { input_image: 220, ocr: 220, tts: 220, ts_output: 220, ts_input: 220, context_build: 250, llm: 250, stt_history: 280, stt_listen: 320 }
+  return m[node.type] || 250
 }
 
 function getStepNumber(nodeId) {
@@ -380,97 +322,43 @@ function getStepNumber(nodeId) {
   return idx >= 0 ? String.fromCharCode(0x2460 + idx) : ''
 }
 
+function onNodeSelect(node) { emit('select-node', node.id) }
+
 // ── Keyboard ──
 function onKeydown(e) {
   if (!props.editMode) return
-  if (e.key === 'Delete' || e.key === 'Backspace') {
-    if (selectedConnId.value) {
-      e.preventDefault()
-      editorStore.deleteConnection(selectedConnId.value)
-      selectedConnId.value = null
-    }
+  if ((e.key === 'Delete' || e.key === 'Backspace') && selectedConnId.value) {
+    e.preventDefault(); editorStore.deleteConnection(selectedConnId.value); selectedConnId.value = null
   }
-  if (e.key === 'Escape') {
-    selectedConnId.value = null
-  }
+  if (e.key === 'Escape') selectedConnId.value = null
 }
-
-onMounted(() => {
-  window.addEventListener('keydown', onKeydown)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('keydown', onKeydown)
-})
-
-// ── Zoom storage for palette ──
-// Expose current zoom as a global for NodePalette coordinate conversion
-const emit = defineEmits(['select-node'])
-
-function onNodeSelect(node) {
-  emit('select-node', node.id)
-}
+onMounted(() => { window.addEventListener('keydown', onKeydown) })
+onUnmounted(() => { window.removeEventListener('keydown', onKeydown) })
 </script>
 
 <style scoped>
 .pipeline-canvas {
-  flex: 1;
-  margin-left: 256px;
-  position: relative;
-  background: #121417;
-  overflow: auto;
-  height: calc(100vh - 88px);
+  flex: 1; margin-left: 256px; position: relative;
+  background: #121417; overflow: auto; height: calc(100vh - 88px);
 }
-
-.pipeline-canvas.is-panning {
-  cursor: grabbing;
-  user-select: none;
-}
-
+.pipeline-canvas.is-panning { cursor: grabbing; user-select: none; }
 .canvas-grid {
-  position: absolute;
-  top: 0; left: 0; z-index: 0;
-  pointer-events: none; opacity: 0.15;
-  background-image:
-    linear-gradient(#31353d 1px, transparent 1px),
-    linear-gradient(90deg, #31353d 1px, transparent 1px);
+  position: absolute; top: 0; left: 0; z-index: 0; pointer-events: none; opacity: 0.15;
+  background-image: linear-gradient(#31353d 1px, transparent 1px), linear-gradient(90deg, #31353d 1px, transparent 1px);
 }
-
-.canvas-content {
-  position: relative;
-  z-index: 10;
-  padding: 32px;
-  transition: transform 0.2s ease;
-}
-
+.canvas-content { position: relative; z-index: 10; padding: 32px; transition: transform 0.2s ease; }
 .flow-view[data-flow="data"] .event-only { display: none !important; }
 .flow-view[data-flow="event"] .data-only { display: none !important; }
-
-.connections-svg {
-  position: absolute;
-  top: 0; left: 0;
-  pointer-events: none;
-  z-index: 0;
-}
-
-.flow-line {
-  animation: flowDash 1.0s linear infinite;
-}
-
-@keyframes flowDash {
-  to { stroke-dashoffset: -24; }
-}
-
+.connections-svg { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 0; }
+.flow-line { animation: flowDash 1.0s linear infinite; }
+@keyframes flowDash { to { stroke-dashoffset: -24; } }
 .empty-hint {
-  position: absolute; inset: 0;
-  display: flex; flex-direction: column;
-  align-items: center; justify-content: center;
-  pointer-events: none; z-index: 20;
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; pointer-events: none; z-index: 20;
   color: rgba(139, 144, 160, 0.4); font-size: 13px; gap: 8px;
 }
 .empty-hint .material-symbols-outlined { font-size: 48px; opacity: 0.3; }
 .empty-hint .hl { color: rgba(173, 199, 255, 0.5); }
-
 .pipeline-canvas::-webkit-scrollbar { width: 6px; height: 6px; }
 .pipeline-canvas::-webkit-scrollbar-track { background: #10131b; }
 .pipeline-canvas::-webkit-scrollbar-thumb { background: #31353d; border-radius: 3px; }
