@@ -253,6 +253,63 @@ class FlowManager:
         self.save_flow(flow)
         return flow
 
+    def export_group_zip(self, group_path: str) -> bytes:
+        """导出分组下所有流程为 ZIP 字节流"""
+        import io
+        import zipfile
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for filepath in sorted(self.flows_dir.glob("*.json")):
+                try:
+                    flow = self.load_flow(filepath.stem)
+                    if flow.group == group_path or flow.group.startswith(group_path + "/"):
+                        data = self._serialize_flow(flow)
+                        zf.writestr(f"{flow.id}.json",
+                                    json.dumps(data, ensure_ascii=False, indent=2))
+                except Exception:
+                    pass
+        return buf.getvalue()
+
+    def export_all_zip(self) -> bytes:
+        """导出所有流程为 ZIP 字节流"""
+        import io
+        import zipfile
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for filepath in sorted(self.flows_dir.glob("*.json")):
+                try:
+                    flow = self.load_flow(filepath.stem)
+                    data = self._serialize_flow(flow)
+                    zf.writestr(f"{flow.id}.json",
+                                json.dumps(data, ensure_ascii=False, indent=2))
+                except Exception:
+                    pass
+        return buf.getvalue()
+
+    def import_group_zip(self, zip_data: bytes, target_group: str = "",
+                         overwrite: bool = False) -> list[PipelineDefinition]:
+        """从 ZIP 字节流导入流程到指定分组"""
+        import io
+        import zipfile
+
+        imported = []
+        with zipfile.ZipFile(io.BytesIO(zip_data), "r") as zf:
+            for name in zf.namelist():
+                if not name.endswith(".json"):
+                    continue
+                try:
+                    data = json.loads(zf.read(name).decode("utf-8"))
+                    # 如果指定了目标分组，覆盖 group 字段
+                    if target_group:
+                        data["group"] = target_group
+                    flow = self.import_flow(data, overwrite=overwrite)
+                    imported.append(flow)
+                except Exception as e:
+                    logger.warning(f"Failed to import {name} from zip: {e}")
+        return imported
+
     # ── 节点 CRUD ──────────────────────────────────────────────
 
     async def add_node(self, flow_id: str, node: NodeDefinition) -> PipelineDefinition:
@@ -440,14 +497,6 @@ class FlowManager:
         for group_key in sorted(groups.keys()):
             parts = [p.strip() for p in group_key.split("/") if p.strip()]
             self._insert_into_tree(children, parts, groups[group_key])
-
-        # 添加"新建工作流"和"新建目录"快捷入口到工作流分区的 children 末尾
-        children.append(SidebarNode(
-            id="action:new_flow", name="新建工作流", icon="add", type="action",
-        ))
-        children.append(SidebarNode(
-            id="action:new_group", name="新建目录", icon="create_new_folder", type="action",
-        ))
 
         return [
             SidebarNode(

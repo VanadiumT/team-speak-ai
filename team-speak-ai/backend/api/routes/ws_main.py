@@ -470,6 +470,45 @@ async def handle_flow_import(websocket: WebSocket, flow_id: str, msg_id: str,
     await _broadcast_sidebar_tree(websocket)
 
 
+async def handle_flow_export_group(websocket: WebSocket, flow_id: str, msg_id: str,
+                                    params: dict) -> None:
+    """导出分组为 ZIP（base64 编码）"""
+    import base64
+    fm = get_flow_manager()
+    group_path = params.get("group_path", "")
+    if group_path:
+        zip_bytes = fm.export_group_zip(group_path)
+        filename = group_path.replace("/", "_") + ".zip"
+    else:
+        zip_bytes = fm.export_all_zip()
+        filename = "all_workflows.zip"
+    b64 = base64.b64encode(zip_bytes).decode("ascii")
+    await _send_ack(websocket, flow_id, msg_id)
+    await _send(websocket, flow_id, "event", "flow.group_exported", {
+        "group_path": group_path or "",
+        "filename": filename,
+        "data_b64": b64,
+    })
+
+
+async def handle_flow_import_group(websocket: WebSocket, flow_id: str, msg_id: str,
+                                    params: dict) -> None:
+    """从 ZIP 导入分组（base64 编码）"""
+    import base64
+    fm = get_flow_manager()
+    b64 = params["data_b64"]
+    target_group = params.get("group", "")
+    overwrite = params.get("overwrite", False)
+    zip_bytes = base64.b64decode(b64)
+    imported = fm.import_group_zip(zip_bytes, target_group, overwrite)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _send(websocket, flow_id, "event", "flow.group_imported", {
+        "group": target_group,
+        "count": len(imported),
+    })
+    await _broadcast_sidebar_tree(websocket)
+
+
 # ── Phase 2: 节点 CRUD ────────────────────────────────────────
 
 async def handle_node_create(websocket: WebSocket, flow_id: str, msg_id: str,
@@ -961,6 +1000,8 @@ _COMMAND_HANDLERS = {
     "flow.toggle_enabled": handle_flow_toggle_enabled,
     "flow.export": handle_flow_export,
     "flow.import": handle_flow_import,
+    "flow.export_group": handle_flow_export_group,
+    "flow.import_group": handle_flow_import_group,
     # Phase 2: 节点 CRUD
     "node.create": handle_node_create,
     "node.delete": handle_node_delete,

@@ -217,12 +217,16 @@
       <div class="modal-card modal-sm">
         <h3 class="modal-title"><span class="material-symbols-outlined">create_new_folder</span> 新建目录</h3>
         <div class="modal-field">
-          <label>目录路径 <span class="required">*</span></label>
+          <label>目录路径 <span class="required">*</span> <span class="hint">（用 / 分隔层级，如 游戏/暗区）</span></label>
           <input v-model="groupForm.path" class="modal-input" placeholder="例如：游戏/暗区" maxlength="100" @keyup.enter="doCreateGroup" />
         </div>
         <div class="modal-field">
-          <label>目录名 <span class="hint">（路径最后一段的显示名，默认从路径推断）</span></label>
-          <input v-model="groupForm.displayName" class="modal-input" placeholder="留空则使用路径最后一段" maxlength="50" />
+          <label>图标</label>
+          <div class="icon-grid">
+            <span v-for="ic in folderIconOptions" :key="ic" class="icon-option" :class="{ selected: groupForm.icon === ic }" @click="groupForm.icon = ic">
+              <span class="material-symbols-outlined">{{ ic }}</span>
+            </span>
+          </div>
         </div>
         <div class="modal-actions">
           <button class="btn-cancel" @click="showGroupCreate = false">取消</button>
@@ -231,8 +235,9 @@
       </div>
     </div>
 
-    <!-- ═══ Hidden file input for import ═══ -->
-    <input ref="importInput" type="file" accept=".json" style="display:none" @change="onImportFile" />
+    <!-- ═══ Hidden file inputs for import ═══ -->
+    <input ref="importInput" type="file" accept=".json,.zip" style="display:none" @change="onImportFile" />
+    <input ref="importGroupInput" type="file" accept=".zip" style="display:none" @change="onImportGroupFile" />
 
     <!-- ═══ Footer ═══ -->
     <BottomStatusBar />
@@ -266,9 +271,10 @@ const showFlowCreate = ref(false)
 const showGroupCreate = ref(false)
 const showCanvasSettings = ref(false)
 const importInput = ref(null)
+const importGroupInput = ref(null)
 
 const flowForm = reactive({ name: '', group: '', icon: 'sports_esports' })
-const groupForm = reactive({ path: '', displayName: '' })
+const groupForm = reactive({ path: '', icon: 'folder' })
 const canvasForm = reactive({ width: 1700, height: 1250 })
 
 // Rename dialog
@@ -276,6 +282,9 @@ const renameDialog = reactive({ visible: false, title: '', value: '', flowId: ''
 
 // Move-to-group dialog
 const moveDialog = reactive({ visible: false, groupPath: '', flowId: '' })
+
+// Import group target path
+const importGroupTarget = ref('')
 
 // Collect all available group paths from sidebar tree
 const availableGroups = computed(() => {
@@ -299,6 +308,11 @@ const iconOptions = [
   'sports_esports', 'account_tree', 'smart_toy', 'psychology', 'mic',
   'document_scanner', 'camera', 'headset_mic', 'record_voice_over',
   'terminal', 'hub', 'sensors', 'volume_up', 'history_edu', 'upload_file',
+]
+
+const folderIconOptions = [
+  'folder', 'folder_open', 'create_new_folder', 'topic', 'label',
+  'bookmark', 'bookmarks', 'category', 'inventory_2', 'work',
 ]
 
 // ── Save indicator ──
@@ -350,11 +364,7 @@ const runningFlowIds = computed(() => {
 })
 
 function onAction(actionId) {
-  if (actionId === 'action:new_flow') {
-    showFlowCreate.value = true
-  } else if (actionId === 'action:new_group') {
-    showGroupCreate.value = true
-  }
+  // System settings actions — handled by router or future implementation
 }
 
 function onSelectNode(nodeId) {
@@ -382,7 +392,7 @@ async function doCreateGroup() {
   await pipelineSocket.sendCommand('_system', 'flow.create_group', { group_path: path }).catch(() => {})
   showGroupCreate.value = false
   groupForm.path = ''
-  groupForm.displayName = ''
+  groupForm.icon = 'folder'
 }
 
 // ── Canvas Settings ──
@@ -420,7 +430,7 @@ function openSidebarMenu(event, node) {
       { icon: 'add', label: '新建工作流', action: () => { showFlowCreate.value = true } },
       { icon: 'create_new_folder', label: '新建目录', action: () => { showGroupCreate.value = true } },
       { separator: true },
-      { icon: 'download', label: '导出全部', action: () => { /* TODO: batch export */ } },
+      { icon: 'download', label: '导出全部 (ZIP)', action: () => { pipelineSocket.sendCommand('_system', 'flow.export_group', {}).catch(() => {}) } },
       { icon: 'upload', label: '导入工作流', action: () => { importInput.value?.click() } },
     ]
   } else if (isGroup) {
@@ -430,8 +440,8 @@ function openSidebarMenu(event, node) {
       { icon: 'create_new_folder', label: '新建子目录', action: () => { groupForm.path = groupPath ? groupPath + '/' : ''; showGroupCreate.value = true } },
       { icon: 'edit', label: '重命名', action: () => { renameDialog.title = '重命名分组'; renameDialog.value = node.name; renameDialog.flowId = null; renameDialog.groupPath = groupPath; renameDialog.visible = true } },
       { separator: true },
-      { icon: 'download', label: '导出该分组', action: () => { /* TODO: group export */ } },
-      { icon: 'upload', label: '导入到该分组', action: () => { flowForm.group = groupPath || ''; importInput.value?.click() } },
+      { icon: 'download', label: '导出该分组 (ZIP)', action: () => { pipelineSocket.sendCommand('_system', 'flow.export_group', { group_path: groupPath }).catch(() => {}) } },
+      { icon: 'upload', label: '导入到该分组', action: () => { importGroupTarget.value = groupPath || ''; importGroupInput.value?.click() } },
       { separator: true },
       { icon: 'delete', label: '删除分组', danger: true, action: () => { if (confirm(`确认删除「${node.name}」分组及其所有工作流？此操作不可恢复。`)) { pipelineSocket.sendCommand('_system', 'flow.delete_group', { group_path: groupPath }) } } },
     ]
@@ -488,23 +498,59 @@ async function doMoveToGroup() {
   moveDialog.visible = false
 }
 
-// ── Import ──
+// ── Import / Export ──
 async function onImportFile(e) {
   const file = e.target.files?.[0]
   if (!file) return
   try {
-    const text = await file.text()
-    const data = JSON.parse(text)
-    pipelineSocket.sendCommand('_system', 'flow.import', { data, overwrite: false }).catch(() => {})
+    if (file.name.endsWith('.zip')) {
+      // ZIP import → send as import_group
+      const buf = await file.arrayBuffer()
+      const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)))
+      pipelineSocket.sendCommand('_system', 'flow.import_group', { data_b64: b64, overwrite: false }).catch(() => {})
+    } else {
+      // Single JSON import
+      const text = await file.text()
+      const data = JSON.parse(text)
+      pipelineSocket.sendCommand('_system', 'flow.import', { data, overwrite: false }).catch(() => {})
+    }
   } catch (err) {
-    alert('导入失败：无效的 JSON 文件')
+    alert('导入失败：无效的文件')
     console.error('Import error:', err)
   }
-  // Reset so same file can be re-selected
   if (importInput.value) importInput.value.value = ''
 }
 
-// ── Export handler (listen for flow.exported event) ──
+async function onImportGroupFile(e) {
+  const file = e.target.files?.[0]
+  if (!file) return
+  try {
+    const buf = await file.arrayBuffer()
+    const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)))
+    pipelineSocket.sendCommand('_system', 'flow.import_group', {
+      data_b64: b64,
+      group: importGroupTarget.value,
+      overwrite: false,
+    }).catch(() => {})
+  } catch (err) {
+    alert('导入失败：无效的 ZIP 文件')
+    console.error('Group import error:', err)
+  }
+  if (importGroupInput.value) importGroupInput.value.value = ''
+  importGroupTarget.value = ''
+}
+
+function downloadBlob(base64, filename, mimeType) {
+  const raw = atob(base64)
+  const bytes = new Uint8Array(raw.length)
+  for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i)
+  const blob = new Blob([bytes], { type: mimeType })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = filename; a.click()
+  URL.revokeObjectURL(url)
+}
+
 function downloadFlowJSON(data, filename) {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
@@ -631,7 +677,15 @@ onMounted(() => {
     downloadFlowJSON(data, `${flow_id}.json`)
   })
 
+  pipelineSocket.on('flow.group_exported', ({ filename, data_b64 }) => {
+    downloadBlob(data_b64, filename, 'application/zip')
+  })
+
   pipelineSocket.on('flow.imported', () => {
+    // sidebar.tree will be broadcast by backend
+  })
+
+  pipelineSocket.on('flow.group_imported', ({ count }) => {
     // sidebar.tree will be broadcast by backend
   })
 
