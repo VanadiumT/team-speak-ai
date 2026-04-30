@@ -236,7 +236,7 @@
     </div>
 
     <!-- ═══ Hidden file inputs for import ═══ -->
-    <input ref="importInput" type="file" accept=".json,.zip" style="display:none" @change="onImportFile" />
+    <input ref="importInput" type="file" accept=".json" style="display:none" @change="onImportFile" />
     <input ref="importGroupInput" type="file" accept=".zip" style="display:none" @change="onImportGroupFile" />
 
     <!-- ═══ Footer ═══ -->
@@ -503,19 +503,11 @@ async function onImportFile(e) {
   const file = e.target.files?.[0]
   if (!file) return
   try {
-    if (file.name.endsWith('.zip')) {
-      // ZIP import → send as import_group
-      const buf = await file.arrayBuffer()
-      const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)))
-      pipelineSocket.sendCommand('_system', 'flow.import_group', { data_b64: b64, overwrite: false }).catch(() => {})
-    } else {
-      // Single JSON import
-      const text = await file.text()
-      const data = JSON.parse(text)
-      pipelineSocket.sendCommand('_system', 'flow.import', { data, overwrite: false }).catch(() => {})
-    }
+    const text = await file.text()
+    const data = JSON.parse(text)
+    pipelineSocket.sendCommand('_system', 'flow.import', { data, overwrite: false }).catch(() => {})
   } catch (err) {
-    alert('导入失败：无效的文件')
+    alert('导入失败：无效的 JSON 文件')
     console.error('Import error:', err)
   }
   if (importInput.value) importInput.value.value = ''
