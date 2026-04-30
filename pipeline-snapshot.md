@@ -1,0 +1,426 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - generic [ref=e4]: TeamSpeak AI
+      - generic [ref=e5]: v2.4.0-Stable
+    - button "notifications" [ref=e7] [cursor=pointer]:
+      - generic [ref=e8]: notifications
+  - generic [ref=e9]:
+    - navigation [ref=e10]:
+      - generic [ref=e11]:
+        - button "account_tree 工作流 chevron_right" [ref=e12] [cursor=pointer]:
+          - generic [ref=e13]:
+            - generic [ref=e14]: account_tree
+            - generic [ref=e15]: 工作流
+          - generic [ref=e16]: chevron_right
+        - generic [ref=e18]:
+          - button "folder 游戏 chevron_right" [ref=e19] [cursor=pointer]:
+            - generic [ref=e20]:
+              - generic [ref=e21]: folder
+              - generic [ref=e22]: 游戏
+            - generic [ref=e23]: chevron_right
+          - generic [ref=e25]:
+            - button "folder 暗区 chevron_right" [ref=e26] [cursor=pointer]:
+              - generic [ref=e27]:
+                - generic [ref=e28]: folder
+                - generic [ref=e29]: 暗区
+              - generic [ref=e30]: chevron_right
+            - button "sports_esports 游戏锦标赛" [ref=e33] [cursor=pointer]:
+              - generic [ref=e34]: sports_esports
+              - generic [ref=e35]: 游戏锦标赛
+      - generic [ref=e36]:
+        - button "tune 工作流配置 chevron_right" [ref=e37] [cursor=pointer]:
+          - generic [ref=e38]:
+            - generic [ref=e39]: tune
+            - generic [ref=e40]: 工作流配置
+          - generic [ref=e41]: chevron_right
+        - generic [ref=e43]:
+          - button "add 新建工作流" [ref=e44] [cursor=pointer]:
+            - generic [ref=e45]: add
+            - generic [ref=e46]: 新建工作流
+          - button "account_tree 流程管理" [ref=e47] [cursor=pointer]:
+            - generic [ref=e48]: account_tree
+            - generic [ref=e49]: 流程管理
+      - generic [ref=e50]:
+        - button "settings 系统设置 chevron_right" [ref=e51] [cursor=pointer]:
+          - generic [ref=e52]:
+            - generic [ref=e53]: settings
+            - generic [ref=e54]: 系统设置
+          - generic [ref=e55]: chevron_right
+        - generic [ref=e57]:
+          - button "document_scanner OCR设置" [ref=e58] [cursor=pointer]:
+            - generic [ref=e59]: document_scanner
+            - generic [ref=e60]: OCR设置
+          - button "psychology LLM设置" [ref=e61] [cursor=pointer]:
+            - generic [ref=e62]: psychology
+            - generic [ref=e63]: LLM设置
+          - button "mic STT设置" [ref=e64] [cursor=pointer]:
+            - generic [ref=e65]: mic
+            - generic [ref=e66]: STT设置
+          - button "record_voice_over TTS设置" [ref=e67] [cursor=pointer]:
+            - generic [ref=e68]: record_voice_over
+            - generic [ref=e69]: TTS设置
+      - button "terminal 系统日志" [ref=e70] [cursor=pointer]:
+        - generic [ref=e71]: terminal
+        - generic [ref=e72]: 系统日志
+      - generic [ref=e73]:
+        - generic [ref=e76]: 最近访问
+        - generic [ref=e77]:
+          - generic [ref=e78] [cursor=pointer]:
+            - generic [ref=e79]: sports_score
+            - generic [ref=e80]: 暗区锦标赛
+          - generic [ref=e81] [cursor=pointer]:
+            - generic [ref=e82]: settings_suggest
+            - generic [ref=e83]: OCR 设置
+          - generic [ref=e84] [cursor=pointer]:
+            - generic [ref=e85]: terminal
+            - generic [ref=e86]: 系统日志
+    - main [ref=e87]:
+      - generic [ref=e88]:
+        - img:
+          - generic: ①
+          - generic: ②
+          - generic: ③
+          - generic: ④
+          - generic: ⑤
+          - generic: ⑥
+          - generic: ⑦
+          - generic: ⑧
+          - generic: ⑨
+        - img:
+          - generic: 不含关键词 → 继续监听
+          - generic: 播放完成 → 回到④ 自动循环
+          - generic:
+            - generic: 触发 OCR
+            - generic: 触发 TS 音频
+            - generic: 启动监听
+            - generic: 每句累积
+            - generic: 含关键词 → 触发!
+          - generic:
+            - generic: 音频流
+            - generic: STT 文本
+            - generic: OCR 识别文本
+            - generic: skill_prompt
+            - generic: OCR 文本
+            - generic: stt_history
+            - generic: 对话历史
+            - generic: 组合上下文
+            - generic: 流式文本
+            - generic: 合成音频
+        - generic [ref=e89]:
+          - 'generic "触发: 启动 OCR 识别" [ref=e90] [cursor=pointer]':
+            - generic: 触发OCR
+          - 'generic "触发: 启动 TS 音频输入" [ref=e92] [cursor=pointer]':
+            - generic: 触发音频
+          - generic [ref=e94]:
+            - generic [ref=e95]: upload_file
+            - generic [ref=e96]: ① 上传图片
+          - generic [ref=e97]:
+            - generic [ref=e98]:
+              - generic [ref=e99]: 状态
+              - generic [ref=e100]: 已就绪
+            - generic [ref=e102]:
+              - generic [ref=e103]: 输入格式
+              - generic [ref=e104]:
+                - generic [ref=e105]: PNG
+                - generic [ref=e106]: JPG
+                - generic [ref=e107]: WEBP
+            - generic [ref=e108]:
+              - generic [ref=e109]: 限制
+              - generic [ref=e110]: 最大 10MB
+        - generic [ref=e111]:
+          - 'generic "输入: 触发信号来自 ① 上传" [ref=e112] [cursor=pointer]':
+            - generic: 触发入
+          - 'generic "输出: OCR 识别文本 → ContextBuild" [ref=e114] [cursor=pointer]':
+            - generic: OCR文本
+          - generic [ref=e116]:
+            - generic [ref=e117]: document_scanner
+            - generic [ref=e118]: ② OCR 识别
+          - generic [ref=e119]:
+            - generic [ref=e120]:
+              - generic [ref=e121]: 引擎
+              - generic [ref=e122]: EasyOCR
+            - generic [ref=e123]:
+              - generic [ref=e124]: 语言
+              - generic [ref=e125]:
+                - generic [ref=e126]: 中文
+                - generic [ref=e127]: EN
+            - generic [ref=e128]:
+              - generic [ref=e129]: 输出
+              - generic [ref=e130]: OCR 识别文本
+        - generic [ref=e131]:
+          - 'generic "输入: 触发信号来自 ① 上传" [ref=e132] [cursor=pointer]':
+            - generic: 触发入
+          - 'generic "输出: 触发启动 STT 监听" [ref=e134] [cursor=pointer]':
+            - generic: 启动STT
+          - 'generic "输出: 音频流数据 → STT" [ref=e136] [cursor=pointer]':
+            - generic: 音频流
+          - generic [ref=e138]:
+            - generic [ref=e139]: sensors
+            - generic [ref=e140]: ③ TS 音频输入
+          - generic [ref=e141]:
+            - generic [ref=e142]:
+              - generic [ref=e143]: 连接
+              - generic [ref=e144]: WebSocket
+            - generic [ref=e146]:
+              - generic [ref=e147]: 端点
+              - generic [ref=e148]: ws://localhost:8000/ws/audio
+            - generic [ref=e149]:
+              - generic [ref=e150]: 格式
+              - generic [ref=e151]: 16kHz / 单声道
+        - generic [ref=e152]:
+          - 'generic "输入: 触发信号来自 ③ TS 音频输入" [ref=e153] [cursor=pointer]':
+            - generic: 启动监听
+          - 'generic "输入: 音频流数据来自 ③" [ref=e155] [cursor=pointer]':
+            - generic: 音频流
+          - 'generic "输入: 循环返回 (无关键词 / 播放完成)" [ref=e157] [cursor=pointer]':
+            - generic: 循环返回
+          - 'generic "输出: STT 识别文本 → History" [ref=e159] [cursor=pointer]':
+            - generic: 文本输出
+          - generic [ref=e161]:
+            - generic [ref=e162]: mic_external_on
+            - generic [ref=e163]: ④ STT 持续监听
+          - generic [ref=e165]:
+            - button "配置" [ref=e166] [cursor=pointer]
+            - button "输入/输出" [ref=e167] [cursor=pointer]
+            - button "日志" [ref=e168] [cursor=pointer]
+            - button "全文" [ref=e169] [cursor=pointer]
+          - generic [ref=e170]:
+            - generic [ref=e171]:
+              - generic [ref=e172]: 状态
+              - generic [ref=e173]:
+                - generic [ref=e174]: play_arrow
+                - text: 监听中...
+            - generic [ref=e175]:
+              - generic [ref=e176]: STT 模型
+              - generic [ref=e177]:
+                - generic [ref=e178]: SenseVoice
+                - generic [ref=e179]: Whisper
+                - generic [ref=e180]: MiniMax
+            - generic [ref=e181]:
+              - generic [ref=e182]: 关键词触发
+              - generic [ref=e183]:
+                - generic [ref=e184]: "\"求助\""
+                - generic [ref=e185]: "\"集合\""
+                - generic [ref=e186]: "\"撤退\""
+            - generic [ref=e187]:
+              - generic [ref=e188]: STT History
+              - generic [ref=e189]:
+                - generic [ref=e190]: "\"A点有敌人...\""
+                - generic [ref=e191]: "\"需要医疗包\""
+                - generic [ref=e192]: "\"需要集合\""
+        - generic [ref=e193]:
+          - 'generic "输入: STT 识别文本累积" [ref=e194] [cursor=pointer]':
+            - generic: 文本累积
+          - 'generic "输出: 无关键词 → 循环回 ④" [ref=e196] [cursor=pointer]':
+            - generic: 无关键词→
+          - 'generic "输出: 含关键词 → 触发 ContextBuild" [ref=e198] [cursor=pointer]':
+            - generic: 触发构建
+          - generic [ref=e200]:
+            - generic [ref=e201]: history_edu
+            - generic [ref=e202]: ⑤ STT History · 关键词判断
+          - generic [ref=e203]:
+            - button "累积记录" [ref=e204] [cursor=pointer]
+            - button "设置" [ref=e205] [cursor=pointer]
+          - generic [ref=e206]:
+            - generic [ref=e207]: 对话历史累积
+            - generic [ref=e208]:
+              - generic [ref=e209]: T+0s "A点有敌人..."
+              - generic [ref=e210]: T+3s "需要医疗包"
+              - generic [ref=e211]: T+7s "B点安全"
+              - generic [ref=e212]: T+10s "需要集合" ← 关键词
+        - generic [ref=e213]:
+          - 'generic "输入: skill_prompt" [ref=e214] [cursor=pointer]':
+            - generic: skill
+          - 'generic "输入: OCR 识别文本" [ref=e216] [cursor=pointer]':
+            - generic: OCR
+          - 'generic "输入: STT History" [ref=e218] [cursor=pointer]':
+            - generic: STT
+          - 'generic "输入: 对话历史" [ref=e220] [cursor=pointer]':
+            - generic: 历史
+          - 'generic "输入: 触发信号来自 ⑤ 关键词匹配" [ref=e222] [cursor=pointer]':
+            - generic: 触发入
+          - 'generic "输出: 组合上下文 → LLM" [ref=e224] [cursor=pointer]':
+            - generic: 组合上下文
+          - generic [ref=e226]:
+            - generic [ref=e227]: hub
+            - generic [ref=e228]: ⑥ ContextBuild
+            - generic [ref=e229]: 触发态
+          - generic [ref=e230]:
+            - button "配置" [ref=e231] [cursor=pointer]
+            - button "输入/输出" [ref=e232] [cursor=pointer]
+            - button "日志" [ref=e233] [cursor=pointer]
+          - generic [ref=e234]:
+            - generic [ref=e235]:
+              - generic [ref=e236]: 状态
+              - generic [ref=e237]:
+                - generic [ref=e238]: sync
+                - text: 构建中...
+            - generic [ref=e239]:
+              - generic [ref=e242]: Skill Prompt
+              - generic [ref=e245]: OCR 识别文本
+              - generic [ref=e248]: 完整 stt_history
+              - generic [ref=e251]: 对话历史
+        - generic [ref=e252]:
+          - 'generic "输入: 组合上下文来自 ⑥ ContextBuild" [ref=e253] [cursor=pointer]':
+            - generic: 上下文
+          - 'generic "输出: 流式文本 → TTS" [ref=e255] [cursor=pointer]':
+            - generic: 流式文本
+          - generic [ref=e257]:
+            - generic [ref=e258]: smart_toy
+            - generic [ref=e259]: ⑦ LLM 生成
+            - generic [ref=e260]: 流式
+          - generic [ref=e261]:
+            - button "配置" [ref=e262] [cursor=pointer]
+            - button "输入/输出" [ref=e263] [cursor=pointer]
+            - button "日志" [ref=e264] [cursor=pointer]
+          - generic [ref=e265]:
+            - generic [ref=e266]:
+              - generic [ref=e267]: 模型
+              - generic [ref=e268]: gpt-4-turbo
+            - generic [ref=e269]:
+              - generic [ref=e270]: 系统提示词
+              - generic [ref=e271]: 你是 TeamSpeak 频道监控助手。根据 OCR 信息和语音上下文，生成战术指导。
+            - generic [ref=e272]:
+              - generic [ref=e273]:
+                - generic [ref=e274]: Temperature
+                - generic [ref=e275]: "0.7"
+              - generic [ref=e278]:
+                - generic [ref=e279]: Max Tokens
+                - generic [ref=e280]: "2048"
+            - generic [ref=e283]:
+              - generic [ref=e284]: 已启用技能
+              - generic [ref=e285]:
+                - generic [ref=e286]: 战术分析
+                - generic [ref=e287]: 意图识别
+        - generic [ref=e288]:
+          - 'generic "输入: 流式文本来自 ⑦ LLM" [ref=e289] [cursor=pointer]':
+            - generic: 流式文本
+          - 'generic "输出: 合成音频 → TS 输出" [ref=e291] [cursor=pointer]':
+            - generic: 合成音频
+          - generic [ref=e293]:
+            - generic [ref=e294]: record_voice_over
+            - generic [ref=e295]: ⑧ TTS 合成
+            - generic [ref=e296]: 待命
+          - generic [ref=e297]:
+            - button "配置" [ref=e298] [cursor=pointer]
+            - button "输入/输出" [ref=e299] [cursor=pointer]
+            - button "日志" [ref=e300] [cursor=pointer]
+          - generic [ref=e301]:
+            - generic [ref=e302]:
+              - generic [ref=e303]: 状态
+              - generic [ref=e304]: 待命
+            - generic [ref=e306]:
+              - generic [ref=e307]: TTS 引擎
+              - generic [ref=e308]:
+                - generic [ref=e309]: Edge TTS
+                - generic [ref=e310]: MiniMax
+            - generic [ref=e311]:
+              - generic [ref=e312]: 语音设置
+              - generic [ref=e313]: "音色: zh-CN-YunxiNeural | 语速: 1.0x"
+            - generic [ref=e314]:
+              - generic [ref=e315]: 播放模式
+              - generic [ref=e316]:
+                - generic [ref=e317]: 逐句合成
+                - generic [ref=e318]: 逐段播放
+        - generic [ref=e319]:
+          - 'generic "输入: 合成音频来自 ⑧ TTS" [ref=e320] [cursor=pointer]':
+            - generic: 合成音频
+          - 'generic "输出: 播放完成 → 循环回 ④ STT" [ref=e322] [cursor=pointer]':
+            - generic: 循环回④
+          - generic [ref=e324]:
+            - generic [ref=e325]: volume_up
+            - generic [ref=e326]: ⑨ TS 音频输出
+            - generic [ref=e327]: 待命
+          - generic [ref=e328]:
+            - generic [ref=e329]:
+              - generic [ref=e330]: 连接
+              - generic [ref=e331]: 待命
+            - generic [ref=e333]:
+              - generic [ref=e334]: 播放模式
+              - generic [ref=e336]: 逐段发送
+            - generic [ref=e337]:
+              - generic [ref=e338]: 输出端点
+              - generic [ref=e339]: ws://localhost:8000/ws/speak
+            - generic [ref=e340]: 完成播放 → 自动循环回④
+        - generic [ref=e341]:
+          - generic [ref=e342]: 流程说明
+          - generic [ref=e343]:
+            - generic [ref=e344]:
+              - generic [ref=e345]: ①
+              - generic [ref=e346]: 上传图片 — 触发开关，并行启动 ② 和 ③ (PNG/JPG/WEBP)
+            - generic [ref=e347]:
+              - generic [ref=e348]: ②
+              - generic [ref=e349]: OCR 识别 — EasyOCR/PaddleOCR 提取画面中的文字信息 → 送入⑥
+            - generic [ref=e350]:
+              - generic [ref=e351]: ③
+              - generic [ref=e352]: TS 音频输入 — WebSocket 接收实时音频流 → 启动④监听
+            - generic [ref=e353]:
+              - generic [ref=e354]: ④
+              - generic [ref=e355]: STT 持续监听 — SenseVoice 实时语音转文字，逐句累积到 stt_history
+            - generic [ref=e356]:
+              - generic [ref=e357]: ⑤
+              - generic [ref=e358]: 关键词判断 — 不含关键词 → 回到④继续监听; 含关键词 → 触发⑥
+            - generic [ref=e359]:
+              - generic [ref=e360]: ⑥
+              - generic [ref=e361]: ContextBuild — 组合 skill_prompt + OCR 文本 + 完整 stt_history + 对话历史
+            - generic [ref=e362]:
+              - generic [ref=e363]: ⑦
+              - generic [ref=e364]: LLM 流式生成 — gpt-4-turbo 生成战术建议，WebSocket 逐字推送前端
+            - generic [ref=e365]:
+              - generic [ref=e366]: ⑧
+              - generic [ref=e367]: TTS 逐句合成 — Edge TTS 将文本合成为语音
+            - generic [ref=e368]:
+              - generic [ref=e369]: ⑨
+              - generic [ref=e370]: TS 音频输出 — 逐段发送到 TeamSpeak 播放 → 回到④ 自动循环
+        - generic [ref=e371]:
+          - generic [ref=e372]: 颜色标识
+          - generic [ref=e373]:
+            - generic [ref=e376]: 数据流 / 就绪状态
+            - generic [ref=e379]: 处理中 / 激活状态
+            - generic [ref=e382]: 关键词 / 触发条件
+            - generic [ref=e385]: 循环返回路径
+      - generic [ref=e386]:
+        - button "remove" [ref=e387] [cursor=pointer]:
+          - generic [ref=e388]: remove
+        - textbox [ref=e390] [cursor=pointer]: 100%
+        - button "add" [ref=e391] [cursor=pointer]:
+          - generic [ref=e392]: add
+        - button "fullscreen_exit" [ref=e394] [cursor=pointer]:
+          - generic [ref=e395]: fullscreen_exit
+        - button "全部" [ref=e397] [cursor=pointer]
+        - button "数据流" [ref=e398] [cursor=pointer]
+        - button "触发链" [ref=e399] [cursor=pointer]
+    - complementary [ref=e400]:
+      - generic [ref=e401]:
+        - heading "tune 节点设置" [level=3] [ref=e402]:
+          - generic [ref=e403]: tune
+          - generic [ref=e404]: 节点设置
+        - button "close" [ref=e405] [cursor=pointer]:
+          - generic [ref=e406]: close
+      - generic [ref=e407]:
+        - button "详情" [ref=e408] [cursor=pointer]
+        - button "配置" [ref=e409] [cursor=pointer]
+        - button "日志" [ref=e410] [cursor=pointer]
+      - generic [ref=e413]: 点击左侧节点查看详情
+      - generic [ref=e414]:
+        - button "取消" [ref=e415] [cursor=pointer]
+        - button "保存配置" [ref=e416] [cursor=pointer]
+  - contentinfo [ref=e417]:
+    - generic [ref=e418]:
+      - generic [ref=e419]:
+        - generic [ref=e421]: "TeamSpeakBot 服务状态:"
+        - generic [ref=e422]: 运行中
+      - generic [ref=e423]:
+        - generic [ref=e425]: "TeamSpeakAI 后端服务器状态:"
+        - generic [ref=e426]: 最佳
+      - generic [ref=e427]:
+        - generic [ref=e429]: "Pipeline:"
+        - generic [ref=e430]: STT 监听中
+    - generic [ref=e431]:
+      - link "API参考" [ref=e432] [cursor=pointer]:
+        - /url: "#"
+      - link "文档" [ref=e433] [cursor=pointer]:
+        - /url: "#"
+      - link "支持" [ref=e434] [cursor=pointer]:
+        - /url: "#"

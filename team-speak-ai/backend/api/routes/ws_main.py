@@ -350,7 +350,6 @@ async def handle_node_create(websocket: WebSocket, flow_id: str, msg_id: str,
 
     await _send_ack(websocket, flow_id, msg_id)
     node_data = fm._serialize_flow(fm.load_flow(flow_id))["nodes"][-1]
-    await _send(websocket, flow_id, "event", "node.created", {"node": node_data})
     await _broadcast_to_flow(flow_id, "node.created", {"node": node_data})
     await _push_history_state(websocket, flow_id)
 
