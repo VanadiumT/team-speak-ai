@@ -1,8 +1,8 @@
 <template>
   <div
-    class="pipeline-canvas"
     ref="canvasRef"
-    :class="{ 'is-panning': isPanning }"
+    class="pipeline-canvas"
+    :class="{ 'is-panning': isPanning, 'detail-open': props.detailPanelOpen }"
     @wheel.prevent="onWheel"
     @mousedown="onPanStart"
   >
@@ -112,7 +112,7 @@ import CanvasControls from './CanvasControls.vue'
 import { useEditorStore } from '@/stores/editor.js'
 import { useExecutionStore } from '@/stores/execution.js'
 
-const props = defineProps({ editMode: { type: Boolean, default: false } })
+const props = defineProps({ editMode: { type: Boolean, default: false }, detailPanelOpen: { type: Boolean, default: false } })
 const emit = defineEmits(['select-node'])
 
 const editorStore = useEditorStore()
@@ -191,7 +191,8 @@ const connectionPaths = computed(() => {
     const fromX = fromPos.x; const fromY = fromPos.y
     const toX = toPos.x; const toY = toPos.y
 
-    const fromStatus = executionStore.getNodeStatus(conn.from_node).status
+    // 直接读取 nodeStatuses 保证响应式追踪
+    const fromStatus = executionStore.nodeStatuses[conn.from_node]?.status || 'pending'
     const isActive = fromStatus === 'processing'
 
     let stroke, dash, marker, lineClass, groupClass
@@ -341,7 +342,9 @@ onUnmounted(() => { window.removeEventListener('keydown', onKeydown) })
 .pipeline-canvas {
   flex: 1; margin-left: 256px; position: relative;
   background: #121417; overflow: auto; height: calc(100vh - 88px);
+  transition: margin-right 0.2s ease;
 }
+.pipeline-canvas.detail-open { margin-right: 320px; }
 .pipeline-canvas.is-panning { cursor: grabbing; user-select: none; }
 .canvas-grid {
   position: absolute; top: 0; left: 0; z-index: 0; pointer-events: none; opacity: 0.15;
@@ -351,6 +354,7 @@ onUnmounted(() => { window.removeEventListener('keydown', onKeydown) })
 .flow-view[data-flow="data"] .event-only { display: none !important; }
 .flow-view[data-flow="event"] .data-only { display: none !important; }
 .connections-svg { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 0; }
+.conn-hit-area { pointer-events: stroke; cursor: pointer; }
 .flow-line { animation: flowDash 1.0s linear infinite; }
 @keyframes flowDash { to { stroke-dashoffset: -24; } }
 .empty-hint {

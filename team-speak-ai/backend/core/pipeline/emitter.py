@@ -27,7 +27,16 @@ class EventEmitter:
     def __init__(self, engine, feature_id: str):
         self._engine = engine
         self._feature_id = feature_id
-        self._use_envelope = getattr(engine, "_use_envelope", False)
+
+    @property
+    def _use_envelope(self) -> bool:
+        """从当前执行实例读取信封协议标志"""
+        # 尝试从任意实例获取标志（通常只有一个实例在运行）
+        for flow_id, instances in self._engine._instances.items():
+            if flow_id == self._feature_id or instances.pipeline_def.id == self._feature_id:
+                if hasattr(instances, 'use_envelope'):
+                    return instances.use_envelope
+        return False
 
     async def _send(self, action: str, params: dict):
         """发送消息到所有订阅该 feature 的 WebSocket 连接"""
@@ -67,6 +76,9 @@ class EventEmitter:
             except Exception as e:
                 logger.warning(f"EventEmitter send error: {e}")
                 self._engine.unregister_ws(self._feature_id, ws)
+
+        # 同时广播到 /ws 端点的 flow 订阅者
+        await self._engine.broadcast_to_flow(self._feature_id, action, params)
 
     async def emit_node_status_changed(
         self,

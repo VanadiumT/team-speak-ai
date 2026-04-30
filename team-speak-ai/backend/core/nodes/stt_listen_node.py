@@ -116,7 +116,7 @@ class STTListenNode(BaseNode):
                                         await emit.emit_important_update(
                                             "关键词触发",
                                             f"检测到关键词 '{kw}'，启动 AI 流程",
-                                            "status",
+                                            "warning",
                                         )
                                         return NodeOutput({
                                             "text": accumulated_text.strip(),

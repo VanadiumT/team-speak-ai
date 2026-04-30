@@ -1,0 +1,1222 @@
+<!DOCTYPE html>
+<html class="dark" lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TeamSpeak AI Pipeline</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&family=Space+Grotesk:wght@500&display=swap" rel="stylesheet">
+<script>
+tailwind.config = {
+  darkMode: "class",
+  theme: {
+    extend: {
+      colors: {
+        "surface": "#10131b","surface-dim": "#10131b","surface-bright": "#363942",
+        "surface-container-lowest": "#0b0e16","surface-container-low": "#181c23",
+        "surface-container": "#1c2027","surface-container-high": "#272a32",
+        "surface-container-highest": "#31353d","on-surface": "#e0e2ed",
+        "on-surface-variant": "#c1c6d7","inverse-surface": "#e0e2ed",
+        "inverse-on-surface": "#2d3039","outline": "#8b90a0","outline-variant": "#414754",
+        "surface-tint": "#adc7ff","primary": "#adc7ff","on-primary": "#002e68",
+        "primary-container": "#4a8eff","on-primary-container": "#00285b",
+        "inverse-primary": "#005bc0","secondary": "#4edea3","on-secondary": "#003824",
+        "secondary-container": "#00a572","on-secondary-container": "#00311f",
+        "tertiary": "#ffb695","on-tertiary": "#571e00","tertiary-container": "#ef6719",
+        "on-tertiary-container": "#4c1a00","error": "#ffb4ab","on-error": "#690005",
+        "error-container": "#93000a","on-error-container": "#ffdad6",
+        "primary-fixed": "#d8e2ff","primary-fixed-dim": "#adc7ff",
+        "on-primary-fixed": "#001a41","on-primary-fixed-variant": "#004493",
+        "secondary-fixed": "#6ffbbe","secondary-fixed-dim": "#4edea3",
+        "on-secondary-fixed": "#002113","on-secondary-fixed-variant": "#005236",
+        "tertiary-fixed": "#ffdbcc","tertiary-fixed-dim": "#ffb695",
+        "on-tertiary-fixed": "#351000","on-tertiary-fixed-variant": "#7c2e00",
+        "background": "#10131b","on-background": "#e0e2ed","surface-variant": "#31353d",
+      },
+      fontFamily: {
+        "h1": ["Inter"],"h2": ["Inter"],"body-main": ["Inter"],
+        "body-sm": ["Inter"],"code-label": ["Space Grotesk"],"node-title": ["Inter"],
+      },
+      fontSize: {
+        "h1": ["32px",{lineHeight:"1.2",letterSpacing:"-0.02em",fontWeight:"600"}],
+        "h2": ["24px",{lineHeight:"1.3",fontWeight:"600"}],
+        "body-main": ["16px",{lineHeight:"1.6",fontWeight:"400"}],
+        "body-sm": ["14px",{lineHeight:"1.5",fontWeight:"400"}],
+        "code-label": ["12px",{lineHeight:"1.0",letterSpacing:"0.05em",fontWeight:"500"}],
+        "node-title": ["13px",{lineHeight:"1.2",fontWeight:"600"}],
+      },
+      borderRadius: {"DEFAULT":"0.125rem","lg":"0.25rem","xl":"0.5rem","full":"0.75rem"},
+      spacing: {"unit":"4px","xs":"4px","sm":"8px","md":"16px","lg":"24px","xl":"32px","panel-padding":"20px","grid-gutter":"16px"},
+    },
+  },
+}
+</script>
+<style>
+  body { font-family: 'Inter', sans-serif; }
+  .font-code { font-family: 'Space Grotesk', sans-serif; }
+
+  /* Node tabs */
+  .node-tab { cursor: pointer; }
+  .node-tab.active { color: #adc7ff; border-bottom: 2px solid #adc7ff; }
+  .node-tab-content { display: none; }
+  .node-tab-content.active { display: block; }
+
+  /* Pulse animation for processing nodes */
+  @keyframes nodePulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(173, 199, 255, 0.4); }
+    50% { box-shadow: 0 0 20px 4px rgba(173, 199, 255, 0.15); }
+  }
+  .node-pulse { animation: nodePulse 2s ease-in-out infinite; }
+
+  /* Flowing line animation — dashed arrows with motion */
+  @keyframes flowDash {
+    to { stroke-dashoffset: -24; }
+  }
+  .flow-line {
+    stroke-dasharray: 10 5;
+    animation: flowDash 1.0s linear infinite;
+  }
+
+  /* Keyword trigger pulse */
+  @keyframes keywordPulse {
+    0%, 100% { opacity: 0.4; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.3); }
+  }
+  .keyword-dot { animation: keywordPulse 1.5s ease-in-out infinite; }
+
+  /* Loop arrow animation */
+  @keyframes loopFlow {
+    0% { stroke-dashoffset: 0; }
+    100% { stroke-dashoffset: -24; }
+  }
+  .loop-line {
+    stroke-dasharray: 6 6;
+    animation: loopFlow 1s linear infinite;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: #10131b; }
+  ::-webkit-scrollbar-thumb { background: #31353d; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #414754; }
+
+  /* Glassmorphism node */
+  .glass-node {
+    background: rgba(28, 32, 39, 0.92);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
+  /* Tab styles */
+  .tab-btn {
+    position: relative; padding: 6px 12px; font-size: 11px;
+    font-family: 'Space Grotesk', sans-serif; letter-spacing: 0.05em;
+    font-weight: 500; color: #8b90a0; cursor: pointer;
+    transition: color 0.2s; border-bottom: 2px solid transparent;
+  }
+  .tab-btn:hover { color: #c1c6d7; }
+  .tab-btn.active { color: #adc7ff; border-bottom-color: #adc7ff; }
+
+  /* Node card hover */
+  .node-card { transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s; }
+  .node-card:hover { transform: translateY(-2px); z-index: 20 !important; }
+
+  /* Streaming text cursor */
+  @keyframes blink { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
+  .stream-cursor { animation: blink 0.8s step-end infinite; color: #4a8eff; }
+
+  /* ===== Right panel ===== */
+  #detail-panel {
+    position: fixed; right: 0; top: 56px; bottom: 32px; width: 320px;
+    background: #020617; z-index: 30; display: flex; flex-direction: column;
+  }
+  #detail-panel.panel-closed { display: none; }
+
+  .detail-tab-btn {
+    flex: 1; padding: 8px 0; text-align: center; font-size: 11px;
+    font-family: 'Space Grotesk', sans-serif; letter-spacing: 0.05em;
+    font-weight: 500; color: #8b90a0; cursor: pointer; transition: color 0.2s;
+    border-bottom: 2px solid transparent;
+  }
+  .detail-tab-btn:hover { color: #c1c6d7; }
+  .detail-tab-btn.active { color: #adc7ff; border-bottom-color: #adc7ff; }
+  .detail-tab-content { display: none; }
+  .detail-tab-content.active { display: block; }
+
+  .chevron-icon { transition: transform 0.2s ease; }
+  .chevron-icon.collapsed { transform: rotate(0deg) !important; }
+  .chevron-icon.expanded { transform: rotate(90deg) !important; }
+
+  .sidebar-section-content { overflow: hidden; transition: max-height 0.25s ease; }
+  .sidebar-section-content.collapsed { max-height: 0 !important; }
+
+  /* Canvas zoom */
+  #canvas-content { transition: transform 0.2s ease; transform-origin: 0 0; }
+
+  /* ========================================
+     FLOW VIEW SYSTEM
+     ======================================== */
+
+  /* Hide elements based on active flow view */
+  .flow-view[data-flow="data"] .event-only { display: none !important; }
+  .flow-view[data-flow="event"] .data-only { display: none !important; }
+
+  /* ===== I/O Ports (ONLY visible in data flow view) ===== */
+  .io-port {
+    position: absolute;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    border: 2.5px solid #8b90a0;
+    background: #10131b;
+    z-index: 35;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .io-port:hover { transform: scale(1.5); z-index: 60; }
+  .io-port:hover .io-label {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .io-port.input-port  { left: -7px; }
+  .io-port.output-port { right: -7px; }
+
+  /* Port states by color */
+  .io-port.disconnected {
+    border-color: #8b90a0;
+    background: #10131b;
+    box-shadow: none;
+  }
+  .io-port.connected {
+    border-color: #4edea3;
+    background: rgba(78, 222, 163, 0.12);
+    box-shadow: 0 0 8px rgba(78, 222, 163, 0.3);
+  }
+  .io-port.flowing {
+    border-color: #4a8eff;
+    background: rgba(74, 142, 255, 0.18);
+    box-shadow: 0 0 12px rgba(74, 142, 255, 0.5);
+    animation: portFlowPulse 1.2s ease-in-out infinite;
+  }
+
+  @keyframes portFlowPulse {
+    0%, 100% { box-shadow: 0 0 6px rgba(74, 142, 255, 0.5); }
+    50% { box-shadow: 0 0 18px rgba(74, 142, 255, 0.85); }
+  }
+
+  /* Port label tooltip */
+  .io-label {
+    position: absolute;
+    font-size: 9px;
+    font-family: 'Space Grotesk', sans-serif;
+    white-space: nowrap;
+    top: -20px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #c1c6d7;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    background: rgba(11, 14, 22, 0.95);
+    padding: 3px 7px;
+    border-radius: 3px;
+    border: 1px solid #31353d;
+    z-index: 50;
+  }
+  .io-port.output-port .io-label {
+    left: auto;
+    right: 0;
+    transform: translateX(0);
+  }
+
+  /* ===== Flow toggle buttons ===== */
+  .flow-toggle-btn {
+    padding: 4px 10px;
+    font-size: 10px;
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    color: #8b90a0;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: color 0.2s, background 0.2s;
+    border: none;
+    background: transparent;
+  }
+  .flow-toggle-btn:hover { color: #c1c6d7; background: rgba(255,255,255,0.05); }
+  .flow-toggle-btn.active {
+    color: #adc7ff;
+    background: rgba(173,199,255,0.12);
+    font-weight: 600;
+  }
+
+  /* ===== Workflow badge on nodes ===== */
+  .workflow-badge {
+    position: absolute;
+    top: -10px; right: -10px;
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: bold;
+    font-family: 'Space Grotesk', sans-serif;
+    z-index: 40;
+    border: 2px solid;
+  }
+
+  /* ===== SVG connection label backdrops ===== */
+  .lbl-bg {
+    fill: rgba(11, 14, 22, 0.92);
+    stroke: none;
+    rx: 3;
+    ry: 3;
+  }
+</style>
+</head>
+<body class="bg-background text-on-surface h-screen w-screen overflow-hidden flex flex-col font-body-main text-body-main">
+
+<!-- ===== TOP NAV BAR ===== -->
+<header class="fixed top-0 left-0 w-full z-50 flex justify-between items-center px-6 h-14 bg-slate-950/80 backdrop-blur-xl border-b border-outline-variant/50">
+  <div class="flex items-center gap-4">
+    <span class="text-lg font-bold tracking-tight text-primary-container">TeamSpeak AI</span>
+    <span class="text-[10px] text-slate-500 ml-2 font-medium self-end mb-1 font-code-label">v2.4.0-Stable</span>
+  </div>
+  <div class="flex items-center gap-4">
+    <button class="text-slate-400 hover:text-blue-400 transition-colors">
+      <span class="material-symbols-outlined" style="font-variation-settings:'FILL' 0;">notifications</span>
+    </button>
+  </div>
+</header>
+
+<div class="flex flex-1 pt-14 h-full relative">
+
+<!-- ===== LEFT SIDEBAR ===== -->
+<nav class="fixed left-0 top-14 w-64 h-[calc(100vh-88px)] flex flex-col py-4 bg-slate-950/90 backdrop-blur-2xl border-r border-outline-variant/50 z-40 overflow-y-auto">
+
+  <div class="sidebar-section">
+    <button class="w-full flex items-center justify-between px-3 py-2 rounded text-slate-200 hover:bg-slate-900/50 transition-all" onclick="toggleSidebarSection(this)">
+      <div class="flex items-center gap-3">
+        <span class="material-symbols-outlined text-[18px]">account_tree</span>
+        <span class="text-sm font-medium">工作流</span>
+      </div>
+      <span class="material-symbols-outlined text-[16px] chevron-icon expanded">chevron_right</span>
+    </button>
+    <div class="sidebar-section-content" style="max-height:500px;">
+      <div class="pl-7 mt-1">
+        <button class="w-full flex items-center justify-between px-3 py-2 rounded text-slate-300 hover:bg-slate-900/50 transition-all" onclick="toggleSidebarSection(this)">
+          <div class="flex items-center gap-2"><span class="material-symbols-outlined text-[16px]">folder</span><span class="text-xs">游戏</span></div>
+          <span class="material-symbols-outlined text-[16px] chevron-icon expanded">chevron_right</span>
+        </button>
+        <div class="sidebar-section-content" style="max-height:300px;">
+          <div class="pl-6 mt-1">
+            <button class="w-full flex items-center justify-between px-3 py-2 rounded text-slate-300 hover:bg-slate-900/50 transition-all" onclick="toggleSidebarSection(this)">
+              <div class="flex items-center gap-2"><span class="material-symbols-outlined text-[16px]">folder</span><span class="text-xs">暗区</span></div>
+              <span class="material-symbols-outlined text-[16px] chevron-icon expanded">chevron_right</span>
+            </button>
+            <div class="sidebar-section-content" style="max-height:200px;">
+              <div class="pl-6 mt-1">
+                <button class="w-full flex items-center gap-2 px-3 py-2 rounded text-primary border-l-2 border-primary bg-primary/5 transition-all">
+                  <span class="material-symbols-outlined text-[16px]">sports_esports</span>
+                  <span class="text-xs">游戏锦标赛</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sidebar-section mt-2">
+    <button class="w-full flex items-center justify-between px-3 py-2 rounded text-slate-200 hover:bg-slate-900/50 transition-all" onclick="toggleSidebarSection(this)">
+      <div class="flex items-center gap-3"><span class="material-symbols-outlined text-[18px]">tune</span><span class="text-sm font-medium">工作流配置</span></div>
+      <span class="material-symbols-outlined text-[16px] chevron-icon expanded">chevron_right</span>
+    </button>
+    <div class="sidebar-section-content" style="max-height:200px;">
+      <div class="pl-7 mt-1">
+        <button class="w-full flex items-center gap-2 px-3 py-2 rounded text-slate-400 hover:text-slate-200 hover:bg-slate-900/50 transition-all"><span class="material-symbols-outlined text-[14px]">add</span><span class="text-xs">新建工作流</span></button>
+        <button class="w-full flex items-center gap-2 px-3 py-2 rounded text-slate-400 hover:text-slate-200 hover:bg-slate-900/50 transition-all"><span class="material-symbols-outlined text-[14px]">account_tree</span><span class="text-xs">流程管理</span></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="sidebar-section mt-2">
+    <button class="w-full flex items-center justify-between px-3 py-2 rounded text-slate-200 hover:bg-slate-900/50 transition-all" onclick="toggleSidebarSection(this)">
+      <div class="flex items-center gap-3"><span class="material-symbols-outlined text-[18px]">settings</span><span class="text-sm font-medium">系统设置</span></div>
+      <span class="material-symbols-outlined text-[16px] chevron-icon expanded">chevron_right</span>
+    </button>
+    <div class="sidebar-section-content" style="max-height:300px;">
+      <div class="pl-7 mt-1 space-y-0.5">
+        <button class="w-full flex items-center gap-2 px-3 py-2 rounded text-slate-400 hover:text-slate-200 hover:bg-slate-900/50 transition-all"><span class="material-symbols-outlined text-[14px]">document_scanner</span><span class="text-xs">OCR设置</span></button>
+        <button class="w-full flex items-center gap-2 px-3 py-2 rounded text-slate-400 hover:text-slate-200 hover:bg-slate-900/50 transition-all"><span class="material-symbols-outlined text-[14px]">psychology</span><span class="text-xs">LLM设置</span></button>
+        <button class="w-full flex items-center gap-2 px-3 py-2 rounded text-slate-400 hover:text-slate-200 hover:bg-slate-900/50 transition-all"><span class="material-symbols-outlined text-[14px]">mic</span><span class="text-xs">STT设置</span></button>
+        <button class="w-full flex items-center gap-2 px-3 py-2 rounded text-slate-400 hover:text-slate-200 hover:bg-slate-900/50 transition-all"><span class="material-symbols-outlined text-[14px]">record_voice_over</span><span class="text-xs">TTS设置</span></button>
+      </div>
+    </div>
+  </div>
+
+  <button class="w-full flex items-center gap-3 px-3 py-2 rounded text-slate-400 hover:bg-slate-900/50 hover:text-slate-100 transition-all mt-2">
+    <span class="material-symbols-outlined text-[18px]" style="font-variation-settings:'FILL' 0;">terminal</span>
+    <span class="text-sm font-medium">系统日志</span>
+  </button>
+
+  <div class="mt-auto mb-4 border-t border-outline-variant/50 pt-4 px-4">
+    <div class="flex items-center gap-2 mb-3">
+      <div class="w-1 h-3 bg-primary-container rounded-full shadow-[0_0_8px_rgba(74,142,255,0.5)]"></div>
+      <span class="text-[10px] font-bold font-code-label text-primary/80 uppercase tracking-[0.2em]">最近访问</span>
+    </div>
+    <div class="space-y-2 pl-3">
+      <div class="flex items-center gap-3 text-[11px] text-slate-400 hover:text-slate-200 cursor-pointer transition-colors"><span class="material-symbols-outlined text-[16px]">sports_score</span><span class="truncate">暗区锦标赛</span></div>
+      <div class="flex items-center gap-3 text-[11px] text-slate-400 hover:text-slate-200 cursor-pointer transition-colors"><span class="material-symbols-outlined text-[16px]">settings_suggest</span><span class="truncate">OCR 设置</span></div>
+      <div class="flex items-center gap-3 text-[11px] text-on-surface font-medium cursor-pointer transition-colors"><span class="material-symbols-outlined text-[16px] text-primary-container">terminal</span><span class="truncate">系统日志</span></div>
+    </div>
+  </div>
+</nav>
+
+<!-- ===== MAIN CANVAS ===== -->
+<main class="flex-1 ml-64 relative bg-[#121417] overflow-auto" id="canvas-container">
+  <div class="absolute inset-0 z-0 pointer-events-none opacity-15"
+    style="background-image: linear-gradient(#31353d 1px, transparent 1px), linear-gradient(90deg, #31353d 1px, transparent 1px); background-size: 32px 32px; width: 1700px; height: 1250px;"></div>
+
+  <div id="canvas-content" class="relative z-10 p-8 flow-view" data-flow="all" style="width:1700px; height:1250px;">
+
+    <!-- =============================================
+         SVG CONNECTIONS
+         Port-to-port for data flow, edge-to-edge for event flow
+         ============================================= -->
+    <svg class="absolute top-0 left-0 pointer-events-none z-0" style="width:1700px;height:1250px;" id="connections-svg">
+      <defs>
+        <marker id="arrowEvent" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+          <polygon points="0,2 10,5 0,8" fill="#adc7ff" opacity="0.6"/>
+        </marker>
+        <marker id="arrowData" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+          <polygon points="0,2 10,5 0,8" fill="#4edea3" opacity="0.8"/>
+        </marker>
+        <marker id="arrowDataFlow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+          <polygon points="0,2 10,5 0,8" fill="#4a8eff" opacity="0.8"/>
+        </marker>
+      </defs>
+
+      <!-- ═══════════════ DATA FLOW: port-to-port connections ═══════════════ -->
+      <g class="data-only">
+
+        <!-- ① img-out(260,122) → ② ocr-in(33,337)
+             Ports: upload right edge output img-out at y≈122; ocr left input at y≈337 -->
+        <path d="M 260 122 L 310 122 L 310 337 L 33 337"
+              fill="none" stroke="#4edea3" stroke-width="2.5" class="flow-line"/>
+        <polygon points="400 195, 40 337" fill="#4edea3" opacity="0" />
+        <polygon points="29,333 33,345 37,333" fill="#4edea3" opacity="0.8"/>
+        <rect x="0" y="0" width="0" height="0" class="lbl-bg" />
+        <!-- label placed in the horizontal segment -->
+        <text x="175" y="115" text-anchor="middle" fill="#4edea3" font-size="10" font-family="Space Grotesk" font-weight="bold">图片数据 (PNG/JPG)</text>
+
+        <!-- ① trigger-out(260,164) → ③ ts-in(323,317)
+             Curve from upload right to TS Input left -->
+        <path d="M 260 164 C 300 164, 300 317, 323 317"
+              fill="none" stroke="#4edea3" stroke-width="2.5" class="flow-line"/>
+        <polygon points="319,313 323,325 327,313" fill="#4edea3" opacity="0.8"/>
+        <text x="290" y="235" text-anchor="middle" fill="#4edea3" font-size="10" font-family="Space Grotesk">触发监听</text>
+
+        <!-- ③ ts-out(557,342) → ④ stt-in(613,297)
+             Horizontal, slightly diagonal -->
+        <path d="M 557 342 L 613 297"
+              fill="none" stroke="#4a8eff" stroke-width="2.5" class="flow-line"/>
+        <polygon points="609,293 613,305 617,293" fill="#4a8eff" opacity="0.8"/>
+        <text x="585" y="312" text-anchor="middle" fill="#4a8eff" font-size="10" font-family="Space Grotesk">音频帧 (PCM)</text>
+
+        <!-- ④ stt-out(947,322) → ⑤ hist-in(633,597)
+             STT right output to History left input, curved path -->
+        <path d="M 947 322 C 947 440, 750 440, 750 510 L 633 597"
+              fill="none" stroke="#4a8eff" stroke-width="2.5" class="flow-line"/>
+        <polygon points="629,593 633,605 637,593" fill="#4a8eff" opacity="0.8"/>
+        <text x="790" y="465" text-anchor="middle" fill="#4a8eff" font-size="10" font-family="Space Grotesk">逐句识别文本 →</text>
+
+        <!-- ② ocr-out(260,362) → ⑥ ctx-in2(323,895)
+             OCR right output to ContextBuild left input (2nd port), long diagonal curve -->
+        <path d="M 260 362 C 260 620, 323 680, 323 895"
+              fill="none" stroke="#4edea3" stroke-width="2" stroke-dasharray="10 5"/>
+        <polygon points="319,891 323,903 327,891" fill="#4edea3" opacity="0.8"/>
+        <text x="240" y="620" text-anchor="end" fill="#4edea3" font-size="10" font-family="Space Grotesk" opacity="0.8">OCR识别文本 (String)</text>
+
+        <!-- ⑤ hist-out(927,639) → ⑥ ctx-in3(323,923)
+             History right output to ContextBuild left input (3rd port) -->
+        <path d="M 927 639 C 1000 639, 1000 810, 580 810 L 323 923"
+              fill="none" stroke="#4a8eff" stroke-width="2.5" class="flow-line"/>
+        <polygon points="319,919 323,931 327,919" fill="#4a8eff" opacity="0.8"/>
+        <text x="700" y="810" text-anchor="middle" fill="#4a8eff" font-size="10" font-family="Space Grotesk">stt_history (String[]) ←</text>
+
+        <!-- ⑤ hist-trigger(927,677) → not drawn as data flow (it's event) -->
+
+        <!-- ⑥ ctx-out(587,892) → ⑦ llm-in(633,867)
+             Horizontal between ContextBuild output and LLM input -->
+        <path d="M 587 892 L 633 867"
+              fill="none" stroke="#4a8eff" stroke-width="2.5" class="flow-line"/>
+        <polygon points="629,863 633,875 637,863" fill="#4a8eff" opacity="0.8"/>
+        <text x="610" y="872" text-anchor="middle" fill="#4a8eff" font-size="10" font-family="Space Grotesk">组合上下文 (Messages[])</text>
+
+        <!-- ⑦ llm-out(897,892) → ⑧ tts-in(943,867) -->
+        <path d="M 897 892 L 943 867"
+              fill="none" stroke="#4a8eff" stroke-width="2.5" class="flow-line"/>
+        <polygon points="939,863 943,875 947,863" fill="#4a8eff" opacity="0.8"/>
+        <text x="920" y="872" text-anchor="middle" fill="#4a8eff" font-size="10" font-family="Space Grotesk">流式文本 (String)</text>
+
+        <!-- ⑧ tts-out(1177,892) → ⑨ out-in(1213,867) -->
+        <path d="M 1177 892 L 1213 867"
+              fill="none" stroke="#4a8eff" stroke-width="2.5" class="flow-line"/>
+        <polygon points="1209,863 1213,875 1217,863" fill="#4a8eff" opacity="0.8"/>
+        <text x="1195" y="872" text-anchor="middle" fill="#4a8eff" font-size="10" font-family="Space Grotesk">合成音频 (WAV)</text>
+
+        <!-- ⑨ out-done(1447,909) → ④ stt-in(613,297) loop back -->
+        <path d="M 1447 909 C 1447 1080, 850 1080, 850 400 L 613 297"
+              fill="none" stroke="#4edea3" stroke-width="1.8" class="loop-line" opacity="0.45"/>
+        <polygon points="609,293 613,305 617,293" fill="#4edea3" opacity="0.5"/>
+        <text x="1050" y="1060" text-anchor="middle" fill="#4edea3" font-size="10" font-family="Space Grotesk" opacity="0.6">播放完成 → 回到 STT 继续监听 (自动循环)</text>
+
+      </g>
+
+      <!-- ═══════════════ EVENT FLOW: trigger chain ═══════════════ -->
+      <g class="event-only">
+
+        <!-- ①→② Upload triggers OCR -->
+        <line x1="170" y1="175" x2="170" y2="300" stroke="#adc7ff" stroke-width="2.5" marker-end="url(#arrowEvent)"/>
+        <rect x="120" y="225" width="100" height="16" class="lbl-bg"/>
+        <text x="170" y="237" text-anchor="middle" fill="#adc7ff" font-size="10" font-family="Space Grotesk">触发OCR识别</text>
+
+        <!-- ①→③ Upload triggers TS Input -->
+        <path d="M 260 140 C 320 140, 310 280, 330 360" stroke="#adc7ff" stroke-width="2.5" fill="none" marker-end="url(#arrowEvent)"/>
+        <rect x="270" y="240" width="60" height="16" class="lbl-bg"/>
+        <text x="300" y="252" text-anchor="middle" fill="#adc7ff" font-size="10" font-family="Space Grotesk">触发监听</text>
+
+        <!-- ③→④ TS Input passes to STT -->
+        <line x1="570" y1="390" x2="620" y2="390" stroke="#adc7ff" stroke-width="2.5" marker-end="url(#arrowEvent)"/>
+        <rect x="578" y="374" width="38" height="16" class="lbl-bg"/>
+        <text x="597" y="386" text-anchor="middle" fill="#adc7ff" font-size="10" font-family="Space Grotesk">接收后</text>
+
+        <!-- ④→⑤ STT outputs to History -->
+        <line x1="780" y1="520" x2="780" y2="560" stroke="#adc7ff" stroke-width="2.5" marker-end="url(#arrowEvent)"/>
+        <rect x="740" y="530" width="80" height="16" class="lbl-bg"/>
+        <text x="780" y="542" text-anchor="middle" fill="#adc7ff" font-size="10" font-family="Space Grotesk">每句追加记录</text>
+
+        <!-- ⑤ loop back: no keyword -->
+        <path d="M 890 640 C 1040 640, 1040 440, 900 440" fill="none" stroke="#ef6719" stroke-width="1.8" stroke-dasharray="6 4" opacity="0.7"/>
+        <polygon points="900,436 896,440 900,444" fill="#ef6719" opacity="0.6"/>
+        <rect x="950" y="525" width="80" height="16" class="lbl-bg"/>
+        <text x="990" y="537" text-anchor="middle" fill="#ef6719" font-size="10" font-family="Space Grotesk">不含关键词</text>
+
+        <!-- ⑤→⑥ Keyword triggers ContextBuild -->
+        <path d="M 700 760 L 700 820 L 480 820 L 480 890" stroke="#adc7ff" stroke-width="3" fill="none" marker-end="url(#arrowEvent)"/>
+        <rect x="545" y="806" width="110" height="16" class="lbl-bg"/>
+        <text x="600" y="818" text-anchor="middle" fill="#adc7ff" font-size="10" font-family="Space Grotesk" font-weight="bold">含关键词 → 触发!</text>
+
+        <!-- ②→⑥ OCR done feeds ContextBuild -->
+        <path d="M 170 460 C 170 620, 330 720, 350 890" stroke="#adc7ff" stroke-width="2.5" fill="none" marker-end="url(#arrowEvent)"/>
+        <rect x="190" y="660" width="80" height="16" class="lbl-bg"/>
+        <text x="230" y="672" text-anchor="middle" fill="#adc7ff" font-size="10" font-family="Space Grotesk">OCR完成后输入</text>
+
+        <!-- ⑥→⑦ ContextBuild → LLM -->
+        <line x1="600" y1="940" x2="640" y2="940" stroke="#adc7ff" stroke-width="2.5" marker-end="url(#arrowEvent)"/>
+        <rect x="604" y="924" width="38" height="16" class="lbl-bg"/>
+        <text x="623" y="936" text-anchor="middle" fill="#adc7ff" font-size="10" font-family="Space Grotesk">构建后</text>
+
+        <!-- ⑦→⑧ LLM → TTS -->
+        <line x1="900" y1="940" x2="950" y2="940" stroke="#adc7ff" stroke-width="2.5" marker-end="url(#arrowEvent)"/>
+        <rect x="906" y="924" width="38" height="16" class="lbl-bg"/>
+        <text x="925" y="936" text-anchor="middle" fill="#adc7ff" font-size="10" font-family="Space Grotesk">生成后</text>
+
+        <!-- ⑧→⑨ TTS → Output -->
+        <line x1="1170" y1="940" x2="1220" y2="940" stroke="#adc7ff" stroke-width="2.5" marker-end="url(#arrowEvent)"/>
+        <rect x="1174" y="924" width="38" height="16" class="lbl-bg"/>
+        <text x="1193" y="936" text-anchor="middle" fill="#adc7ff" font-size="10" font-family="Space Grotesk">合成后</text>
+
+      </g>
+
+      <!-- ===== STEP CIRCLE MARKERS (always visible) ===== -->
+      <!-- ① -->
+      <circle cx="100" cy="165" r="13" fill="#4edea3" opacity="0.15" stroke="#4edea3" stroke-width="1.5"/>
+      <text x="100" y="170" text-anchor="middle" fill="#4edea3" font-size="12" font-weight="bold" font-family="Space Grotesk">①</text>
+      <!-- ② -->
+      <circle cx="100" cy="375" r="13" fill="#adc7ff" opacity="0.15" stroke="#adc7ff" stroke-width="1.5"/>
+      <text x="100" y="380" text-anchor="middle" fill="#adc7ff" font-size="12" font-weight="bold" font-family="Space Grotesk">②</text>
+      <!-- ③ -->
+      <circle cx="380" cy="365" r="13" fill="#adc7ff" opacity="0.15" stroke="#adc7ff" stroke-width="1.5"/>
+      <text x="380" y="370" text-anchor="middle" fill="#adc7ff" font-size="12" font-weight="bold" font-family="Space Grotesk">③</text>
+      <!-- ④ -->
+      <circle cx="670" cy="365" r="13" fill="#adc7ff" opacity="0.15" stroke="#adc7ff" stroke-width="1.5"/>
+      <text x="670" y="370" text-anchor="middle" fill="#adc7ff" font-size="12" font-weight="bold" font-family="Space Grotesk">④</text>
+      <!-- ⑤ -->
+      <circle cx="670" cy="635" r="13" fill="#ef6719" opacity="0.15" stroke="#ef6719" stroke-width="1.5"/>
+      <text x="670" y="640" text-anchor="middle" fill="#ef6719" font-size="12" font-weight="bold" font-family="Space Grotesk">⑤</text>
+      <!-- ⑥ -->
+      <circle cx="380" cy="905" r="13" fill="#adc7ff" opacity="0.15" stroke="#adc7ff" stroke-width="1.5"/>
+      <text x="380" y="910" text-anchor="middle" fill="#adc7ff" font-size="12" font-weight="bold" font-family="Space Grotesk">⑥</text>
+      <!-- ⑦ -->
+      <circle cx="690" cy="905" r="13" fill="#adc7ff" opacity="0.15" stroke="#adc7ff" stroke-width="1.5"/>
+      <text x="690" y="910" text-anchor="middle" fill="#adc7ff" font-size="12" font-weight="bold" font-family="Space Grotesk">⑦</text>
+      <!-- ⑧ -->
+      <circle cx="1000" cy="905" r="13" fill="#4edea3" opacity="0.15" stroke="#4edea3" stroke-width="1.5"/>
+      <text x="1000" y="910" text-anchor="middle" fill="#4edea3" font-size="12" font-weight="bold" font-family="Space Grotesk">⑧</text>
+      <!-- ⑨ -->
+      <circle cx="1290" cy="905" r="13" fill="#4edea3" opacity="0.15" stroke="#4edea3" stroke-width="1.5"/>
+      <text x="1290" y="910" text-anchor="middle" fill="#4edea3" font-size="12" font-weight="bold" font-family="Space Grotesk">⑨</text>
+
+    </svg>
+
+    <!-- =============================================
+         NODES
+         ============================================= -->
+
+    <!-- ===== ① Upload ===== -->
+    <div class="absolute left-[40px] top-[85px] w-[220px] glass-node rounded-xl border border-secondary/40 z-10 node-card" onclick="showDetail('upload')">
+      <!-- I/O Ports — ONLY visible in data flow view -->
+      <div class="io-port output-port connected flowing data-only" style="top:30px;" data-port="img-out" data-label="图片数据 (PNG/JPG)">
+        <span class="io-label">输出: 图片数据 (PNG/JPG)</span>
+      </div>
+      <div class="io-port output-port connected data-only" style="top:72px;" data-port="trigger-out" data-label="触发信号">
+        <span class="io-label">输出: 触发信号</span>
+      </div>
+      <div class="workflow-badge bg-[#10131b] border-[#4edea3] text-[#4edea3]">①</div>
+      <div class="flex items-center gap-2 px-3 py-2 border-b border-outline-variant/50">
+        <span class="material-symbols-outlined text-secondary text-sm">upload_file</span>
+        <span class="font-node-title text-node-title text-on-surface">上传图片</span>
+      </div>
+      <div class="p-3 space-y-2">
+        <div class="flex items-center justify-between text-xs">
+          <span class="text-outline">状态</span>
+          <span class="text-secondary flex items-center gap-1"><div class="w-1.5 h-1.5 rounded-full bg-secondary"></div> 已就绪</span>
+        </div>
+        <div class="pt-1 border-t border-outline-variant/50">
+          <span class="text-[10px] text-outline-variant font-code-label block mb-1">输入格式</span>
+          <div class="flex flex-wrap gap-1">
+            <span class="px-2 py-0.5 rounded bg-surface-variant text-[10px] text-outline-variant">PNG</span>
+            <span class="px-2 py-0.5 rounded bg-surface-variant text-[10px] text-outline-variant">JPG</span>
+            <span class="px-2 py-0.5 rounded bg-surface-variant text-[10px] text-outline-variant">WEBP</span>
+          </div>
+        </div>
+        <div>
+          <span class="text-[10px] text-outline-variant font-code-label block mb-1">并行触发</span>
+          <div class="text-[10px] text-outline-variant">
+            <span class="text-secondary">→</span> OCR识别<br><span class="text-primary">→</span> TS音频监听
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== ② OCR (upper track) ===== -->
+    <div class="absolute left-[40px] top-[300px] w-[220px] glass-node rounded-xl border border-outline-variant/50 z-10 node-card" onclick="showDetail('ocr')">
+      <div class="io-port input-port connected data-only" style="top:30px;" data-port="ocr-in" data-label="图片 (PNG/JPG)">
+        <span class="io-label">输入: 图片 (PNG/JPG)</span>
+      </div>
+      <div class="io-port output-port connected data-only" style="top:55px;" data-port="ocr-out" data-label="OCR文本 (String)">
+        <span class="io-label">输出: OCR文本 (String)</span>
+      </div>
+      <div class="workflow-badge bg-[#10131b] border-[#adc7ff] text-[#adc7ff]">②</div>
+      <div class="flex items-center gap-2 px-3 py-2 border-b border-outline-variant/50">
+        <span class="material-symbols-outlined text-secondary text-sm">document_scanner</span>
+        <span class="font-node-title text-node-title text-on-surface">OCR 识别</span>
+      </div>
+      <div class="p-3 space-y-2">
+        <div class="flex items-center justify-between text-xs">
+          <span class="text-outline">引擎</span>
+          <span class="text-secondary text-[11px] font-code-label">EasyOCR</span>
+        </div>
+        <div class="pt-1 border-t border-outline-variant/50">
+          <label class="text-[10px] text-outline-variant font-code-label block mb-1">语言</label>
+          <div class="flex gap-1 flex-wrap">
+            <span class="px-2 py-0.5 rounded-full bg-secondary/10 text-secondary text-[10px] font-code-label border border-secondary-container/30">中文</span>
+            <span class="px-2 py-0.5 rounded-full bg-surface-variant text-outline-variant text-[10px] font-code-label">EN</span>
+          </div>
+        </div>
+        <div><span class="text-[10px] text-outline-variant font-code-label block mb-1">输出</span><div class="text-[10px] text-outline-variant">OCR识别文本 → ContextBuild</div></div>
+      </div>
+    </div>
+
+    <!-- ===== ③ TS Input (lower track) ===== -->
+    <div class="absolute left-[330px] top-[280px] w-[220px] glass-node rounded-xl border border-secondary-container/30 z-10 node-card" onclick="showDetail('tsinput')">
+      <div class="io-port input-port connected data-only" style="top:30px;" data-port="ts-in" data-label="触发信号">
+        <span class="io-label">输入: 触发信号</span>
+      </div>
+      <div class="io-port output-port connected flowing data-only" style="top:55px;" data-port="ts-out" data-label="音频帧 (PCM 16bit)">
+        <span class="io-label">输出: 音频帧 (PCM 16bit)</span>
+      </div>
+      <div class="workflow-badge bg-[#10131b] border-[#adc7ff] text-[#adc7ff]">③</div>
+      <div class="flex items-center gap-2 px-3 py-2 border-b border-outline-variant/50">
+        <span class="material-symbols-outlined text-secondary text-sm">sensors</span>
+        <span class="font-node-title text-node-title text-on-surface">TS 音频输入</span>
+      </div>
+      <div class="p-3 space-y-2">
+        <div class="flex items-center justify-between text-xs">
+          <span class="text-outline">连接</span>
+          <span class="text-secondary flex items-center gap-1"><div class="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse"></div> WebSocket</span>
+        </div>
+        <div class="pt-1 border-t border-outline-variant/50">
+          <span class="text-[10px] text-outline-variant font-code-label block mb-1">端点</span>
+          <div class="text-[10px] text-primary font-code-label break-all">ws://localhost:8000/ws/audio</div>
+        </div>
+        <div class="flex justify-between items-center text-xs"><span class="text-outline">格式</span><span class="text-[11px] text-outline-variant font-code-label">16kHz / 单声道</span></div>
+        <div class="pt-1 border-t border-outline-variant/50 event-only"><span class="text-[10px] text-outline-variant font-code-label">由上传图片触发</span></div>
+      </div>
+    </div>
+
+    <!-- ===== ④ STT ===== -->
+    <div class="absolute left-[620px] top-[260px] w-[320px] glass-node rounded-xl border-2 border-primary node-pulse z-10 node-card" onclick="showDetail('stt')">
+      <div class="io-port input-port connected flowing data-only" style="top:30px;" data-port="stt-in" data-label="音频帧 (PCM 16bit)">
+        <span class="io-label">输入: 音频帧 (PCM 16bit)</span>
+      </div>
+      <div class="io-port output-port connected flowing data-only" style="top:55px;" data-port="stt-out" data-label="识别文本 (String)">
+        <span class="io-label">输出: 识别文本 (String)</span>
+      </div>
+      <div class="workflow-badge bg-[#10131b] border-[#adc7ff] text-[#adc7ff]">④</div>
+      <div class="flex items-center gap-2 px-3 py-2 border-b border-outline-variant/50">
+        <span class="material-symbols-outlined text-primary text-sm">mic_external_on</span>
+        <span class="font-node-title text-node-title text-on-surface">STT 持续监听</span>
+        <span class="ml-auto keyword-dot w-2 h-2 rounded-full bg-primary"></span>
+      </div>
+      <div class="flex border-b border-outline-variant/50">
+        <button class="tab-btn active" onclick="switchTab(event, 'stt')">配置</button>
+        <button class="tab-btn" onclick="switchTab(event, 'stt-io')">输入/输出</button>
+        <button class="tab-btn" onclick="switchTab(event, 'stt-log')">日志</button>
+        <button class="tab-btn" onclick="switchTab(event, 'stt-full')">全文</button>
+      </div>
+      <div class="node-tab-content active p-3 space-y-2" id="tab-stt">
+        <div class="flex items-center justify-between text-xs">
+          <span class="text-outline">状态</span>
+          <span class="text-primary flex items-center gap-1"><span class="material-symbols-outlined text-[14px] animate-pulse">play_arrow</span> 监听中...</span>
+        </div>
+        <div class="pt-1 border-t border-outline-variant/50">
+          <label class="text-[10px] text-outline-variant font-code-label block mb-1">STT 模型</label>
+          <div class="flex gap-1 flex-wrap">
+            <span class="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-code-label border border-primary/20">SenseVoice</span>
+            <span class="px-2 py-0.5 rounded-full bg-surface-variant text-outline-variant text-[10px] font-code-label">Whisper</span>
+            <span class="px-2 py-0.5 rounded-full bg-surface-variant text-outline-variant text-[10px] font-code-label">MiniMax</span>
+          </div>
+        </div>
+        <div>
+          <label class="text-[10px] text-outline-variant font-code-label block mb-1">关键词触发</label>
+          <div class="flex gap-1 flex-wrap">
+            <span class="px-2 py-0.5 rounded-full bg-tertiary-container/10 text-tertiary-container text-[10px] font-code-label border border-tertiary-container/30">"求助"</span>
+            <span class="px-2 py-0.5 rounded-full bg-tertiary-container/10 text-tertiary-container text-[10px] font-code-label border border-tertiary-container/30">"集合"</span>
+            <span class="px-2 py-0.5 rounded-full bg-tertiary-container/10 text-tertiary-container text-[10px] font-code-label border border-tertiary-container/30">"撤退"</span>
+          </div>
+        </div>
+        <div>
+          <label class="text-[10px] text-outline-variant font-code-label block mb-1">STT History</label>
+          <div class="p-1.5 bg-surface-container-lowest rounded text-[11px] text-outline-variant max-h-12 overflow-y-auto font-code-label">
+            <div class="text-slate-400">"A点有敌人..."</div>
+            <div class="text-slate-400">"需要医疗包"</div>
+            <div class="text-primary">"需要<span class="text-tertiary-container">集合</span>"</div>
+          </div>
+        </div>
+      </div>
+      <div class="node-tab-content p-3 space-y-2" id="tab-stt-io">
+        <div><span class="text-[10px] font-code-label text-secondary">输入</span><div class="mt-1 p-1.5 bg-surface-container-lowest rounded text-[11px] text-outline-variant">TeamSpeak 实时音频流</div></div>
+        <div><span class="text-[10px] font-code-label text-primary">输出</span><div class="mt-1 p-1.5 bg-surface-container-lowest rounded text-[11px] text-outline-variant">识别文本 + stt_history 累积</div></div>
+        <div><span class="text-[10px] font-code-label text-tertiary-container">条件输出</span><div class="mt-1 p-1.5 bg-tertiary-container/5 rounded text-[11px] text-tertiary-container/80">关键词匹配 → 触发 ContextBuild</div></div>
+      </div>
+      <div class="node-tab-content p-3" id="tab-stt-log">
+        <div class="text-[10px] font-code-label text-slate-500 space-y-1">
+          <div><span class="text-outline-variant">[14:23:05]</span> 接收到音频帧 #4521</div>
+          <div><span class="text-primary">[14:23:05]</span> 识别: "A点有敌人，注意"</div>
+          <div><span class="text-slate-500">[14:23:06]</span> 无关键词 → 继续监听</div>
+          <div><span class="text-outline-variant">[14:23:08]</span> 接收到音频帧 #4522</div>
+          <div><span class="text-primary">[14:23:08]</span> 识别: "需要集合"</div>
+          <div><span class="text-tertiary-container animate-pulse">[14:23:08]</span> 关键词匹配: "集合" → 触发！</div>
+        </div>
+      </div>
+      <div class="node-tab-content p-3" id="tab-stt-full">
+        <div class="text-[10px] font-code-label text-outline-variant mb-2">全部累积文本 (实时)</div>
+        <div class="space-y-1.5 max-h-40 overflow-y-auto font-code-label">
+          <div class="p-1.5 bg-surface-container-lowest rounded text-[11px] text-slate-400"><span class="text-outline-variant text-[9px]">14:23:03</span> "A点有敌人，注意右侧"</div>
+          <div class="p-1.5 bg-surface-container-lowest rounded text-[11px] text-slate-400"><span class="text-outline-variant text-[9px]">14:23:04</span> "收到，我来掩护"</div>
+          <div class="p-1.5 bg-surface-container-lowest rounded text-[11px] text-slate-400"><span class="text-outline-variant text-[9px]">14:23:06</span> "需要医疗包"</div>
+          <div class="p-1.5 bg-surface-container-lowest rounded text-[11px] text-slate-400"><span class="text-outline-variant text-[9px]">14:23:06</span> "B点安全，可以推进"</div>
+          <div class="p-1.5 bg-surface-container-lowest rounded text-[11px] text-slate-400"><span class="text-outline-variant text-[9px]">14:23:08</span> "需要<span class="text-tertiary-container font-bold">集合</span>"</div>
+          <div class="p-1.5 bg-surface-container-lowest rounded text-[11px] text-slate-400"><span class="text-outline-variant text-[9px]">14:23:12</span> "正在前往A点"</div>
+        </div>
+        <div class="mt-2 text-[9px] text-slate-600 font-code-label">已累积 12 条<div class="w-full bg-surface-variant rounded-full h-0.5 mt-1"><div class="bg-primary h-0.5 rounded-full" style="width:35%"></div></div></div>
+      </div>
+    </div>
+
+    <!-- ===== ⑤ History/Keyword ===== -->
+    <div class="absolute left-[640px] w-[280px] glass-node rounded-xl border border-outline-variant/50 z-10 node-card" style="top:560px;" onclick="showDetail('history')">
+      <div class="io-port input-port connected flowing data-only" style="top:30px;" data-port="hist-in" data-label="文本片段 (String)">
+        <span class="io-label">输入: 文本片段 (String)</span>
+      </div>
+      <div class="io-port output-port connected data-only" style="top:72px;" data-port="hist-out" data-label="stt_history (String[])">
+        <span class="io-label">输出: stt_history (String[])</span>
+      </div>
+      <div class="io-port output-port flowing data-only" style="top:110px; right:-7px; border-color:#ef6719!important; background:rgba(239,103,25,0.15)!important;" data-port="hist-trigger" data-label="触发信号">
+        <span class="io-label">输出: 触发信号 (Keyword)</span>
+      </div>
+      <div class="workflow-badge bg-[#10131b] border-[#ef6719] text-[#ef6719]">⑤</div>
+      <div class="flex items-center gap-2 px-3 py-2 border-b border-outline-variant/50">
+        <span class="material-symbols-outlined text-slate-400 text-sm">history_edu</span>
+        <span class="font-node-title text-node-title text-on-surface">STT History · 关键词判断</span>
+      </div>
+      <div class="flex border-b border-outline-variant/50">
+        <button class="tab-btn active" onclick="switchTab(event, 'hist')">累积记录</button>
+        <button class="tab-btn" onclick="switchTab(event, 'hist-cfg')">设置</button>
+      </div>
+      <div class="node-tab-content active p-3" id="tab-hist">
+        <div class="text-[10px] font-code-label text-outline-variant mb-2">对话历史累积</div>
+        <div class="space-y-1.5 max-h-28 overflow-y-auto">
+          <div class="p-1.5 bg-surface-container-lowest rounded text-[11px] text-slate-400"><span class="text-outline-variant text-[9px]">T+0s</span> "A点有敌人..."</div>
+          <div class="p-1.5 bg-surface-container-lowest rounded text-[11px] text-slate-400"><span class="text-outline-variant text-[9px]">T+3s</span> "需要医疗包"</div>
+          <div class="p-1.5 bg-surface-container-lowest rounded text-[11px] text-slate-400"><span class="text-outline-variant text-[9px]">T+7s</span> "B点安全"</div>
+          <div class="p-1.5 bg-tertiary-container/10 rounded text-[11px] text-tertiary-container border border-tertiary-container/30"><span class="text-[9px]">T+10s</span> "需要<span class="font-bold">集合</span>" <span class="text-[9px] opacity-70">← 关键词</span></div>
+        </div>
+      </div>
+      <div class="node-tab-content p-3" id="tab-hist-cfg">
+        <div class="space-y-2">
+          <div class="flex justify-between items-center text-xs"><span class="text-on-surface-variant">最大保留</span><span class="text-xs font-code-label text-primary">20 条</span></div>
+          <div class="w-full bg-surface-variant rounded-full h-1"><div class="bg-primary h-1 rounded-full" style="width:45%"></div></div>
+          <div class="flex justify-between items-center text-xs pt-1"><span class="text-on-surface-variant">上下文窗口</span><span class="text-xs font-code-label text-primary">128k</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== ⑥ ContextBuild ===== -->
+    <div class="absolute left-[330px] w-[250px] glass-node rounded-xl border border-primary/50 z-10 node-card" style="top:830px;" onclick="showDetail('context')">
+      <div class="io-port input-port connected data-only" style="top:30px;" data-port="ctx-in1" data-label="skill_prompt"><span class="io-label">输入: skill_prompt (String)</span></div>
+      <div class="io-port input-port connected data-only" style="top:58px;" data-port="ctx-in2" data-label="OCR文本"><span class="io-label">输入: OCR文本 (String)</span></div>
+      <div class="io-port input-port connected flowing data-only" style="top:86px;" data-port="ctx-in3" data-label="stt_history"><span class="io-label">输入: stt_history (String[])</span></div>
+      <div class="io-port input-port connected data-only" style="top:114px;" data-port="ctx-in4" data-label="对话历史"><span class="io-label">输入: 对话历史 (String[])</span></div>
+      <div class="io-port output-port connected flowing data-only" style="top:55px;" data-port="ctx-out" data-label="组合上下文"><span class="io-label">输出: 组合上下文 (Messages[])</span></div>
+      <div class="workflow-badge bg-[#10131b] border-[#adc7ff] text-[#adc7ff]">⑥</div>
+      <div class="flex items-center gap-2 px-3 py-2 border-b border-outline-variant/50">
+        <span class="material-symbols-outlined text-primary text-sm">hub</span>
+        <span class="font-node-title text-node-title text-on-surface">ContextBuild</span>
+        <span class="ml-auto text-[10px] text-primary font-code-label">触发态</span>
+      </div>
+      <div class="flex border-b border-outline-variant/50">
+        <button class="tab-btn active" onclick="switchTab(event, 'ctx')">配置</button>
+        <button class="tab-btn" onclick="switchTab(event, 'ctx-io')">输入/输出</button>
+        <button class="tab-btn" onclick="switchTab(event, 'ctx-log')">日志</button>
+      </div>
+      <div class="node-tab-content active p-3 space-y-2" id="tab-ctx">
+        <div class="flex items-center justify-between text-xs"><span class="text-outline">状态</span><span class="text-primary flex items-center gap-1"><span class="material-symbols-outlined text-[14px] animate-pulse">sync</span> 构建中...</span></div>
+        <div class="pt-1 border-t border-outline-variant/50 space-y-1.5">
+          <div class="flex items-center gap-1.5"><div class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></div><span class="text-[11px] text-on-surface-variant">Skill Prompt</span></div>
+          <div class="flex items-center gap-1.5"><div class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></div><span class="text-[11px] text-on-surface-variant">OCR 识别文本</span></div>
+          <div class="flex items-center gap-1.5"><div class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></div><span class="text-[11px] text-on-surface-variant">完整 stt_history</span></div>
+          <div class="flex items-center gap-1.5"><div class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></div><span class="text-[11px] text-on-surface-variant">对话历史</span></div>
+        </div>
+      </div>
+      <div class="node-tab-content p-3 space-y-2" id="tab-ctx-io">
+        <div><span class="text-[10px] font-code-label text-primary">输入</span><div class="mt-1 space-y-1"><div class="p-1.5 bg-surface-container-lowest rounded text-[11px] text-outline-variant">skill_prompt (系统指令)</div><div class="p-1.5 bg-surface-container-lowest rounded text-[11px] text-outline-variant">OCR 识别文本</div><div class="p-1.5 bg-surface-container-lowest rounded text-[11px] text-outline-variant">stt_history (完整累积)</div><div class="p-1.5 bg-surface-container-lowest rounded text-[11px] text-outline-variant">对话历史上下文</div></div></div>
+        <div><span class="text-[10px] font-code-label text-primary">输出</span><div class="mt-1 p-1.5 bg-primary/5 rounded text-[11px] text-primary border border-primary/20">组合上下文 → LLM</div></div>
+      </div>
+      <div class="node-tab-content p-3" id="tab-ctx-log">
+        <div class="text-[10px] font-code-label text-slate-500 space-y-1">
+          <div><span class="text-tertiary-container">[14:23:08]</span> 关键词触发: "集合"</div>
+          <div><span class="text-primary">[14:23:08]</span> 加载 skill_prompt...</div>
+          <div><span class="text-primary">[14:23:09]</span> 合并 OCR文本 + stt_history</div>
+          <div><span class="text-primary">[14:23:09]</span> 构建完成，发送至 LLM</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== ⑦ LLM ===== -->
+    <div class="absolute w-[250px] glass-node rounded-xl border border-primary/50 z-10 node-card node-pulse" style="left:640px; top:830px;" onclick="showDetail('llm')">
+      <div class="io-port input-port connected flowing data-only" style="top:30px;" data-port="llm-in" data-label="组合上下文"><span class="io-label">输入: 组合上下文 (Messages[])</span></div>
+      <div class="io-port output-port connected flowing data-only" style="top:55px;" data-port="llm-out" data-label="流式文本"><span class="io-label">输出: 流式文本 (String)</span></div>
+      <div class="workflow-badge bg-[#10131b] border-[#adc7ff] text-[#adc7ff]">⑦</div>
+      <div class="flex items-center gap-2 px-3 py-2 border-b border-outline-variant/50">
+        <span class="material-symbols-outlined text-primary text-sm">smart_toy</span>
+        <span class="font-node-title text-node-title text-on-surface">LLM 生成</span>
+        <span class="ml-auto text-[10px] text-primary font-code-label">流式</span>
+      </div>
+      <div class="flex border-b border-outline-variant/50">
+        <button class="tab-btn active" onclick="switchTab(event, 'llm')">配置</button>
+        <button class="tab-btn" onclick="switchTab(event, 'llm-io')">输入/输出</button>
+        <button class="tab-btn" onclick="switchTab(event, 'llm-log')">日志</button>
+      </div>
+      <div class="node-tab-content active p-3 space-y-2" id="tab-llm">
+        <div class="flex items-center justify-between text-xs"><span class="text-outline">模型</span><span class="text-xs font-code-label text-primary">gpt-4-turbo</span></div>
+        <div><label class="text-[10px] text-outline-variant font-code-label block mb-1">系统提示词</label><div class="p-1.5 bg-surface-container-lowest rounded text-[10px] text-outline-variant leading-relaxed">你是 TeamSpeak 频道监控助手。根据 OCR 信息和语音上下文，生成战术指导。</div></div>
+        <div class="space-y-2 pt-1 border-t border-outline-variant/50">
+          <div class="flex justify-between items-center"><span class="text-xs text-on-surface-variant">Temperature</span><span class="text-xs font-code-label text-primary">0.7</span></div>
+          <div class="w-full bg-surface-variant rounded-full h-1"><div class="bg-primary h-1 rounded-full" style="width:70%"></div></div>
+          <div class="flex justify-between items-center"><span class="text-xs text-on-surface-variant">Max Tokens</span><span class="text-xs font-code-label text-primary">2048</span></div>
+          <div class="w-full bg-surface-variant rounded-full h-1"><div class="bg-primary h-1 rounded-full" style="width:40%"></div></div>
+        </div>
+        <div><label class="text-[10px] text-outline-variant font-code-label block mb-1">已启用技能</label><div class="flex flex-wrap gap-1"><span class="px-2 py-0.5 rounded bg-surface border border-secondary-container/30 text-[10px] text-secondary">战术分析</span><span class="px-2 py-0.5 rounded bg-surface border border-secondary-container/30 text-[10px] text-secondary">意图识别</span></div></div>
+      </div>
+      <div class="node-tab-content p-3 space-y-2" id="tab-llm-io">
+        <div><span class="text-[10px] font-code-label text-primary">输入</span><div class="mt-1 p-1.5 bg-surface-container-lowest rounded text-[11px] text-outline-variant">组合上下文</div></div>
+        <div><span class="text-[10px] font-code-label text-primary">输出</span><div class="mt-1 space-y-1"><div class="p-1.5 bg-primary/5 rounded text-[11px] text-primary border border-primary/20">流式生成文本</div><div class="p-1.5 bg-surface-container-lowest rounded text-[11px] text-outline-variant">完整回复 → TTS 合成</div></div></div>
+      </div>
+      <div class="node-tab-content p-3" id="tab-llm-log">
+        <div class="text-[10px] font-code-label text-slate-500 space-y-1">
+          <div><span class="text-outline-variant">[14:23:09]</span> 接收上下文 (tokens: 342)</div>
+          <div><span class="text-primary">[14:23:10]</span> 流式生成开始...</div>
+          <div class="p-1.5 bg-surface-container-lowest rounded text-[11px] text-primary">"建议<span class="stream-cursor">█</span>"</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== ⑧ TTS ===== -->
+    <div class="absolute w-[220px] glass-node rounded-xl border border-outline-variant/50 z-10 node-card" style="left:950px; top:830px;" onclick="showDetail('tts')">
+      <div class="io-port input-port connected data-only" style="top:30px;" data-port="tts-in" data-label="文本 (String)"><span class="io-label">输入: 文本 (String)</span></div>
+      <div class="io-port output-port connected flowing data-only" style="top:55px;" data-port="tts-out" data-label="合成音频 (WAV)"><span class="io-label">输出: 合成音频 (WAV)</span></div>
+      <div class="workflow-badge bg-[#10131b] border-[#4edea3] text-[#4edea3]">⑧</div>
+      <div class="flex items-center gap-2 px-3 py-2 border-b border-outline-variant/50">
+        <span class="material-symbols-outlined text-outline text-sm">record_voice_over</span>
+        <span class="font-node-title text-node-title text-on-surface">TTS 合成</span>
+        <span class="ml-auto text-[10px] text-outline-variant font-code-label">待命</span>
+      </div>
+      <div class="flex border-b border-outline-variant/50">
+        <button class="tab-btn active" onclick="switchTab(event, 'tts')">配置</button>
+        <button class="tab-btn" onclick="switchTab(event, 'tts-io')">输入/输出</button>
+        <button class="tab-btn" onclick="switchTab(event, 'tts-log')">日志</button>
+      </div>
+      <div class="node-tab-content active p-3 space-y-2" id="tab-tts">
+        <div class="flex items-center justify-between text-xs"><span class="text-outline">状态</span><span class="text-outline-variant flex items-center gap-1"><div class="w-1.5 h-1.5 rounded-full bg-outline-variant"></div> 待命</span></div>
+        <div class="pt-1 border-t border-outline-variant/50"><label class="text-[10px] text-outline-variant font-code-label block mb-1">TTS 引擎</label><div class="flex gap-1 flex-wrap"><span class="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-code-label border border-primary/20">Edge TTS</span><span class="px-2 py-0.5 rounded-full bg-surface-variant text-outline-variant text-[10px] font-code-label">MiniMax</span></div></div>
+        <div><label class="text-[10px] text-outline-variant font-code-label block mb-1">语音设置</label><div class="p-1.5 bg-surface-container-lowest rounded text-[11px] text-outline-variant">音色: zh-CN-YunxiNeural | 语速: 1.0x</div></div>
+      </div>
+      <div class="node-tab-content p-3 space-y-2" id="tab-tts-io">
+        <div><span class="text-[10px] font-code-label text-primary">输入</span><div class="mt-1 p-1.5 bg-surface-container-lowest rounded text-[11px] text-outline-variant">LLM 生成文本 (逐句)</div></div>
+        <div><span class="text-[10px] font-code-label text-primary">输出</span><div class="mt-1 space-y-1"><div class="p-1.5 bg-surface-container-lowest rounded text-[11px] text-outline-variant">合成音频 → TeamSpeak 播放</div><div class="p-1.5 bg-secondary/5 rounded text-[11px] text-secondary border border-secondary/20">播放完成 → 回到 STT 继续监听</div></div></div>
+      </div>
+      <div class="node-tab-content p-3" id="tab-tts-log">
+        <div class="text-[10px] font-code-label text-slate-500 space-y-1"><div><span class="text-outline-variant">[--:--:--]</span> 等待 LLM 输出...</div></div>
+      </div>
+    </div>
+
+    <!-- ===== ⑨ TS Output ===== -->
+    <div class="absolute w-[220px] glass-node rounded-xl border border-secondary/30 z-10 node-card" style="left:1220px; top:830px;" onclick="showDetail('tsoutput')">
+      <div class="io-port input-port connected data-only" style="top:30px;" data-port="out-in" data-label="音频数据 (WAV)"><span class="io-label">输入: 音频数据 (WAV)</span></div>
+      <div class="io-port output-port connected data-only" style="top:72px;" data-port="out-done" data-label="播放完成信号"><span class="io-label">输出: 播放完成信号</span></div>
+      <div class="workflow-badge bg-[#10131b] border-[#4edea3] text-[#4edea3]">⑨</div>
+      <div class="flex items-center gap-2 px-3 py-2 border-b border-outline-variant/50">
+        <span class="material-symbols-outlined text-secondary text-sm">volume_up</span>
+        <span class="font-node-title text-node-title text-on-surface">TS 音频输出</span>
+        <span class="ml-auto text-[10px] text-outline-variant font-code-label">待命</span>
+      </div>
+      <div class="p-3 space-y-2">
+        <div class="flex items-center justify-between text-xs"><span class="text-outline">连接</span><span class="text-outline-variant flex items-center gap-1"><div class="w-1.5 h-1.5 rounded-full bg-outline-variant"></div> 待命</span></div>
+        <div class="pt-1 border-t border-outline-variant/50"><span class="text-[10px] text-outline-variant font-code-label block mb-1">播放模式</span><div class="flex gap-1"><span class="px-2 py-0.5 rounded-full bg-surface-variant text-[10px] text-outline-variant">逐段发送</span></div></div>
+        <div><span class="text-[10px] text-outline-variant font-code-label block mb-1">输出端点</span><div class="text-[10px] text-primary font-code-label break-all">ws://localhost:8000/ws/speak</div></div>
+        <div class="pt-1 border-t border-outline-variant/50"><span class="text-[10px] text-secondary/80">完成播放 → 自动循环回④</span></div>
+      </div>
+    </div>
+
+    <!-- ===== LEGENDS ===== -->
+    <div class="absolute left-[40px] glass-node rounded-xl border border-outline-variant/50 p-4 z-10" style="top:1040px; width:600px;">
+      <div class="text-[10px] font-code-label text-primary uppercase tracking-[0.2em] mb-3">流程说明</div>
+      <div class="space-y-1.5 text-[11px] text-outline-variant">
+        <div class="flex items-start gap-2"><span class="text-secondary font-bold mt-0.5">①</span><span>上传图片 — 用户上传游戏截图，<b>同时触发</b>两条并行链路</span></div>
+        <div class="flex items-start gap-2 ml-4"><span class="text-adc7ff font-bold mt-0.5">②</span><span>OCR 识别 (上链路) — EasyOCR 提取画面中文字信息，独立运行</span></div>
+        <div class="flex items-start gap-2 ml-4"><span class="text-adc7ff font-bold mt-0.5">③</span><span>TS 音频输入 (下链路) — TeamSpeakBot 开始接收实时音频</span></div>
+        <div class="flex items-start gap-2 ml-8"><span class="text-adc7ff font-bold mt-0.5">④</span><span>STT 持续监听 — SenseVoice 实时语音转文字，逐句累积到 stt_history</span></div>
+        <div class="flex items-start gap-2 ml-8"><span class="text-tertiary-container font-bold mt-0.5">⑤</span><span>关键词判断 — 不含关键词→回到④继续监听; 含关键词→触发⑥</span></div>
+        <div class="flex items-start gap-2"><span class="text-primary font-bold mt-0.5">⑥</span><span>ContextBuild — 汇聚两条链路: skill_prompt + OCR文本 + stt_history</span></div>
+        <div class="flex items-start gap-2"><span class="text-primary font-bold mt-0.5">⑦</span><span>LLM 流式生成 — gpt-4-turbo 生成战术建议</span></div>
+        <div class="flex items-start gap-2"><span class="text-secondary font-bold mt-0.5">⑧</span><span>TTS 逐句合成 — Edge TTS 将文本合成为语音</span></div>
+        <div class="flex items-start gap-2"><span class="text-secondary font-bold mt-0.5">⑨</span><span>TS 音频输出 — 播放 → 自动循环回④</span></div>
+      </div>
+    </div>
+
+    <div class="absolute glass-node rounded-xl border border-outline-variant/50 p-4 z-10" style="left:680px; top:1040px; width:280px;">
+      <div class="text-[10px] font-code-label text-outline-variant uppercase tracking-[0.2em] mb-3">颜色标识</div>
+      <div class="space-y-2 text-[11px]">
+        <div class="flex items-center gap-2"><div class="w-3 h-1 rounded-full bg-secondary"></div><span class="text-outline-variant">已连接端口 (绿色)</span></div>
+        <div class="flex items-center gap-2"><div class="w-3 h-1 rounded-full bg-primary"></div><span class="text-outline-variant">数据流通中 (蓝色脉冲)</span></div>
+        <div class="flex items-center gap-2"><div class="w-3 h-1 rounded-full bg-tertiary-container"></div><span class="text-outline-variant">关键词 / 触发条件</span></div>
+        <div class="flex items-center gap-2"><div class="w-3 h-1 rounded bg-[#8b90a0] opacity-50"></div><span class="text-outline-variant">未连接端口 (灰色)</span></div>
+      </div>
+    </div>
+
+  </div><!-- end canvas-content -->
+
+  <!-- ===== ZOOM + FLOW TOGGLE CONTROLS ===== -->
+  <div class="fixed z-50 flex items-center gap-1 p-1.5 bg-slate-950/80 backdrop-blur-md border border-outline-variant/50 rounded-lg" style="left:272px; bottom:48px;">
+    <button class="flow-toggle-btn active" data-flow="all" onclick="switchFlowView('all', this)" title="显示全部信息">
+      <span class="material-symbols-outlined text-[14px] align-middle mr-0.5" style="vertical-align:-2px;">layers</span> 全部
+    </button>
+    <button class="flow-toggle-btn" data-flow="data" onclick="switchFlowView('data', this)" title="显示数据流 (IO端口 + 数据类型)">
+      <span class="material-symbols-outlined text-[14px] align-middle mr-0.5" style="vertical-align:-2px;">cable</span> 数据流
+    </button>
+    <button class="flow-toggle-btn" data-flow="event" onclick="switchFlowView('event', this)" title="显示事件流 (触发顺序)">
+      <span class="material-symbols-outlined text-[14px] align-middle mr-0.5" style="vertical-align:-2px;">schedule</span> 事件流
+    </button>
+
+    <div class="w-[1px] h-5 bg-outline-variant/50 mx-1.5"></div>
+
+    <button class="w-7 h-7 flex items-center justify-center text-slate-400 hover:text-blue-400 hover:bg-slate-800/50 rounded transition-all active:scale-90" onclick="zoomCanvas(-0.1)">
+      <span class="material-symbols-outlined text-[18px]">remove</span>
+    </button>
+    <div class="px-1.5 flex items-center">
+      <input id="zoom-input" class="w-12 bg-transparent border-none text-[12px] font-code-label text-center text-primary focus:ring-0 p-0 cursor-pointer" type="text" value="100%" onclick="this.select()" onchange="setZoomFromInput(this.value)">
+    </div>
+    <button class="w-7 h-7 flex items-center justify-center text-slate-400 hover:text-blue-400 hover:bg-slate-800/50 rounded transition-all active:scale-90" onclick="zoomCanvas(0.1)">
+      <span class="material-symbols-outlined text-[18px]">add</span>
+    </button>
+    <div class="w-[1px] h-4 bg-outline-variant/50 mx-1"></div>
+    <button class="w-7 h-7 flex items-center justify-center text-slate-400 hover:text-blue-400 hover:bg-slate-800/50 rounded transition-all active:scale-90" title="适应屏幕" onclick="resetZoom()">
+      <span class="material-symbols-outlined text-[16px]">fullscreen_exit</span>
+    </button>
+  </div>
+
+</main>
+
+<!-- ===== RIGHT DETAIL PANEL ===== -->
+<aside id="detail-panel">
+  <div class="p-4 border-b border-outline-variant/50 flex justify-between items-center shrink-0">
+    <h3 class="font-h2 text-[16px] text-on-surface flex items-center gap-2">
+      <span class="material-symbols-outlined text-primary">tune</span>
+      <span id="detail-node-name">节点设置</span>
+    </h3>
+    <button class="text-outline hover:text-on-surface" onclick="toggleDetailPanel()">
+      <span class="material-symbols-outlined text-sm">close</span>
+    </button>
+  </div>
+  <div class="flex border-b border-outline-variant/50 shrink-0" id="detail-tabs">
+    <button class="detail-tab-btn active" onclick="switchDetailTab(event, 'details')">详情</button>
+    <button class="detail-tab-btn" onclick="switchDetailTab(event, 'config')">配置</button>
+    <button class="detail-tab-btn" onclick="switchDetailTab(event, 'logs')">日志</button>
+  </div>
+  <div class="flex-1 overflow-y-auto" id="detail-tab-container">
+    <div class="detail-tab-content active p-4" id="detail-tab-details">
+      <div class="text-center text-outline-variant text-xs py-8">点击左侧节点查看详情</div>
+    </div>
+    <div class="detail-tab-content p-4" id="detail-tab-config"></div>
+    <div class="detail-tab-content p-4" id="detail-tab-logs"></div>
+  </div>
+  <div class="p-4 border-t border-outline-variant/50 flex gap-2 shrink-0">
+    <button class="flex-1 bg-surface-variant text-on-surface px-4 py-2 rounded-lg text-sm font-medium border border-outline-variant hover:bg-surface-container-highest transition-colors">取消</button>
+    <button class="flex-1 bg-primary text-on-primary px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary-fixed transition-colors">保存配置</button>
+  </div>
+</aside>
+
+</div><!-- end flex container -->
+
+<!-- ===== BOTTOM STATUS BAR ===== -->
+<footer class="fixed bottom-0 left-0 w-full z-50 flex justify-between items-center px-6 h-8 bg-slate-950 border-t border-outline-variant/50 font-inter text-[10px] uppercase tracking-widest">
+  <div class="flex items-center gap-6">
+    <div class="flex items-center gap-2"><div class="w-1.5 h-1.5 rounded-full bg-secondary shadow-[0_0_8px_rgba(78,222,163,0.6)] animate-pulse"></div><span class="text-slate-400 font-medium">TeamSpeakBot 服务状态:</span><span class="text-secondary">运行中</span></div>
+    <div class="flex items-center gap-2"><div class="w-1.5 h-1.5 rounded-full bg-secondary shadow-[0_0_8px_rgba(78,222,163,0.6)] animate-pulse"></div><span class="text-slate-400 font-medium">TeamSpeakAI 后端:</span><span class="text-secondary">最佳</span></div>
+    <div class="flex items-center gap-2"><div class="w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_8px_rgba(173,199,255,0.6)] animate-pulse"></div><span class="text-slate-400 font-medium">Pipeline:</span><span class="text-primary">STT 监听中</span></div>
+  </div>
+  <div class="flex gap-4"><a class="text-slate-500 hover:text-blue-300 opacity-80 hover:opacity-100 transition-opacity" href="#">API参考</a><a class="text-slate-500 hover:text-blue-300 opacity-80 hover:opacity-100 transition-opacity" href="#">文档</a><a class="text-slate-500 hover:text-blue-300 opacity-80 hover:opacity-100 transition-opacity" href="#">支持</a></div>
+</footer>
+
+<!-- ===== JAVASCRIPT ===== -->
+<script>
+// ===== ZOOM =====
+let currentZoom = 1.0;
+const ZOOM_MIN = 0.25, ZOOM_MAX = 3.0;
+
+function zoomCanvas(delta) {
+  currentZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, currentZoom + delta));
+  applyZoom();
+}
+function resetZoom() { currentZoom = 1.0; applyZoom(); }
+function setZoomFromInput(val) {
+  let num = parseFloat(val.replace('%', '')) / 100;
+  if (isNaN(num) || num < ZOOM_MIN) num = ZOOM_MIN;
+  if (num > ZOOM_MAX) num = ZOOM_MAX;
+  currentZoom = num;
+  applyZoom();
+}
+function applyZoom() {
+  document.getElementById('canvas-content').style.transform = `scale(${currentZoom})`;
+  document.getElementById('zoom-input').value = Math.round(currentZoom * 100) + '%';
+}
+
+// ===== SIDEBAR =====
+function toggleSidebarSection(btn) {
+  const content = btn.nextElementSibling;
+  if (!content) return;
+  const chevron = btn.querySelector('.chevron-icon');
+  const isCollapsed = content.classList.contains('collapsed');
+  if (isCollapsed) {
+    content.classList.remove('collapsed'); content.style.maxHeight = content.scrollHeight + 'px';
+    setTimeout(() => { content.style.maxHeight = '1000px'; }, 260);
+    if (chevron) { chevron.classList.remove('collapsed'); chevron.classList.add('expanded'); }
+  } else {
+    content.style.maxHeight = content.scrollHeight + 'px'; content.offsetHeight;
+    content.classList.add('collapsed'); content.style.maxHeight = '0';
+    if (chevron) { chevron.classList.remove('expanded'); chevron.classList.add('collapsed'); }
+  }
+}
+
+// ===== NODE TABS =====
+function switchTab(event, tabId) {
+  const nodeCard = event.target.closest('.node-card');
+  nodeCard.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+  nodeCard.querySelectorAll('.node-tab-content').forEach(content => content.classList.remove('active'));
+  event.target.classList.add('active');
+  const tabContent = nodeCard.querySelector('#tab-' + tabId);
+  if (tabContent) tabContent.classList.add('active');
+}
+
+// ===== CANVAS PAN =====
+let isPanning = false, panStartX = 0, panStartY = 0, scrollStartX = 0, scrollStartY = 0;
+const canvasContainer = document.getElementById('canvas-container');
+canvasContainer.addEventListener('mousedown', function(e) {
+  if (e.button === 1) {
+    e.preventDefault(); isPanning = true;
+    panStartX = e.clientX; panStartY = e.clientY;
+    scrollStartX = canvasContainer.scrollLeft; scrollStartY = canvasContainer.scrollTop;
+    canvasContainer.style.cursor = 'grabbing'; canvasContainer.style.userSelect = 'none';
+  }
+});
+window.addEventListener('mousemove', function(e) {
+  if (!isPanning) return;
+  canvasContainer.scrollLeft = scrollStartX - (e.clientX - panStartX);
+  canvasContainer.scrollTop = scrollStartY - (e.clientY - panStartY);
+});
+window.addEventListener('mouseup', function(e) {
+  if (e.button === 1 && isPanning) { isPanning = false; canvasContainer.style.cursor = ''; canvasContainer.style.userSelect = ''; }
+});
+canvasContainer.addEventListener('auxclick', function(e) { if (e.button === 1) e.preventDefault(); });
+
+// ===== DETAIL PANEL =====
+let panelOpen = true;
+function toggleDetailPanel() {
+  const panel = document.getElementById('detail-panel');
+  panelOpen = !panelOpen;
+  if (panelOpen) panel.classList.remove('panel-closed'); else panel.classList.add('panel-closed');
+}
+function switchDetailTab(event, tabName) {
+  const panel = document.getElementById('detail-panel');
+  panel.querySelectorAll('.detail-tab-btn').forEach(btn => btn.classList.remove('active'));
+  panel.querySelectorAll('.detail-tab-content').forEach(c => c.classList.remove('active'));
+  event.target.classList.add('active');
+  const tabEl = document.getElementById('detail-tab-' + tabName);
+  if (tabEl) tabEl.classList.add('active');
+}
+
+// ===== SHOW DETAIL =====
+function showDetail(nodeType) {
+  if (!panelOpen) toggleDetailPanel();
+  const data = buildDetailData(nodeType);
+  document.getElementById('detail-node-name').textContent = data.title;
+  document.getElementById('detail-tab-details').innerHTML = data.detailsHTML;
+  document.getElementById('detail-tab-config').innerHTML = data.configHTML;
+  document.getElementById('detail-tab-logs').innerHTML = data.logsHTML;
+  const panel = document.getElementById('detail-panel');
+  panel.querySelectorAll('.detail-tab-btn').forEach(b => b.classList.remove('active'));
+  panel.querySelectorAll('.detail-tab-content').forEach(c => c.classList.remove('active'));
+  const firstBtn = panel.querySelector('.detail-tab-btn');
+  if (firstBtn) firstBtn.classList.add('active');
+  document.getElementById('detail-tab-details').classList.add('active');
+}
+
+function buildDetailData(nodeType) {
+  function chipsHTML(activeList, inactiveList) {
+    let h = '<div class="flex flex-wrap gap-2">';
+    activeList.forEach(label => { h += `<span class="px-2 py-1 rounded-lg bg-surface-container border border-secondary-container/30 text-xs flex items-center gap-1"><span class="material-symbols-outlined text-[12px] text-secondary">check</span> ${label}</span>`; });
+    inactiveList.forEach(label => { h += `<span class="px-2 py-1 rounded-lg bg-surface-container border border-outline-variant text-xs text-outline-variant">${label}</span>`; });
+    h += `<button class="px-2 py-1 rounded-lg bg-surface-variant text-outline hover:text-on-surface text-xs border border-dashed border-outline-variant flex items-center gap-1"><span class="material-symbols-outlined text-[12px]">add</span> 添加</button></div>`;
+    return h;
+  }
+  function sliderHTML(label, value, max) {
+    const pct = (value / max * 100);
+    return `<div class="flex justify-between items-center mb-1"><span class="text-xs text-on-surface-variant">${label}</span><span class="text-xs font-code-label text-primary">${value}</span></div><div class="w-full bg-surface-variant rounded-full h-1"><div class="bg-primary h-1 rounded-full" style="width:${pct}%"></div></div>`;
+  }
+  function textBlock(val) { return `<div class="p-2 bg-surface-container rounded-lg text-[11px] text-outline-variant font-code-label">${val}</div>`; }
+  function logEntry(ts, color, msg) { const c = color || 'outline-variant'; return `<div><span class="text-${c}">[${ts}]</span> ${msg}</div>`; }
+
+  const templates = {
+    upload: {
+      title: '上传图片',
+      detailsHTML: `<div class="mb-3"><div class="text-xs font-code-label text-primary mb-1">当前状态</div><div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-secondary"></div><span class="text-xs text-secondary font-medium">已就绪</span></div></div><div class="mb-3"><div class="text-xs font-medium text-outline mb-2">并行触发</div><div class="space-y-1.5"><div class="flex items-center gap-1.5"><div class="w-1.5 h-1.5 rounded-full bg-secondary"></div><span class="text-[11px] text-on-surface-variant">→ OCR 识别 (图片处理)</span></div><div class="flex items-center gap-1.5"><div class="w-1.5 h-1.5 rounded-full bg-primary"></div><span class="text-[11px] text-on-surface-variant">→ TS 音频监听</span></div></div></div><div class="mb-3"><div class="text-xs font-medium text-outline mb-2">支持格式</div>${chipsHTML(['PNG','JPG','WEBP'],['BMP','TIFF'])}</div><div class="mb-3"><div class="text-xs font-medium text-outline mb-2">限制</div>${textBlock('单文件最大 10MB')}</div>`,
+      configHTML: `<div class="mb-3"><div class="text-xs font-medium text-outline mb-2">上传方式</div>${chipsHTML(['拖拽上传','文件选择'],['URL导入'])}</div><div class="mb-3"><div class="text-xs font-medium text-outline mb-2">自动触发</div>${chipsHTML(['上传后自动OCR+监听'],['手动触发'])}</div>`,
+      logsHTML: `<div class="text-[10px] font-code-label text-slate-500 space-y-1.5">${logEntry('14:23:01','secondary','上传图片: map_screenshot.png (2.4MB)')}${logEntry('14:23:01','outline-variant','格式校验通过 → 触发 OCR + TS监听')}</div>`
+    },
+    ocr: {
+      title: 'OCR 识别',
+      detailsHTML: `<div class="mb-3"><div class="text-xs font-code-label text-primary mb-1">当前状态</div><div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-secondary"></div><span class="text-xs text-secondary font-medium">已就绪</span></div></div><div class="mb-3"><div class="text-xs font-medium text-outline mb-2">输入</div>${textBlock('图片文件 (PNG / JPG / WEBP)')}</div><div class="mb-3"><div class="text-xs font-medium text-outline mb-2">输出</div>${textBlock('OCR识别文本 → ContextBuild')}</div>`,
+      configHTML: `<div class="mb-3"><div class="text-xs font-medium text-outline mb-2">OCR 引擎</div>${chipsHTML(['EasyOCR'],['PaddleOCR'])}</div><div class="mb-3"><div class="text-xs font-medium text-outline mb-2">识别语言</div>${chipsHTML(['中文'],['English','日本語'])}</div>`,
+      logsHTML: `<div class="text-[10px] font-code-label text-slate-500 space-y-1.5">${logEntry('14:23:01','outline-variant','接收上传图片')}${logEntry('14:23:02','secondary','EasyOCR 引擎加载完成')}${logEntry('14:23:03','primary','识别完成: 3 个文本区域')}</div>`
+    },
+    tsinput: {
+      title: 'TS 音频输入',
+      detailsHTML: `<div class="mb-3"><div class="text-xs font-code-label text-primary mb-1">当前连接</div><div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-secondary animate-pulse"></div><span class="text-xs text-secondary font-medium">WebSocket 已连接</span></div></div><div class="mb-3"><div class="text-xs font-medium text-outline mb-2">输入端点</div>${textBlock('ws://localhost:8000/ws/audio')}</div><div class="mb-3"><div class="text-xs font-medium text-outline mb-2">触发来源</div><div class="text-[10px] text-outline-variant">由上传图片事件触发 (非OCR触发)</div></div>`,
+      configHTML: `<div class="mb-3"><div class="text-xs font-medium text-outline mb-2">WebSocket 端点</div><textarea class="w-full bg-surface-container border border-outline-variant rounded-lg p-2 text-xs text-on-surface-variant h-12 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/50 resize-none">ws://localhost:8000/ws/audio</textarea></div><div class="mb-3"><div class="text-xs font-medium text-outline mb-2">音频格式</div>${chipsHTML(['16kHz 单声道'],['48kHz','立体声'])}</div>`,
+      logsHTML: `<div class="text-[10px] font-code-label text-slate-500 space-y-1.5">${logEntry('14:23:01','primary','收到上传触发信号 → 开始监听')}${logEntry('14:23:00','secondary','WebSocket 连接已建立')}${logEntry('14:23:05','outline-variant','接收音频帧 #4521')}</div>`
+    },
+    stt: {
+      title: 'STT 持续监听',
+      detailsHTML: `<div class="mb-3"><div class="text-xs font-code-label text-primary mb-1">当前状态</div><div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-primary animate-pulse"></div><span class="text-xs text-primary font-medium">监听中...</span></div></div><div class="mb-3"><div class="text-xs font-medium text-outline mb-2">输入</div>${textBlock('TeamSpeak 实时音频流 (16kHz)')}</div><div class="mb-3"><div class="text-xs font-medium text-outline mb-2">输出</div>${textBlock('语音识别文本 → STT History')}</div>`,
+      configHTML: `<div class="mb-3"><div class="text-xs font-medium text-outline mb-2">STT 模型</div>${chipsHTML(['SenseVoice'],['Whisper','MiniMax'])}</div><div class="mb-3"><div class="text-xs font-medium text-outline mb-2">关键词</div>${chipsHTML(['求助','集合','撤退'],['注意','掩护'])}</div>`,
+      logsHTML: `<div class="text-[10px] font-code-label text-slate-500 space-y-1.5">${logEntry('14:23:05','primary','识别: "A点有敌人"')}${logEntry('14:23:08','primary','识别: "需要集合"')}${logEntry('14:23:08','tertiary-container','★ 关键词匹配 → 触发!')}</div>`
+    },
+    history: {
+      title: 'STT History',
+      detailsHTML: `<div class="mb-3"><div class="text-xs font-code-label text-primary mb-1">当前状态</div><div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-outline-variant"></div><span class="text-xs text-outline-variant font-medium">累积中</span></div></div><div class="mb-3"><div class="text-xs font-medium text-outline mb-2">输入</div>${textBlock('STT 实时识别文本')}</div><div class="mb-3"><div class="text-xs font-medium text-outline mb-2">输出</div>${textBlock('完整对话历史 → ContextBuild')}</div>`,
+      configHTML: `<div class="mb-3">${sliderHTML('最大保留条数',20,50)}</div><div class="mb-3"><div class="text-xs font-medium text-outline mb-2">清理策略</div>${chipsHTML(['FIFO'],['按相关性'])}</div>`,
+      logsHTML: `<div class="text-[10px] font-code-label text-slate-500 space-y-1.5">${logEntry('14:23:05','outline-variant','追加: "A点有敌人"')}${logEntry('14:23:08','tertiary-container','追加: "需要集合" — 含关键词')}${logEntry('14:23:08','primary','推送至 ContextBuild')}</div>`
+    },
+    context: {
+      title: 'Context Build',
+      detailsHTML: `<div class="mb-3"><div class="text-xs font-code-label text-primary mb-1">当前状态</div><div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-primary animate-pulse"></div><span class="text-xs text-primary font-medium">构建中...</span></div></div><div class="mb-3"><div class="text-xs font-medium text-outline mb-2">输入 (4源)</div><div class="space-y-1.5"><div class="flex items-center gap-1.5"><div class="w-1.5 h-1.5 rounded-full bg-primary"></div><span class="text-[11px]">Skill Prompt</span></div><div class="flex items-center gap-1.5"><div class="w-1.5 h-1.5 rounded-full bg-primary"></div><span class="text-[11px]">OCR 识别文本</span></div><div class="flex items-center gap-1.5"><div class="w-1.5 h-1.5 rounded-full bg-primary"></div><span class="text-[11px]">stt_history</span></div><div class="flex items-center gap-1.5"><div class="w-1.5 h-1.5 rounded-full bg-primary"></div><span class="text-[11px]">对话历史</span></div></div></div><div class="mb-3"><div class="text-xs font-medium text-outline mb-2">输出</div>${textBlock('组合上下文 → LLM')}</div>`,
+      configHTML: `<div class="mb-3"><div class="text-xs font-medium text-outline mb-2">构建模块</div>${chipsHTML(['Skill Prompt','OCR文本','stt_history'],['对话历史'])}</div><div class="mb-3">${sliderHTML('最大上下文长度',4096,16384)}</div>`,
+      logsHTML: `<div class="text-[10px] font-code-label text-slate-500 space-y-1.5">${logEntry('14:23:08','tertiary-container','关键词触发: "集合"')}${logEntry('14:23:08','primary','加载 skill_prompt...')}${logEntry('14:23:09','primary','合并完成 → LLM (486 tokens)')}</div>`
+    },
+    llm: {
+      title: 'LLM Processor',
+      detailsHTML: `<div class="mb-3"><div class="text-xs font-code-label text-primary mb-1">当前状态</div><div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-primary animate-pulse"></div><span class="text-xs text-primary font-medium">流式生成中</span></div></div><div class="mb-3"><div class="text-xs font-medium text-outline mb-2">输入</div>${textBlock('组合上下文')}</div><div class="mb-3"><div class="text-xs font-medium text-outline mb-2">输出</div>${textBlock('流式生成文本 → TTS Engine')}</div>`,
+      configHTML: `<div class="mb-3"><div class="text-xs font-medium text-outline mb-2">系统提示词</div><textarea class="w-full bg-surface-container border border-outline-variant rounded-lg p-2 text-xs text-on-surface-variant h-24 focus:outline-none focus:border-primary resize-none">你是 TeamSpeak 频道监控助手。</textarea></div><div class="mb-3"><div class="text-xs font-medium text-outline mb-2">已启用技能</div>${chipsHTML(['战术分析','意图识别'],['情绪检测'])}</div>`,
+      logsHTML: `<div class="text-[10px] font-code-label text-slate-500 space-y-1.5">${logEntry('14:23:09','outline-variant','接收上下文 (tokens: 486)')}${logEntry('14:23:10','primary','流式生成开始...')}<div class="p-1.5 bg-surface-container-lowest rounded text-[11px] text-primary my-1">"建议向B点移动..."<span class="stream-cursor">█</span></div></div>`
+    },
+    tts: {
+      title: 'TTS Engine',
+      detailsHTML: `<div class="mb-3"><div class="text-xs font-code-label text-primary mb-1">当前状态</div><div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-outline-variant"></div><span class="text-xs text-outline-variant font-medium">待命</span></div></div><div class="mb-3"><div class="text-xs font-medium text-outline mb-2">输入</div>${textBlock('LLM 生成文本 (逐句)')}</div><div class="mb-3"><div class="text-xs font-medium text-outline mb-2">输出</div>${textBlock('合成音频 → TeamSpeak 播放')}</div>`,
+      configHTML: `<div class="mb-3"><div class="text-xs font-medium text-outline mb-2">TTS 引擎</div>${chipsHTML(['Edge TTS'],['MiniMax'])}</div><div class="mb-3"><div class="text-xs font-medium text-outline mb-2">语音设置</div>${textBlock('音色: zh-CN-YunxiNeural | 语速: 1.0x')}</div>`,
+      logsHTML: `<div class="text-[10px] font-code-label text-slate-500 space-y-1.5">${logEntry('--:--:--','outline-variant','等待 LLM 输出...')}</div>`
+    },
+    tsoutput: {
+      title: 'TS 音频输出',
+      detailsHTML: `<div class="mb-3"><div class="text-xs font-code-label text-primary mb-1">播放状态</div><div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-outline-variant"></div><span class="text-xs text-outline-variant font-medium">待命</span></div></div><div class="mb-3"><div class="text-xs font-medium text-outline mb-2">输入</div>${textBlock('TTS 合成音频 (逐段)')}</div><div class="mb-3"><div class="text-xs font-medium text-outline mb-2">输出端点</div>${textBlock('ws://localhost:8000/ws/speak → TeamSpeak')}</div>`,
+      configHTML: `<div class="mb-3"><div class="text-xs font-medium text-outline mb-2">播放模式</div>${chipsHTML(['逐段发送'],['流式推送'])}</div><div class="mb-3"><div class="text-xs font-medium text-outline mb-2">循环</div>${chipsHTML(['播放完自动循环'],['手动触发'])}</div>`,
+      logsHTML: `<div class="text-[10px] font-code-label text-slate-500 space-y-1.5">${logEntry('14:23:14','primary','接收 TTS 音频段 #1')}${logEntry('14:23:14','outline-variant','发送至 TeamSpeak...')}${logEntry('14:23:15','secondary','播放完成 → 循环回 STT')}</div>`
+    }
+  };
+
+  return templates[nodeType] || templates.llm;
+}
+
+// =============================================
+// ===== FLOW VIEW TOGGLE =====
+// =============================================
+function switchFlowView(flowMode, btn) {
+  document.querySelectorAll('.flow-toggle-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+
+  const canvas = document.getElementById('canvas-content');
+  canvas.setAttribute('data-flow', flowMode);
+
+  // Toggle SVG group visibility + line opacity
+  const dataGroup = document.querySelector('#connections-svg .data-only');
+  const eventGroup = document.querySelector('#connections-svg .event-only');
+  const dataLines = document.querySelectorAll('#connections-svg .conn-data-line');
+  const eventLines = document.querySelectorAll('#connections-svg .conn-event-line');
+
+  if (flowMode === 'data') {
+    if (dataGroup) dataGroup.style.display = '';
+    if (eventGroup) eventGroup.style.display = 'none';
+    dataLines.forEach(l => l.style.opacity = '1');
+    eventLines.forEach(l => l.style.opacity = '0');
+  } else if (flowMode === 'event') {
+    if (dataGroup) dataGroup.style.display = 'none';
+    if (eventGroup) eventGroup.style.display = '';
+    dataLines.forEach(l => l.style.opacity = '0');
+    eventLines.forEach(l => l.style.opacity = '1');
+  } else {
+    // all
+    if (dataGroup) dataGroup.style.display = '';
+    if (eventGroup) eventGroup.style.display = '';
+    dataLines.forEach(l => l.style.opacity = '1');
+    eventLines.forEach(l => l.style.opacity = '1');
+  }
+}
+</script>
+
+</body>
+</html>

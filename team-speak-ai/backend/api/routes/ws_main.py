@@ -11,6 +11,7 @@ import json
 import uuid
 import logging
 import asyncio
+import time
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -25,9 +26,13 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+HEARTBEAT_TIMEOUT = 90  # seconds without activity before disconnect
+WS_MAX_MSG_SIZE = 64 * 1024  # 64KB max text message size
+
 # 已连接的客户端
 _connected_clients: dict[str, WebSocket] = {}
-_flow_subscribers: dict[str, set[WebSocket]] = {}  # flow_id → {ws, ...}
+_flow_subscribers: dict[str, set[WebSocket]] = {}
+_client_last_activity: dict[str, float] = {}  # client_id → last activity timestamp (seconds)
 
 
 # ── 工具函数 ───────────────────────────────────────────────────
@@ -77,7 +82,25 @@ async def ws_main(websocket: WebSocket):
     await websocket.accept()
     client_id = str(uuid.uuid4())
     _connected_clients[client_id] = websocket
+    _client_last_activity[client_id] = time.time()
     logger.info(f"WS client connected: {client_id}")
+
+    async def heartbeat_monitor():
+        """断开长时间无活动的客户端"""
+        try:
+            while True:
+                await asyncio.sleep(15)
+                if _client_last_activity.get(client_id, 0) < time.time() - HEARTBEAT_TIMEOUT:
+                    logger.info(f"WS client heartbeat timeout: {client_id}")
+                    try:
+                        await websocket.close(code=1001, reason="heartbeat timeout")
+                    except Exception:
+                        pass
+                    return
+        except asyncio.CancelledError:
+            pass
+
+    monitor_task = asyncio.create_task(heartbeat_monitor())
 
     try:
         # 下发初始元数据
@@ -120,12 +143,21 @@ async def ws_main(websocket: WebSocket):
 
         # 消息循环（文本 + 二进制帧）
         while True:
+            _client_last_activity[client_id] = time.time()
             data = await websocket.receive()
 
             if data["type"] == "websocket.disconnect":
                 break
 
             if "text" in data:
+                # 处理 ping 消息
+                if data["text"].strip() == "ping":
+                    await websocket.send_text("pong")
+                    continue
+                if len(data["text"]) > WS_MAX_MSG_SIZE:
+                    await _send_error(websocket, "_system", "MESSAGE_TOO_LARGE",
+                                      f"Message exceeds {WS_MAX_MSG_SIZE} bytes limit")
+                    continue
                 try:
                     msg = json.loads(data["text"])
                 except json.JSONDecodeError:
@@ -144,7 +176,13 @@ async def ws_main(websocket: WebSocket):
     except Exception as e:
         logger.error(f"WS error for client {client_id}: {e}")
     finally:
+        monitor_task.cancel()
+        try:
+            await monitor_task
+        except asyncio.CancelledError:
+            pass
         _connected_clients.pop(client_id, None)
+        _client_last_activity.pop(client_id, None)
         _unsubscribe_all_flows(websocket)
 
 
@@ -299,7 +337,7 @@ async def handle_node_create(websocket: WebSocket, flow_id: str, msg_id: str,
         position=position,
         config=dict(type_def.default_config),
     )
-    fm.add_node(flow_id, node)
+    await fm.add_node(flow_id, node)
 
     # 记录操作历史
     try:
@@ -330,7 +368,7 @@ async def handle_node_delete(websocket: WebSocket, flow_id: str, msg_id: str,
     saved = fm._serialize_flow(flow)["nodes"]
     saved_node = next((n for n in saved if n["id"] == node_id), None)
 
-    fm.remove_node(flow_id, node_id)
+    await fm.remove_node(flow_id, node_id)
 
     try:
         hm = get_history_manager()
@@ -357,7 +395,7 @@ async def handle_node_move(websocket: WebSocket, flow_id: str, msg_id: str,
         raise ValueError(f"Node not found: {node_id}")
     old_pos = dict(node.position)
 
-    fm.move_node(flow_id, node_id, pos["x"], pos["y"])
+    await fm.move_node(flow_id, node_id, pos["x"], pos["y"])
 
     try:
         hm = get_history_manager()
@@ -386,7 +424,7 @@ async def handle_node_update_config(websocket: WebSocket, flow_id: str, msg_id: 
         raise ValueError(f"Node not found: {node_id}")
     old_config = dict(node.config)
 
-    fm.update_node_config(flow_id, node_id, new_config)
+    await fm.update_node_config(flow_id, node_id, new_config)
 
     try:
         hm = get_history_manager()
@@ -416,7 +454,7 @@ async def handle_node_rename(websocket: WebSocket, flow_id: str, msg_id: str,
         raise ValueError(f"Node not found: {node_id}")
     old_name = node.name
 
-    fm.rename_node(flow_id, node_id, new_name)
+    await fm.rename_node(flow_id, node_id, new_name)
 
     try:
         hm = get_history_manager()
@@ -434,6 +472,35 @@ async def handle_node_rename(websocket: WebSocket, flow_id: str, msg_id: str,
 
 
 # ── Phase 2: 连线 CRUD ────────────────────────────────────────
+
+async def handle_port_move(websocket: WebSocket, flow_id: str, msg_id: str,
+                           params: dict) -> None:
+    """持久化端口位置调整"""
+    fm = get_flow_manager()
+    node_id = params["node_id"]
+    port_id = params["port_id"]
+    side = params["side"]
+    position = params["position"]
+
+    flow = fm.load_flow(flow_id)
+    node = flow.get_node(node_id)
+    if not node:
+        raise ValueError(f"Node not found: {node_id}")
+
+    # 端口位置覆盖存储在 node.config 中
+    port_positions = node.config.setdefault("_port_positions", {})
+    port_positions[port_id] = {"side": side, "top": position}
+
+    await fm.update_node_config(flow_id, node_id, {"_port_positions": port_positions})
+
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow(flow_id, "port.moved", {
+        "node_id": node_id,
+        "port_id": port_id,
+        "side": side,
+        "position": position,
+    })
+
 
 async def handle_connection_create(websocket: WebSocket, flow_id: str, msg_id: str,
                                    params: dict) -> None:
@@ -462,7 +529,7 @@ async def handle_connection_create(websocket: WebSocket, flow_id: str, msg_id: s
         to_node=to_node, to_port=to_port,
         type=conn_type,
     )
-    fm.add_connection(flow_id, conn)
+    await fm.add_connection(flow_id, conn)
 
     try:
         hm = get_history_manager()
@@ -490,7 +557,7 @@ async def handle_connection_delete(websocket: WebSocket, flow_id: str, msg_id: s
             saved_conn = c
             break
 
-    fm.remove_connection(flow_id, conn_id)
+    await fm.remove_connection(flow_id, conn_id)
 
     try:
         hm = get_history_manager()
@@ -518,7 +585,7 @@ async def handle_undo(websocket: WebSocket, flow_id: str, msg_id: str,
         return
 
     fm = get_flow_manager()
-    _apply_reverse(fm, flow_id, op)
+    await _apply_reverse(fm, flow_id, op)
 
     await _send_ack(websocket, flow_id, msg_id)
     await _send(websocket, flow_id, "event", "flow.loaded", {
@@ -538,7 +605,7 @@ async def handle_redo(websocket: WebSocket, flow_id: str, msg_id: str,
         return
 
     fm = get_flow_manager()
-    _apply_forward(fm, flow_id, op)
+    await _apply_forward(fm, flow_id, op)
 
     await _send_ack(websocket, flow_id, msg_id)
     await _send(websocket, flow_id, "event", "flow.loaded", {
@@ -547,37 +614,37 @@ async def handle_redo(websocket: WebSocket, flow_id: str, msg_id: str,
     await _push_history_state(websocket, flow_id)
 
 
-def _apply_reverse(fm, flow_id: str, op: dict) -> None:
+async def _apply_reverse(fm, flow_id: str, op: dict) -> None:
     """应用撤销操作"""
     action = op["action"]
     rev = op["reverse"]
 
     if action == "node.create":
-        fm.remove_node(flow_id, rev["node_id"])
+        await fm.remove_node(flow_id, rev["node_id"])
     elif action == "node.delete":
         node_data = rev.get("node")
         if node_data:
-            fm.add_node(flow_id, fm._deserialize_node(node_data))
+            await fm.add_node(flow_id, fm._deserialize_node(node_data))
     elif action == "node.move":
-        fm.move_node(flow_id, rev["node_id"], rev["position"]["x"], rev["position"]["y"])
+        await fm.move_node(flow_id, rev["node_id"], rev["position"]["x"], rev["position"]["y"])
     elif action == "node.update_config":
-        fm.update_node_config(flow_id, rev["node_id"], rev["config"])
+        await fm.update_node_config(flow_id, rev["node_id"], rev["config"])
     elif action == "node.rename":
-        fm.rename_node(flow_id, rev["node_id"], rev["name"])
+        await fm.rename_node(flow_id, rev["node_id"], rev["name"])
     elif action == "connection.create":
-        fm.remove_connection(flow_id, rev["connection_id"])
+        await fm.remove_connection(flow_id, rev["connection_id"])
     elif action == "connection.delete":
         conn_data = rev.get("connection")
         if conn_data:
             from core.pipeline.definition import ConnectionDef as CD
-            fm.add_connection(flow_id, CD(
+            await fm.add_connection(flow_id, CD(
                 id=conn_data["id"], from_node=conn_data["from_node"],
                 from_port=conn_data["from_port"], to_node=conn_data["to_node"],
                 to_port=conn_data["to_port"], type=conn_data.get("type", "data"),
             ))
 
 
-def _apply_forward(fm, flow_id: str, op: dict) -> None:
+async def _apply_forward(fm, flow_id: str, op: dict) -> None:
     """应用重做操作"""
     action = op["action"]
     fwd = op["forward"]
@@ -591,26 +658,26 @@ def _apply_forward(fm, flow_id: str, op: dict) -> None:
             name=type_def.name, position=fwd.get("position", {"x": 0, "y": 0}),
             config=dict(type_def.default_config),
         )
-        fm.add_node(flow_id, node)
+        await fm.add_node(flow_id, node)
     elif action == "node.delete":
         flow = fm.load_flow(flow_id)
-        fm.remove_node(flow_id, fwd["node_id"])
+        await fm.remove_node(flow_id, fwd["node_id"])
     elif action == "node.move":
-        fm.move_node(flow_id, fwd["node_id"], fwd["position"]["x"], fwd["position"]["y"])
+        await fm.move_node(flow_id, fwd["node_id"], fwd["position"]["x"], fwd["position"]["y"])
     elif action == "node.update_config":
-        fm.update_node_config(flow_id, fwd["node_id"], fwd["config"])
+        await fm.update_node_config(flow_id, fwd["node_id"], fwd["config"])
     elif action == "node.rename":
-        fm.rename_node(flow_id, fwd["node_id"], fwd["name"])
+        await fm.rename_node(flow_id, fwd["node_id"], fwd["name"])
     elif action == "connection.create":
         from core.pipeline.definition import ConnectionDef as CD
         conn_data = fwd
-        fm.add_connection(flow_id, CD(
+        await fm.add_connection(flow_id, CD(
             id=fwd["connection_id"], from_node=fwd.get("from_node", ""),
             from_port=fwd.get("from_port", ""), to_node=fwd.get("to_node", ""),
             to_port=fwd.get("to_port", ""), type=fwd.get("type", "data"),
         ))
     elif action == "connection.delete":
-        fm.remove_connection(flow_id, fwd["connection_id"])
+        await fm.remove_connection(flow_id, fwd["connection_id"])
 
 
 # ── Phase 2: 配置持久化 ───────────────────────────────────────
@@ -740,6 +807,8 @@ _COMMAND_HANDLERS = {
     "node.move": handle_node_move,
     "node.update_config": handle_node_update_config,
     "node.rename": handle_node_rename,
+    # Phase 2: 端口
+    "port.move": handle_port_move,
     # Phase 2: 连线 CRUD
     "connection.create": handle_connection_create,
     "connection.delete": handle_connection_delete,
@@ -853,6 +922,25 @@ async def _broadcast_to_flow(flow_id: str, action: str, params: dict) -> None:
             await _send(ws, flow_id, "event", action, params)
         except Exception:
             pass
+
+
+async def _ws_flow_broadcast(flow_id: str, action: str, params: dict) -> None:
+    """Engine 回调：向 /ws 端点的 flow 订阅者广播执行事件"""
+    subs = _flow_subscribers.get(flow_id, set())
+    for ws in list(subs):
+        try:
+            await _send(ws, flow_id, "event", action, params)
+        except Exception:
+            pass
+
+
+def _register_engine_broadcast():
+    """注册 engine 的 flow 广播回调"""
+    from core.pipeline.engine import engine
+    engine.register_flow_broadcast_fn("__all__", _ws_flow_broadcast)
+
+
+_register_engine_broadcast()
 
 
 async def _push_history_state(websocket: WebSocket, flow_id: str) -> None:

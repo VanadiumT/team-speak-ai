@@ -133,6 +133,18 @@ def _build_metadata():
                 outputs=[port("right", 72, "out-done", "播放完成信号", "event")],
             ),
         ),
+        NodeTypeDef(
+            type="ts_input", name="TS 音频输入", icon="headset_mic", color="secondary",
+            default_config={"max_buffer_bytes": 10485760},
+            tabs=[],
+            ports=PortsDef(
+                inputs=[],
+                outputs=[
+                    port("right", 30, "audio-out", "音频流 (PCM)", "audio"),
+                    port("right", 72, "trigger-out", "触发信号", "event"),
+                ],
+            ),
+        ),
     ]
 
     for m in metadata:

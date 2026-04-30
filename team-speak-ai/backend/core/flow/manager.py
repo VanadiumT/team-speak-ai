@@ -104,69 +104,76 @@ class FlowManager:
 
     # ── 节点 CRUD ──────────────────────────────────────────────
 
-    def add_node(self, flow_id: str, node: NodeDefinition) -> PipelineDefinition:
+    async def add_node(self, flow_id: str, node: NodeDefinition) -> PipelineDefinition:
         """向流程添加节点并持久化"""
-        flow = self.load_flow(flow_id)
-        flow.nodes.append(node)
-        self.save_flow(flow)
-        return flow
+        async with self._get_lock(flow_id):
+            flow = self.load_flow(flow_id)
+            flow.nodes.append(node)
+            self.save_flow(flow)
+            return flow
 
-    def remove_node(self, flow_id: str, node_id: str) -> PipelineDefinition:
+    async def remove_node(self, flow_id: str, node_id: str) -> PipelineDefinition:
         """删除节点及其所有关联连线"""
-        flow = self.load_flow(flow_id)
-        flow.nodes = [n for n in flow.nodes if n.id != node_id]
-        flow.connections = [
-            c for c in flow.connections
-            if c.from_node != node_id and c.to_node != node_id
-        ]
-        self.save_flow(flow)
-        return flow
+        async with self._get_lock(flow_id):
+            flow = self.load_flow(flow_id)
+            flow.nodes = [n for n in flow.nodes if n.id != node_id]
+            flow.connections = [
+                c for c in flow.connections
+                if c.from_node != node_id and c.to_node != node_id
+            ]
+            self.save_flow(flow)
+            return flow
 
-    def move_node(self, flow_id: str, node_id: str, x: float, y: float) -> PipelineDefinition:
+    async def move_node(self, flow_id: str, node_id: str, x: float, y: float) -> PipelineDefinition:
         """更新节点位置"""
-        flow = self.load_flow(flow_id)
-        node = flow.get_node(node_id)
-        if not node:
-            raise ValueError(f"Node not found: {node_id}")
-        node.position = {"x": x, "y": y}
-        self.save_flow(flow)
-        return flow
+        async with self._get_lock(flow_id):
+            flow = self.load_flow(flow_id)
+            node = flow.get_node(node_id)
+            if not node:
+                raise ValueError(f"Node not found: {node_id}")
+            node.position = {"x": x, "y": y}
+            self.save_flow(flow)
+            return flow
 
-    def update_node_config(self, flow_id: str, node_id: str, config: dict) -> PipelineDefinition:
+    async def update_node_config(self, flow_id: str, node_id: str, config: dict) -> PipelineDefinition:
         """部分更新节点配置 (merge)"""
-        flow = self.load_flow(flow_id)
-        node = flow.get_node(node_id)
-        if not node:
-            raise ValueError(f"Node not found: {node_id}")
-        node.config.update(config)
-        self.save_flow(flow)
-        return flow
+        async with self._get_lock(flow_id):
+            flow = self.load_flow(flow_id)
+            node = flow.get_node(node_id)
+            if not node:
+                raise ValueError(f"Node not found: {node_id}")
+            node.config.update(config)
+            self.save_flow(flow)
+            return flow
 
-    def rename_node(self, flow_id: str, node_id: str, name: str) -> PipelineDefinition:
+    async def rename_node(self, flow_id: str, node_id: str, name: str) -> PipelineDefinition:
         """重命名节点"""
-        flow = self.load_flow(flow_id)
-        node = flow.get_node(node_id)
-        if not node:
-            raise ValueError(f"Node not found: {node_id}")
-        node.name = name
-        self.save_flow(flow)
-        return flow
+        async with self._get_lock(flow_id):
+            flow = self.load_flow(flow_id)
+            node = flow.get_node(node_id)
+            if not node:
+                raise ValueError(f"Node not found: {node_id}")
+            node.name = name
+            self.save_flow(flow)
+            return flow
 
     # ── 连线 CRUD ──────────────────────────────────────────────
 
-    def add_connection(self, flow_id: str, conn: ConnectionDef) -> PipelineDefinition:
+    async def add_connection(self, flow_id: str, conn: ConnectionDef) -> PipelineDefinition:
         """添加连线（调用前应已完成校验）"""
-        flow = self.load_flow(flow_id)
-        flow.connections.append(conn)
-        self.save_flow(flow)
-        return flow
+        async with self._get_lock(flow_id):
+            flow = self.load_flow(flow_id)
+            flow.connections.append(conn)
+            self.save_flow(flow)
+            return flow
 
-    def remove_connection(self, flow_id: str, connection_id: str) -> PipelineDefinition:
+    async def remove_connection(self, flow_id: str, connection_id: str) -> PipelineDefinition:
         """删除连线"""
-        flow = self.load_flow(flow_id)
-        flow.connections = [c for c in flow.connections if c.id != connection_id]
-        self.save_flow(flow)
-        return flow
+        async with self._get_lock(flow_id):
+            flow = self.load_flow(flow_id)
+            flow.connections = [c for c in flow.connections if c.id != connection_id]
+            self.save_flow(flow)
+            return flow
 
     def get_connection(self, flow_id: str, connection_id: str) -> Optional[ConnectionDef]:
         flow = self.load_flow(flow_id)
@@ -338,9 +345,10 @@ class FlowManager:
 
     @staticmethod
     def _slugify(name: str) -> str:
-        """将中文名转换为拼音风格的 slug"""
+        """将名称转换为 slug，保留中文字符"""
         slug = name.lower().strip()
-        slug = re.sub(r'[^\w\s-]', '', slug)
+        # 保留字母、数字、中文、下划线、连字符，移除其他特殊字符
+        slug = re.sub(r'[^\w\s一-鿿-]', '', slug)
         slug = re.sub(r'[-\s]+', '_', slug)
         return slug or "untitled"
 

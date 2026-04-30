@@ -20,6 +20,8 @@
 
 <script setup>
 import { ref } from 'vue'
+import { pipelineSocket } from '@/api/pipeline.js'
+import { useEditorStore } from '@/stores/editor.js'
 
 const props = defineProps({
   side: { type: String, required: true },
@@ -34,6 +36,7 @@ const props = defineProps({
 
 const emit = defineEmits(['portDragStart', 'portClick'])
 const showLabel = ref(false)
+const editorStore = useEditorStore()
 
 let dragStartX = 0
 let dragStartY = 0
@@ -91,6 +94,15 @@ function doVerticalDrag(startEvent, moveEvent) {
   const onUp = (ev) => {
     const finalTop = parseInt(portEl.style.top) || startTop
     portEl.style.top = finalTop + 'px'
+    // Persist port position change
+    if (props.dataNodeId && props.dataPortId) {
+      pipelineSocket.sendCommand(editorStore.flowId, 'port.move', {
+        node_id: props.dataNodeId,
+        port_id: props.dataPortId,
+        side: props.side,
+        position: finalTop,
+      }).catch(() => {})
+    }
     window.removeEventListener('mousemove', onMove)
     window.removeEventListener('mouseup', onUp)
   }

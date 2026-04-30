@@ -143,6 +143,7 @@
           v-if="activeFlowId"
           :key="activeFlowId"
           :editMode="editorStore.editMode"
+          :detailPanelOpen="!!selectedNode && editorStore.editMode"
           @select-node="onSelectNode"
         />
         <div v-else class="no-flow">

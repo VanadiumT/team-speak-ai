@@ -20,7 +20,7 @@ export const useEditorStore = defineStore('editor', () => {
   const canRedo = ref(false)
   const isReadOnly = ref(false)     // pipeline 运行时只读
   const editMode = ref(false)       // 编辑模式（默认流程模式）
-  const dirtyFields = ref(new Set()) // 待保存的字段
+  const dirtyFields = ref(new Set()) // 待保存的字段（使用新 Set 替换保证响应式）
 
   // ── 计算属性 ──
   const canvasSize = computed(() => flowMeta.value.canvas || { width: 1700, height: 1250 })
@@ -37,7 +37,9 @@ export const useEditorStore = defineStore('editor', () => {
   // ── 流程加载 ──
   async function loadFlow(id) {
     flowId.value = id
-    const result = await pipelineSocket.sendCommand(id, 'flow.load', { flow_id: id })
+    // flow.load 返回 event (flow.loaded)，不是 ack，用 _waitForEvent 等待
+    pipelineSocket.sendCommand(id, 'flow.load', {})
+    await pipelineSocket._waitForEvent('flow.loaded', 15000)
   }
 
   function onFlowLoaded({ flow }) {
@@ -115,7 +117,7 @@ export const useEditorStore = defineStore('editor', () => {
   async function updateConfigImmediate(nodeId, config) {
     const flow = flowId.value
     if (!flow || isReadOnly.value) return
-    dirtyFields.value.add(nodeId)
+    dirtyFields.value = new Set(dirtyFields.value).add(nodeId)
     await pipelineSocket.sendCommand(flow, 'node.update_config', {
       node_id: nodeId,
       config,
@@ -126,12 +128,13 @@ export const useEditorStore = defineStore('editor', () => {
   function updateConfigDebounced(nodeId, config) {
     const flow = flowId.value
     if (!flow || isReadOnly.value) return
-    dirtyFields.value.add(nodeId)
+    dirtyFields.value = new Set(dirtyFields.value).add(nodeId)
 
     const key = nodeId
     if (_debounceTimers[key]) clearTimeout(_debounceTimers[key])
     _debounceTimers[key] = setTimeout(async () => {
       dirtyFields.value.delete(nodeId)
+      dirtyFields.value = new Set(dirtyFields.value)
       await pipelineSocket.sendCommand(flow, 'node.update_config', {
         node_id: nodeId,
         config,
@@ -142,8 +145,9 @@ export const useEditorStore = defineStore('editor', () => {
   function onNodeConfigUpdated({ node_id, config }) {
     const node = nodes.value.find((n) => n.id === node_id)
     if (node) {
+      node.config = node.config || {}
       Object.assign(node.config, config)
-      dirtyFields.value.delete(node_id)
+      dirtyFields.value = new Set([...dirtyFields.value].filter(id => id !== node_id))
     }
   }
 

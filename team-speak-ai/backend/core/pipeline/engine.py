@@ -43,6 +43,7 @@ class PipelineInstance:
         self.status: str = "running"  # running | completed | error
         self.started_at = datetime.now()
         self.listener_tasks: list[asyncio.Task] = []  # 后台监听任务引用
+        self.use_envelope: bool = False  # 实例级信封协议标志
         self.accumulated_context: dict = {
             "ocr_texts": [],
             "stt_history": [],
@@ -86,7 +87,8 @@ class PipelineEngine:
         self._ws_connections: dict[str, set] = {}  # feature_id → {ws, ...}
         self._node_registry = NodeRegistry()
         self._running_flows: set[str] = set()  # 编辑锁
-        self._use_envelope: bool = False  # 启用信封协议格式
+
+        self._flow_broadcast_fn: dict[str, callable] = {}  # flow_id → async broadcast_fn
 
     # ── 定义管理 ──
 
@@ -206,6 +208,24 @@ class PipelineEngine:
     def get_ws_connections(self, feature_id: str) -> set:
         return self._ws_connections.get(feature_id, set())
 
+    def register_flow_broadcast_fn(self, flow_id: str, fn):
+        """注册 flow 级别的广播函数（由 ws_main 的 _flow_subscribers 使用）"""
+        self._flow_broadcast_fn[flow_id] = fn
+
+    def unregister_flow_broadcast_fn(self, flow_id: str):
+        """取消注册 flow 广播函数"""
+        self._flow_broadcast_fn.pop(flow_id, None)
+
+    async def broadcast_to_flow(self, flow_id: str, action: str, params: dict):
+        """广播到指定 flow 的所有 WS 客户端（包括 /ws 订阅者）"""
+        # 先尝试匹配精确 flow_id，再尝试 __all__ 通配
+        fn = self._flow_broadcast_fn.get(flow_id) or self._flow_broadcast_fn.get("__all__")
+        if fn:
+            try:
+                await fn(flow_id, action, params)
+            except Exception as e:
+                logger.warning(f"Flow broadcast failed for {flow_id}: {e}")
+
     # ── 实例管理 ──
 
     def get_instance(self, execution_id: str) -> Optional[PipelineInstance]:
@@ -256,9 +276,12 @@ class PipelineEngine:
         self._definitions[flow_id] = pd
 
         self._running_flows.add(flow_id)
-        self._use_envelope = True  # 新端点使用信封协议
 
         execution_id = self._start(pd, initial_input)
+        # 设置信封协议标志在实例级别
+        instance = self._instances.get(execution_id)
+        if instance:
+            instance.use_envelope = True
         return execution_id
 
     def is_running(self, flow_id: str) -> bool:
@@ -502,9 +525,8 @@ class PipelineEngine:
             if node_def.listener:
                 continue
             if node_def.trigger and node_def.trigger.source_node == completed_node_id:
-                # 触发条件匹配
+                # 触发条件匹配，执行所有匹配的下游节点
                 await self.execute_node(instance.execution_id, node_def.id)
-                return
 
     async def _fail_node(self, instance: PipelineInstance, node_id: str, error: str, emit: EventEmitter = None):
         runtime = instance.get_runtime(node_id)

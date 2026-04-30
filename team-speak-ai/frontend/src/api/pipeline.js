@@ -9,6 +9,8 @@ const WS_URL = 'ws://localhost:8000/ws'
 const RECONNECT_INITIAL = 3000
 const RECONNECT_MAX = 30000
 const CHUNK_SIZE = 256 * 1024 // 256KB
+const HEARTBEAT_INTERVAL = 30000 // 30s ping
+const HEARTBEAT_TIMEOUT = 90000  // 90s without pong → disconnect
 
 class PipelineSocket {
   constructor() {
@@ -21,6 +23,9 @@ class PipelineSocket {
     this._intentionalClose = false
     this._connected = false
     this.activeFlowId = null
+    this._heartbeatTimer = null
+    this._heartbeatTimeoutTimer = null
+    this._lastPong = Date.now()
   }
 
   get connected() {
@@ -45,12 +50,18 @@ class PipelineSocket {
       console.log('[PipelineWS] Connected')
       this._connected = true
       this._reconnectAttempts = 0
+      this._lastPong = Date.now()
+      this._startHeartbeat()
       this.emit('connected')
     }
 
     this.ws.onmessage = (event) => {
       if (event.data instanceof ArrayBuffer) {
         // Binary frame (server→client is not used for now)
+        return
+      }
+      if (event.data === 'pong') {
+        this._lastPong = Date.now()
         return
       }
       try {
@@ -83,6 +94,7 @@ class PipelineSocket {
   disconnect() {
     this._intentionalClose = true
     this._connected = false
+    this._stopHeartbeat()
     if (this._reconnectTimer) {
       clearTimeout(this._reconnectTimer)
       this._reconnectTimer = null
@@ -96,6 +108,34 @@ class PipelineSocket {
       reject(new Error('Disconnected'))
     })
     this._ackResolvers.clear()
+  }
+
+  _startHeartbeat() {
+    this._stopHeartbeat()
+    this._heartbeatTimer = setInterval(() => {
+      if (Date.now() - this._lastPong > HEARTBEAT_TIMEOUT) {
+        console.warn('[PipelineWS] Heartbeat timeout, reconnecting')
+        this._connected = false
+        this._stopHeartbeat()
+        if (this.ws) {
+          this.ws.close()
+          this.ws = null
+        }
+        this.emit('disconnected')
+        this._scheduleReconnect()
+        return
+      }
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        this.ws.send('ping')
+      }
+    }, HEARTBEAT_INTERVAL)
+  }
+
+  _stopHeartbeat() {
+    if (this._heartbeatTimer) {
+      clearInterval(this._heartbeatTimer)
+      this._heartbeatTimer = null
+    }
   }
 
   _scheduleReconnect() {

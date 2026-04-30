@@ -61,6 +61,16 @@ const categorizedTypes = computed(() => {
   return result
 })
 
+function parseZoomFromTransform(transform) {
+  if (!transform || transform === 'none') return 1.0
+  const match = transform.match(/matrix\(([^)]+)\)/)
+  if (match) {
+    const values = match[1].split(',').map(Number)
+    return values[0] || 1.0
+  }
+  return 1.0
+}
+
 let dragActive = false
 
 function startDrag(e, nodeType) {
@@ -100,7 +110,9 @@ function startDrag(e, nodeType) {
         const over = ev.clientX > rect.left && ev.clientX < rect.right &&
                      ev.clientY > rect.top && ev.clientY < rect.bottom
         if (over) {
-          const zoom = 1.0
+          const canvasContent = canvas.querySelector('#canvas-content')
+          const transform = canvasContent ? getComputedStyle(canvasContent).transform : ''
+          const zoom = parseZoomFromTransform(transform)
           const x = Math.max(32, (ev.clientX - rect.left + canvas.scrollLeft) / zoom - 110)
           const y = Math.max(32, (ev.clientY - rect.top + canvas.scrollTop) / zoom - 20)
           editorStore.createNode(nt.type, { x: Math.round(x), y: Math.round(y) })

@@ -12,6 +12,7 @@ class NodeState(Enum):
     PROCESSING = "processing"
     COMPLETED = "completed"
     ERROR = "error"
+    LISTENING = "listening"  # 常驻监听节点等待音频输入
 
 
 @dataclass
