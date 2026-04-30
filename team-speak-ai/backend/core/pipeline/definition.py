@@ -120,6 +120,7 @@ class FlowSummary:
     group: str = ""
     icon: str = "account_tree"
     node_count: int = 0
+    enabled: bool = True
     updated_at: str = ""        # ISO 8601 时间戳
 
 
@@ -130,6 +131,7 @@ class PipelineDefinition:
     name: str                          # 显示名称
     group: str = ""                    # 所属分组
     icon: str = "account_tree"         # 图标
+    enabled: bool = True               # 是否启用
     skill_prompt: str = ""             # 技能提示词
     canvas: dict = field(default_factory=lambda: {"width": 1700, "height": 1250})   # 画布尺寸
     nodes: list[NodeDefinition] = field(default_factory=list)                        # 节点列表
@@ -166,4 +168,5 @@ class SidebarNode:
     icon: str = "folder"                 # Material Symbols 图标
     type: str = "group"                  # "section" | "group" | "flow_ref" | "action"
     flow_id: Optional[str] = None        # type="flow_ref" 时的 flow ID
+    enabled: bool = True                 # type="flow_ref" 时的启用状态
     children: list["SidebarNode"] = field(default_factory=list)

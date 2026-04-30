@@ -285,11 +285,19 @@ async def handle_flow_create(websocket: WebSocket, flow_id: str, msg_id: str,
     group = params.get("group", "")
     icon = params.get("icon", "account_tree")
     flow = fm.create_flow(name, group, icon)
+    # 隐式持久化中间目录路径，使目录在删除所有流程后仍然保留
+    if group:
+        parts = [p.strip() for p in group.split("/") if p.strip()]
+        acc = ""
+        for part in parts:
+            acc = acc + "/" + part if acc else part
+            fm.create_group(acc)
     await _send_ack(websocket, flow_id, msg_id)
     await _send(websocket, flow_id, "event", "flow.created", {
         "flow": {
             "id": flow.id, "name": flow.name, "group": flow.group,
             "icon": flow.icon, "node_count": 0,
+            "enabled": flow.enabled,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         },
     })
@@ -332,6 +340,7 @@ async def handle_flow_copy(websocket: WebSocket, flow_id: str, msg_id: str,
         "flow": {
             "id": flow.id, "name": flow.name, "group": flow.group,
             "icon": flow.icon, "node_count": len(flow.nodes),
+            "enabled": flow.enabled,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         },
     })
@@ -345,6 +354,13 @@ async def handle_flow_update_group(websocket: WebSocket, flow_id: str, msg_id: s
     target_flow_id = params.get("flow_id", flow_id)
     group = params.get("group", "")
     flow = fm.update_flow_group(target_flow_id, group)
+    # 持久化目标目录路径
+    if group:
+        parts = [p.strip() for p in group.split("/") if p.strip()]
+        acc = ""
+        for part in parts:
+            acc = acc + "/" + part if acc else part
+            fm.create_group(acc)
     await _send_ack(websocket, flow_id, msg_id)
     await _send(websocket, flow_id, "event", "flow.group_updated", {
         "flow_id": target_flow_id, "group": group,
@@ -359,6 +375,17 @@ async def handle_flow_rename_group(websocket: WebSocket, flow_id: str, msg_id: s
     old_path = params["old_path"]
     new_path = params["new_path"]
     count = fm.rename_group(old_path, new_path)
+    # 同步更新 groups.json 中的目录路径
+    groups = fm.list_groups()
+    updated_groups = []
+    for g in groups:
+        if g == old_path:
+            updated_groups.append(new_path)
+        elif g.startswith(old_path + "/"):
+            updated_groups.append(new_path + g[len(old_path):])
+        else:
+            updated_groups.append(g)
+    fm._save_groups(updated_groups)
     await _send_ack(websocket, flow_id, msg_id)
     await _send(websocket, flow_id, "event", "flow.group_renamed", {
         "old_path": old_path, "new_path": new_path, "count": count,
@@ -372,6 +399,7 @@ async def handle_flow_delete_group(websocket: WebSocket, flow_id: str, msg_id: s
     fm = get_flow_manager()
     group_path = params["group_path"]
     count = fm.delete_flows_in_group(group_path)
+    fm.remove_group(group_path)  # 同时从 groups.json 中移除
     await _send_ack(websocket, flow_id, msg_id)
     await _send(websocket, flow_id, "event", "flow.group_deleted", {
         "group_path": group_path, "count": count,
@@ -386,6 +414,29 @@ async def handle_flow_update(websocket: WebSocket, flow_id: str, msg_id: str,
     if "canvas" in params:
         fm.update_flow_canvas(flow_id, params["canvas"])
     await _send_ack(websocket, flow_id, msg_id)
+
+
+async def handle_flow_create_group(websocket: WebSocket, flow_id: str, msg_id: str,
+                                    params: dict) -> None:
+    """创建空目录（持久化到 groups.json）"""
+    fm = get_flow_manager()
+    group_path = params["group_path"]
+    fm.create_group(group_path)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_sidebar_tree(websocket)
+
+
+async def handle_flow_toggle_enabled(websocket: WebSocket, flow_id: str, msg_id: str,
+                                      params: dict) -> None:
+    """切换流程启用/禁用"""
+    fm = get_flow_manager()
+    target_flow_id = params.get("flow_id", flow_id)
+    flow = fm.toggle_flow_enabled(target_flow_id)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _send(websocket, flow_id, "event", "flow.enabled_toggled", {
+        "flow_id": target_flow_id, "enabled": flow.enabled,
+    })
+    await _broadcast_sidebar_tree(websocket)
 
 
 async def handle_flow_export(websocket: WebSocket, flow_id: str, msg_id: str,
@@ -412,6 +463,7 @@ async def handle_flow_import(websocket: WebSocket, flow_id: str, msg_id: str,
         "flow": {
             "id": flow.id, "name": flow.name, "group": flow.group,
             "icon": flow.icon, "node_count": len(flow.nodes),
+            "enabled": flow.enabled,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         },
     })
@@ -905,6 +957,8 @@ _COMMAND_HANDLERS = {
     "flow.rename_group": handle_flow_rename_group,
     "flow.delete_group": handle_flow_delete_group,
     "flow.update": handle_flow_update,
+    "flow.create_group": handle_flow_create_group,
+    "flow.toggle_enabled": handle_flow_toggle_enabled,
     "flow.export": handle_flow_export,
     "flow.import": handle_flow_import,
     # Phase 2: 节点 CRUD
@@ -1079,6 +1133,7 @@ def _sidebar_node_to_dict(node) -> dict:
     }
     if node.flow_id:
         d["flow_id"] = node.flow_id
+        d["enabled"] = node.enabled
     if node.children:
         d["children"] = [_sidebar_node_to_dict(c) for c in node.children]
     return d

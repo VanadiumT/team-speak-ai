@@ -28,12 +28,47 @@ class FlowManager:
         self.data_dir = Path(data_dir)
         self.flows_dir = self.data_dir / "flows"
         self.flows_dir.mkdir(parents=True, exist_ok=True)
+        self._groups_file = self.data_dir / "groups.json"
         self._locks: dict[str, asyncio.Lock] = {}
 
     def _get_lock(self, flow_id: str) -> asyncio.Lock:
         if flow_id not in self._locks:
             self._locks[flow_id] = asyncio.Lock()
         return self._locks[flow_id]
+
+    # ── Groups persistence ─────────────────────────────────────
+
+    def list_groups(self) -> list[str]:
+        """读取显式创建的目录列表"""
+        if not self._groups_file.exists():
+            return []
+        try:
+            with open(self._groups_file, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return []
+
+    def _save_groups(self, groups: list[str]) -> None:
+        """保存目录列表"""
+        tmp = self._groups_file.with_suffix(".tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(sorted(set(groups)), f, ensure_ascii=False, indent=2)
+        os.replace(tmp, self._groups_file)
+
+    def create_group(self, group_path: str) -> list[str]:
+        """创建空目录（持久化到 groups.json）"""
+        groups = self.list_groups()
+        if group_path not in groups:
+            groups.append(group_path)
+            self._save_groups(groups)
+        return groups
+
+    def remove_group(self, group_path: str) -> list[str]:
+        """从 groups.json 中移除目录"""
+        groups = self.list_groups()
+        groups = [g for g in groups if g != group_path and not g.startswith(group_path + "/")]
+        self._save_groups(groups)
+        return groups
 
     # ── Flow CRUD ──────────────────────────────────────────────
 
@@ -51,6 +86,7 @@ class FlowManager:
                     group=flow.get("group", ""),
                     icon=flow.get("icon", "account_tree"),
                     node_count=len(flow.get("nodes", [])),
+                    enabled=flow.get("enabled", True),
                     updated_at=self._get_mtime(filepath),
                 ))
             except Exception as e:
@@ -148,6 +184,13 @@ class FlowManager:
         """更新流程的画布尺寸"""
         flow = self.load_flow(flow_id)
         flow.canvas = canvas
+        self.save_flow(flow)
+        return flow
+
+    def toggle_flow_enabled(self, flow_id: str) -> PipelineDefinition:
+        """切换流程启用/禁用状态，返回新状态"""
+        flow = self.load_flow(flow_id)
+        flow.enabled = not flow.enabled
         self.save_flow(flow)
         return flow
 
@@ -378,7 +421,7 @@ class FlowManager:
     # ── 侧栏树构建 ────────────────────────────────────────────
 
     def build_sidebar_tree(self) -> list[SidebarNode]:
-        """从所有流程生成侧栏树结构"""
+        """从所有流程生成侧栏树结构，合并显式创建的目录"""
         flows = self.list_flows()
 
         # 按 group 字段分组
@@ -387,22 +430,29 @@ class FlowManager:
             group_key = f.group or "ungrouped"
             groups.setdefault(group_key, []).append(f)
 
+        # 确保显式创建的目录即使没有流程也显示
+        explicit_groups = self.list_groups()
+        for eg in explicit_groups:
+            if eg not in groups:
+                groups[eg] = []
+
         children = []
         for group_key in sorted(groups.keys()):
             parts = [p.strip() for p in group_key.split("/") if p.strip()]
             self._insert_into_tree(children, parts, groups[group_key])
 
+        # 添加"新建工作流"和"新建目录"快捷入口到工作流分区的 children 末尾
+        children.append(SidebarNode(
+            id="action:new_flow", name="新建工作流", icon="add", type="action",
+        ))
+        children.append(SidebarNode(
+            id="action:new_group", name="新建目录", icon="create_new_folder", type="action",
+        ))
+
         return [
             SidebarNode(
                 id="workflows", name="工作流", icon="account_tree", type="section",
                 children=children,
-            ),
-            SidebarNode(
-                id="workflow_config", name="工作流配置", icon="tune", type="section",
-                children=[
-                    SidebarNode(id="action:new_flow", name="新建工作流", icon="add", type="action"),
-                    SidebarNode(id="action:flow_manage", name="流程管理", icon="account_tree", type="action"),
-                ],
             ),
             SidebarNode(
                 id="system_settings", name="系统设置", icon="settings", type="section",
@@ -422,6 +472,7 @@ class FlowManager:
                 siblings.append(SidebarNode(
                     id=f"flow:{f.id}", name=f.name, icon=f.icon,
                     type="flow_ref", flow_id=f.id,
+                    enabled=f.enabled,
                 ))
             return
 
@@ -498,6 +549,7 @@ class FlowManager:
             "name": flow.name,
             "group": flow.group,
             "icon": flow.icon,
+            "enabled": flow.enabled,
             "skill_prompt": flow.skill_prompt,
             "canvas": flow.canvas,
             "nodes": [
@@ -585,6 +637,7 @@ class FlowManager:
             name=data.get("name", ""),
             group=data.get("group", ""),
             icon=data.get("icon", "account_tree"),
+            enabled=data.get("enabled", True),
             skill_prompt=data.get("skill_prompt", ""),
             canvas=data.get("canvas", {"width": 1700, "height": 1250}),
             nodes=nodes,

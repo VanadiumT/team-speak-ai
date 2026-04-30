@@ -212,6 +212,25 @@
       </div>
     </div>
 
+    <!-- ═══ New Group (Directory) Modal ═══ -->
+    <div v-if="showGroupCreate" class="modal-overlay" @click.self="showGroupCreate = false">
+      <div class="modal-card modal-sm">
+        <h3 class="modal-title"><span class="material-symbols-outlined">create_new_folder</span> 新建目录</h3>
+        <div class="modal-field">
+          <label>目录路径 <span class="required">*</span></label>
+          <input v-model="groupForm.path" class="modal-input" placeholder="例如：游戏/暗区" maxlength="100" @keyup.enter="doCreateGroup" />
+        </div>
+        <div class="modal-field">
+          <label>目录名 <span class="hint">（路径最后一段的显示名，默认从路径推断）</span></label>
+          <input v-model="groupForm.displayName" class="modal-input" placeholder="留空则使用路径最后一段" maxlength="50" />
+        </div>
+        <div class="modal-actions">
+          <button class="btn-cancel" @click="showGroupCreate = false">取消</button>
+          <button class="btn-save" @click="doCreateGroup" :disabled="!groupForm.path.trim()">创建</button>
+        </div>
+      </div>
+    </div>
+
     <!-- ═══ Hidden file input for import ═══ -->
     <input ref="importInput" type="file" accept=".json" style="display:none" @change="onImportFile" />
 
@@ -244,10 +263,12 @@ const expandedSections = ref(new Set())
 const activeFlowId = ref(null)
 const selectedNode = ref(null)
 const showFlowCreate = ref(false)
+const showGroupCreate = ref(false)
 const showCanvasSettings = ref(false)
 const importInput = ref(null)
 
 const flowForm = reactive({ name: '', group: '', icon: 'sports_esports' })
+const groupForm = reactive({ path: '', displayName: '' })
 const canvasForm = reactive({ width: 1700, height: 1250 })
 
 // Rename dialog
@@ -331,6 +352,8 @@ const runningFlowIds = computed(() => {
 function onAction(actionId) {
   if (actionId === 'action:new_flow') {
     showFlowCreate.value = true
+  } else if (actionId === 'action:new_group') {
+    showGroupCreate.value = true
   }
 }
 
@@ -350,6 +373,16 @@ async function doCreateFlow() {
   flowForm.name = ''
   flowForm.group = ''
   flowForm.icon = 'sports_esports'
+}
+
+// ── Group Create ──
+async function doCreateGroup() {
+  const path = groupForm.path.trim()
+  if (!path) return
+  await pipelineSocket.sendCommand('_system', 'flow.create_group', { group_path: path }).catch(() => {})
+  showGroupCreate.value = false
+  groupForm.path = ''
+  groupForm.displayName = ''
 }
 
 // ── Canvas Settings ──
@@ -385,6 +418,7 @@ function openSidebarMenu(event, node) {
   if (isRoot) {
     contextMenu.items = [
       { icon: 'add', label: '新建工作流', action: () => { showFlowCreate.value = true } },
+      { icon: 'create_new_folder', label: '新建目录', action: () => { showGroupCreate.value = true } },
       { separator: true },
       { icon: 'download', label: '导出全部', action: () => { /* TODO: batch export */ } },
       { icon: 'upload', label: '导入工作流', action: () => { importInput.value?.click() } },
@@ -392,7 +426,8 @@ function openSidebarMenu(event, node) {
   } else if (isGroup) {
     const groupPath = getGroupPath(node)
     contextMenu.items = [
-      { icon: 'add', label: '新建子分组', action: () => { flowForm.group = groupPath ? groupPath + '/' : ''; showFlowCreate.value = true } },
+      { icon: 'add', label: '新建工作流', action: () => { flowForm.group = groupPath || ''; showFlowCreate.value = true } },
+      { icon: 'create_new_folder', label: '新建子目录', action: () => { groupForm.path = groupPath ? groupPath + '/' : ''; showGroupCreate.value = true } },
       { icon: 'edit', label: '重命名', action: () => { renameDialog.title = '重命名分组'; renameDialog.value = node.name; renameDialog.flowId = null; renameDialog.groupPath = groupPath; renameDialog.visible = true } },
       { separator: true },
       { icon: 'download', label: '导出该分组', action: () => { /* TODO: group export */ } },
@@ -402,6 +437,7 @@ function openSidebarMenu(event, node) {
     ]
   } else if (isFlow) {
     const flowId = node.flow_id
+    const enabled = node.enabled !== false
     contextMenu.items = [
       { icon: 'edit', label: '重命名', action: () => { renameDialog.title = '重命名工作流'; renameDialog.value = node.name; renameDialog.flowId = flowId; renameDialog.groupPath = null; renameDialog.visible = true } },
       { icon: 'content_copy', label: '复制', action: () => { if (confirm('确认复制此工作流？')) { pipelineSocket.sendCommand(flowId, 'flow.copy', {}).catch(() => {}) } } },
@@ -411,7 +447,7 @@ function openSidebarMenu(event, node) {
       { separator: true },
       { icon: 'drive_file_move', label: '移动到分组', action: () => { moveDialog.flowId = flowId; moveDialog.groupPath = ''; moveDialog.visible = true } },
       { separator: true },
-      { icon: 'block', label: '禁用', action: () => { /* TODO: disable flow */ } },
+      { icon: enabled ? 'block' : 'check_circle', label: enabled ? '禁用' : '启用', action: () => { pipelineSocket.sendCommand(flowId, 'flow.toggle_enabled', {}).catch(() => {}) } },
       { separator: true },
       { icon: 'delete', label: '删除', danger: true, action: () => { if (confirm('确认删除此工作流？此操作不可恢复。')) { pipelineSocket.sendCommand(flowId, 'flow.delete', {}) } } },
     ]
@@ -548,6 +584,24 @@ onMounted(() => {
   pipelineSocket.on('flow.renamed', ({ flow_id, name }) => {
     if (editorStore.flowId === flow_id) {
       editorStore.flowMeta.name = name
+    }
+  })
+
+  pipelineSocket.on('flow.enabled_toggled', ({ flow_id, enabled }) => {
+    // Update sidebar tree node in place so the UI reflects the change
+    function updateNode(nodes) {
+      for (const n of nodes) {
+        if (n.type === 'flow_ref' && n.flow_id === flow_id) {
+          n.enabled = enabled
+          return true
+        }
+        if (n.children && updateNode(n.children)) return true
+      }
+      return false
+    }
+    updateNode(sidebarTree.value)
+    if (editorStore.flowId === flow_id) {
+      editorStore.flowMeta.enabled = enabled
     }
   })
 

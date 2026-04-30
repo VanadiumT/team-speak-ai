@@ -6,11 +6,15 @@
   <div v-if="node.type === 'flow_ref'" class="sb-item-row">
     <button
       class="sb-item"
-      :class="{ active: activeFlowId === node.flow_id }"
+      :class="{
+        active: activeFlowId === node.flow_id,
+        disabled: node.enabled === false,
+      }"
       @click="$emit('select-flow', node.flow_id)"
     >
       <span class="material-symbols-outlined sb-item-icon">{{ node.icon }}</span>
       <span class="sb-item-name">{{ node.name }}</span>
+      <span class="sb-status-badge" v-if="node.enabled === false">已禁用</span>
       <span class="sb-run" v-if="runningFlowIds.has(node.flow_id)"></span>
     </button>
     <button class="sb-more-btn sb-more-sm" @click.stop="$emit('menu', $event, node)" title="更多操作">
@@ -121,6 +125,22 @@ defineEmits(['select-flow', 'toggle', 'menu', 'action'])
 .sb-item-icon { font-size: 16px; }
 .sb-item-name { flex: 1; }
 .sb-action .sb-item-icon { font-size: 14px; }
+
+.sb-item.disabled {
+  opacity: 0.45;
+}
+.sb-item.disabled .sb-item-name {
+  text-decoration: line-through;
+}
+.sb-status-badge {
+  font-size: 9px; font-weight: 600;
+  font-family: 'Space Grotesk', sans-serif;
+  color: #64748b;
+  background: rgba(100, 116, 139, 0.12);
+  padding: 1px 6px; border-radius: 8px;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
 
 .sb-more-btn {
   width: 24px; height: 24px;
