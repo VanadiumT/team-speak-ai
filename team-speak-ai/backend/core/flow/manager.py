@@ -254,9 +254,13 @@ class FlowManager:
         return flow
 
     def export_group_zip(self, group_path: str) -> bytes:
-        """导出分组下所有流程为 ZIP 字节流"""
+        """导出分组下所有流程为 ZIP，group 字段保留相对路径（去掉父前缀）"""
         import io
         import zipfile
+
+        # 计算父前缀：group_path = "root/暗区" → parent_prefix = "root/"
+        parts = group_path.split("/")
+        parent_prefix = "/".join(parts[:-1]) + "/" if len(parts) > 1 else ""
 
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -265,6 +269,9 @@ class FlowManager:
                     flow = self.load_flow(filepath.stem)
                     if flow.group == group_path or flow.group.startswith(group_path + "/"):
                         data = self._serialize_flow(flow)
+                        # 去掉父前缀，保留被点击分组名及以下相对路径
+                        if parent_prefix and flow.group.startswith(parent_prefix):
+                            data["group"] = flow.group[len(parent_prefix):]
                         zf.writestr(f"{flow.id}.json",
                                     json.dumps(data, ensure_ascii=False, indent=2))
                 except Exception:
@@ -272,7 +279,7 @@ class FlowManager:
         return buf.getvalue()
 
     def export_all_zip(self) -> bytes:
-        """导出所有流程为 ZIP 字节流"""
+        """导出所有流程为 ZIP 字节流（保留原始 group 路径）"""
         import io
         import zipfile
 
@@ -290,7 +297,7 @@ class FlowManager:
 
     def import_group_zip(self, zip_data: bytes, target_group: str = "",
                          overwrite: bool = False) -> list[PipelineDefinition]:
-        """从 ZIP 字节流导入流程到指定分组"""
+        """从 ZIP 导入流程，将 ZIP 内相对 group 路径拼接到 target_group 下"""
         import io
         import zipfile
 
@@ -301,9 +308,12 @@ class FlowManager:
                     continue
                 try:
                     data = json.loads(zf.read(name).decode("utf-8"))
-                    # 如果指定了目标分组，覆盖 group 字段
+                    # 拼接目标路径：ZIP 内相对路径 + 目标分组
+                    rel_group = data.get("group", "")
                     if target_group:
-                        data["group"] = target_group
+                        data["group"] = target_group + "/" + rel_group if rel_group else target_group
+                    else:
+                        data["group"] = rel_group
                     flow = self.import_flow(data, overwrite=overwrite)
                     imported.append(flow)
                 except Exception as e:

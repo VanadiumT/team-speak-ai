@@ -431,7 +431,8 @@ function openSidebarMenu(event, node) {
       { icon: 'create_new_folder', label: '新建目录', action: () => { showGroupCreate.value = true } },
       { separator: true },
       { icon: 'download', label: '导出全部 (ZIP)', action: () => { pipelineSocket.sendCommand('_system', 'flow.export_group', {}).catch(() => {}) } },
-      { icon: 'upload', label: '导入工作流', action: () => { importInput.value?.click() } },
+      { icon: 'upload', label: '导入工作流 (.json)', action: () => { importInput.value?.click() } },
+      { icon: 'upload', label: '导入到该分组 (.zip)', action: () => { const target = prompt('请输入目标分组路径（留空为根目录）：'); importGroupTarget.value = target || ''; importGroupInput.value?.click() } },
     ]
   } else if (isGroup) {
     const groupPath = getGroupPath(node)
