@@ -99,7 +99,7 @@ defineEmits(['select-flow', 'toggle', 'menu', 'action'])
 .sb-chevron.expanded { transform: rotate(90deg); }
 
 .sb-children { padding-left: 4px; }
-.sb-sub { padding-left: 12px; }
+.sb-sub { padding-left: 24px; }
 
 .sb-item-row {
   display: flex; align-items: center;
