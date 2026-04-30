@@ -83,6 +83,7 @@
         :node="node"
         :step-number="getStepNumber(node.id)"
         :edit-mode="editMode"
+        :zoom="currentZoom"
         @select="onNodeSelect"
         @port-drag-start="onPortDragStart"
         @port-click="onPortClick"
