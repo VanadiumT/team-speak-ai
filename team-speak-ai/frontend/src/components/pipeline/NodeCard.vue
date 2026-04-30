@@ -203,29 +203,38 @@ const nodeWidth = computed(() => {
   return widthMap[props.node.type] || 250
 })
 
-// ── Drag ──
-let dragOffset = { x: 0, y: 0 }
-let isDragging = false
+// ── Drag (delta-based, 避免屏幕坐标与画布坐标混用) ──
+let nodeDragActive = false
+let nodeDragMoved = false
 
 function onDragStart(e) {
   if (e.button !== 0) return // 中键/右键留给画布平移
-  e.stopPropagation()         // 左键阻止冒泡，防止画布误触发
+  e.stopPropagation()
   if (!props.editMode || editorStore.isReadOnly) return
   if (e.target.closest('.io-port')) return
-  isDragging = true
-  dragOffset = {
-    x: e.clientX - props.node.position.x,
-    y: e.clientY - props.node.position.y,
-  }
+  if (nodeDragActive) return // 防止重复拖拽
+
+  nodeDragActive = true
+  nodeDragMoved = false
+  const startCanvasX = props.node.position.x
+  const startCanvasY = props.node.position.y
+  const startScreenX = e.clientX
+  const startScreenY = e.clientY
 
   const onMove = (ev) => {
-    if (!isDragging) return
-    editorStore.moveNodeLocal(props.node.id, ev.clientX - dragOffset.x, ev.clientY - dragOffset.y)
+    if (!nodeDragActive) return
+    const dx = Math.abs(ev.clientX - startScreenX)
+    const dy = Math.abs(ev.clientY - startScreenY)
+    if (dx < 2 && dy < 2) return // 忽略微小移动
+    nodeDragMoved = true
+    editorStore.moveNodeLocal(props.node.id, startCanvasX + (ev.clientX - startScreenX), startCanvasY + (ev.clientY - startScreenY))
   }
 
   const onUp = () => {
-    isDragging = false
-    editorStore.commitMoveNode(props.node.id)
+    nodeDragActive = false
+    if (nodeDragMoved) {
+      editorStore.commitMoveNode(props.node.id)
+    }
     window.removeEventListener('mousemove', onMove)
     window.removeEventListener('mouseup', onUp)
   }
