@@ -1,10 +1,12 @@
 <template>
   <div
     class="node-card"
-    :class="[borderClass, { 'node-pulse': isProcessing }]"
+    :class="[borderClass, { 'node-pulse': isProcessing, 'selected': isSelected }]"
     :style="{ left: node.position?.x + 'px', top: node.position?.y + 'px', width: nodeWidth + 'px' }"
     @mousedown.stop="onDragStart"
     @click.stop="onClick"
+    @dblclick.stop="onDoubleClick"
+    @contextmenu.prevent.stop="onContextMenu"
   >
     <!-- Workflow badge -->
     <div v-if="stepNumber" class="workflow-badge" :style="{ borderColor: badgeColor, color: badgeColor }">
@@ -16,17 +18,29 @@
       v-for="port in inputPorts"
       :key="port.id"
       side="left"
-      :position="port.position.top"
+      :position="port.position?.top || defaultPortTop(port.id, 'input')"
       :label="port.label"
-      :portState="getPortState(port.id)"
+      :port-state="getPortState(port.id)"
+      :data-type="port.data_type"
+      :data-node-id="node.id"
+      :data-port-id="port.id"
+      :edit-mode="editMode"
+      @port-drag-start="(e) => $emit('portDragStart', { nodeId: node.id, portId: port.id, event: e })"
+      @port-click="(e) => $emit('portClick', { nodeId: node.id, portId: port.id, event: e })"
     />
     <IOPort
       v-for="port in outputPorts"
       :key="port.id"
       side="right"
-      :position="port.position.top"
+      :position="port.position?.top || defaultPortTop(port.id, 'output')"
       :label="port.label"
-      :portState="getPortState(port.id)"
+      :port-state="getPortState(port.id)"
+      :data-type="port.data_type"
+      :data-node-id="node.id"
+      :data-port-id="port.id"
+      :edit-mode="editMode"
+      @port-drag-start="(e) => $emit('portDragStart', { nodeId: node.id, portId: port.id, event: e })"
+      @port-click="(e) => $emit('portClick', { nodeId: node.id, portId: port.id, event: e })"
     />
 
     <!-- Header -->
@@ -51,7 +65,6 @@
     <!-- Body -->
     <div class="node-body">
       <slot :tab="activeTab" :status="nodeStatus">
-        <!-- Default body content -->
         <div class="node-default-body">
           <div class="node-status-row">
             <span class="node-status-label">状态</span>
@@ -78,13 +91,16 @@ import { useExecutionStore } from '@/stores/execution.js'
 const props = defineProps({
   node: { type: Object, required: true },
   stepNumber: { type: [String, Number], default: '' },
+  editMode: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['select', 'dragstart', 'dragend'])
+const emit = defineEmits(['select', 'dragstart', 'dragend', 'portDragStart', 'portClick'])
 
 const editorStore = useEditorStore()
 const executionStore = useExecutionStore()
 const activeTab = ref('config')
+
+const isSelected = ref(false)
 
 // ── Node type metadata ──
 const nodeTypeDef = computed(() => {
@@ -102,16 +118,23 @@ const iconColor = computed(() => {
 const inputPorts = computed(() => nodeTypeDef.value?.ports?.inputs || [])
 const outputPorts = computed(() => nodeTypeDef.value?.ports?.outputs || [])
 
+function defaultPortTop(portId, side) {
+  const ports = side === 'input' ? inputPorts.value : outputPorts.value
+  const count = ports.length
+  if (count <= 1) return 92 // middle
+  const headerH = 40, nodeH = 140, padding = 12
+  const area = nodeH - headerH - padding
+  const idx = ports.findIndex((p) => p.id === portId)
+  return Math.round(headerH + area * (idx + 1) / (count + 1))
+}
+
 function getPortState(portId) {
-  // 检查 connections 中是否有该端口
   const conns = editorStore.connections
   const hasConn = conns.some((c) =>
     (c.from_node === props.node.id && c.from_port === portId) ||
     (c.to_node === props.node.id && c.to_port === portId)
   )
   if (!hasConn) return 'disconnected'
-
-  // 检查是否有活跃数据流
   const ns = executionStore.getNodeStatus(props.node.id)
   if (ns.status === 'processing') return 'flowing'
   return 'connected'
@@ -132,51 +155,36 @@ const progressPercent = computed(() => {
 
 const statusClass = computed(() => {
   const map = {
-    pending: 'status-pending',
-    processing: 'status-processing',
-    completed: 'status-completed',
-    error: 'status-error',
+    pending: 'status-pending', processing: 'status-processing',
+    completed: 'status-completed', error: 'status-error',
     listening: 'status-listening',
   }
   return map[nodeStatus.value] || 'status-pending'
 })
 
 const statusLabel = computed(() => {
-  const map = {
-    pending: '待命',
-    processing: '处理中',
-    completed: '已完成',
-    error: '错误',
-    listening: '监听中',
-  }
+  const map = { pending: '待命', processing: '处理中', completed: '已完成', error: '错误', listening: '监听中' }
   return map[nodeStatus.value] || nodeStatus.value
 })
 
-// ── Border ──
 const borderClass = computed(() => {
   const map = {
-    pending: 'border-outline',
-    processing: 'border-primary node-pulse',
-    completed: 'border-secondary',
-    error: 'border-error',
-    listening: 'border-primary',
+    pending: 'border-outline', processing: 'border-primary node-pulse',
+    completed: 'border-secondary', error: 'border-error', listening: 'border-primary',
   }
   return map[nodeStatus.value] || 'border-outline'
 })
 
-// ── Badge ──
 const badgeColor = computed(() => {
   const colorMap = { primary: '#adc7ff', secondary: '#4edea3', tertiary: '#ef6719', outline: '#8b90a0' }
   return colorMap[nodeTypeDef.value?.color] || '#4edea3'
 })
 
-// ── Width ──
 const nodeWidth = computed(() => {
   const widthMap = {
-    input_image: 220, ocr: 220, tts: 220, ts_output: 220,
+    input_image: 220, ocr: 220, tts: 220, ts_output: 220, ts_input: 220,
     context_build: 250, llm: 250,
-    stt_history: 280,
-    stt_listen: 320,
+    stt_history: 280, stt_listen: 320,
   }
   return widthMap[props.node.type] || 250
 })
@@ -186,7 +194,9 @@ let dragOffset = { x: 0, y: 0 }
 let isDragging = false
 
 function onDragStart(e) {
-  if (editorStore.isReadOnly) return
+  if (!props.editMode || editorStore.isReadOnly) return
+  // Don't drag if clicking a port
+  if (e.target.closest('.io-port')) return
   isDragging = true
   dragOffset = {
     x: e.clientX - props.node.position.x,
@@ -195,9 +205,7 @@ function onDragStart(e) {
 
   const onMove = (ev) => {
     if (!isDragging) return
-    const x = ev.clientX - dragOffset.x
-    const y = ev.clientY - dragOffset.y
-    editorStore.moveNodeLocal(props.node.id, x, y)
+    editorStore.moveNodeLocal(props.node.id, ev.clientX - dragOffset.x, ev.clientY - dragOffset.y)
   }
 
   const onUp = () => {
@@ -212,7 +220,18 @@ function onDragStart(e) {
 }
 
 function onClick() {
+  if (!props.editMode) return
+  isSelected.value = !isSelected.value
   emit('select', props.node)
+}
+
+function onDoubleClick() {
+  if (!props.editMode) return
+  emit('select', props.node)
+}
+
+function onContextMenu() {
+  if (!props.editMode) return
 }
 </script>
 
@@ -230,9 +249,11 @@ function onClick() {
   user-select: none;
 }
 
-.node-card:hover {
-  transform: translateY(-2px);
-  z-index: 20 !important;
+.node-card:hover { transform: translateY(-2px); z-index: 20 !important; }
+
+.node-card.selected {
+  border-color: #4a8eff !important;
+  box-shadow: 0 0 16px rgba(74, 142, 255, 0.3);
 }
 
 .border-outline { border-color: rgba(65, 71, 84, 0.5); }
@@ -240,56 +261,39 @@ function onClick() {
 .border-secondary { border-color: rgba(78, 222, 163, 0.3); }
 .border-error { border-color: rgba(255, 180, 171, 0.5); }
 
-.node-pulse {
-  animation: nodePulse 2s ease-in-out infinite;
-}
+.node-pulse { animation: nodePulse 2s ease-in-out infinite; }
 
 @keyframes nodePulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(173, 199, 255, 0.4); }
   50% { box-shadow: 0 0 20px 4px rgba(173, 199, 255, 0.15); }
 }
 
-/* Header */
 .node-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  display: flex; align-items: center; gap: 6px;
   padding: 6px 10px;
   border-bottom: 1px solid rgba(65, 71, 84, 0.5);
 }
 
-.node-icon {
-  font-size: 14px;
-}
+.node-icon { font-size: 14px; }
 
 .node-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: #e0e2ed;
-  flex: 1;
+  font-size: 13px; font-weight: 600; color: #e0e2ed; flex: 1;
 }
 
 .node-status-badge {
-  font-size: 10px;
-  font-family: 'Space Grotesk', sans-serif;
-  font-weight: 500;
-  letter-spacing: 0.05em;
+  font-size: 10px; font-family: 'Space Grotesk', sans-serif;
+  font-weight: 500; letter-spacing: 0.05em;
 }
 
-/* Status classes */
 .status-pending { color: #8b90a0; }
 .status-processing { color: #adc7ff; }
 .status-completed { color: #4edea3; }
 .status-error { color: #ffb4ab; }
 .status-listening { color: #adc7ff; }
 
-/* Keyword detection dot */
 .keyword-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #ef6719;
-  margin-left: 4px;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #ef6719; margin-left: 4px;
   animation: keywordPulse 1.5s ease-in-out infinite;
 }
 
@@ -298,64 +302,32 @@ function onClick() {
   50% { opacity: 1; transform: scale(1.3); }
 }
 
-/* Tab bar */
-.node-tab-bar {
-  display: flex;
-  border-bottom: 1px solid rgba(65, 71, 84, 0.5);
-}
+.node-tab-bar { display: flex; border-bottom: 1px solid rgba(65, 71, 84, 0.5); }
 
 .tab-btn {
-  position: relative;
-  padding: 6px 12px;
-  font-size: 11px;
-  font-family: 'Space Grotesk', sans-serif;
-  letter-spacing: 0.05em;
-  font-weight: 500;
-  color: #8b90a0;
-  cursor: pointer;
-  transition: color 0.2s;
-  border: none;
-  border-bottom: 2px solid transparent;
-  background: transparent;
+  position: relative; padding: 6px 12px;
+  font-size: 11px; font-family: 'Space Grotesk', sans-serif;
+  letter-spacing: 0.05em; font-weight: 500;
+  color: #8b90a0; cursor: pointer; transition: color 0.2s;
+  border: none; border-bottom: 2px solid transparent; background: transparent;
 }
-
 .tab-btn:hover { color: #c1c6d7; }
+.tab-btn.active { color: #adc7ff; border-bottom-color: #adc7ff; }
 
-.tab-btn.active {
-  color: #adc7ff;
-  border-bottom-color: #adc7ff;
-}
+.node-body { padding: 10px; }
 
-/* Body */
-.node-body {
-  padding: 10px;
-}
-
-.node-default-body {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
+.node-default-body { display: flex; flex-direction: column; gap: 8px; }
 
 .node-status-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 12px;
+  display: flex; justify-content: space-between; align-items: center; font-size: 12px;
 }
 
 .node-status-label { color: #8b90a0; }
 
-.node-status-value {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
+.node-status-value { display: flex; align-items: center; gap: 4px; }
 
 .status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
+  width: 6px; height: 6px; border-radius: 50%;
 }
 
 .status-pending .status-dot { background: #8b90a0; }
@@ -383,37 +355,19 @@ function onClick() {
   50% { opacity: 0.4; }
 }
 
-/* Progress bar */
 .progress-bar {
-  width: 100%;
-  background: #31353d;
-  border-radius: 9999px;
-  height: 4px;
+  width: 100%; background: #31353d; border-radius: 9999px; height: 4px;
 }
-
 .progress-fill {
-  background: #adc7ff;
-  height: 4px;
-  border-radius: 9999px;
-  transition: width 0.3s;
+  background: #adc7ff; height: 4px; border-radius: 9999px; transition: width 0.3s;
 }
 
-/* Workflow badge */
 .workflow-badge {
-  position: absolute;
-  top: -10px;
-  right: -10px;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  font-weight: bold;
+  position: absolute; top: -10px; right: -10px;
+  width: 24px; height: 24px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: bold;
   font-family: 'Space Grotesk', sans-serif;
-  z-index: 40;
-  background: #10131b;
-  border: 2px solid;
+  z-index: 40; background: #10131b; border: 2px solid;
 }
 </style>

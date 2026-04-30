@@ -19,6 +19,7 @@
       <!-- SVG connections -->
       <svg
         class="connections-svg"
+        ref="svgRef"
         :width="canvasWidth"
         :height="canvasHeight"
       >
@@ -35,18 +36,18 @@
         </defs>
 
         <!-- Connection lines -->
-        <g v-for="conn in connectionPaths" :key="conn.id" :class="conn.groupClass">
+        <g v-for="conn in connectionPaths" :key="conn.id" :class="conn.groupClass" class="conn-hit-area" @click="onConnectionClick(conn)">
           <path
             :d="conn.path"
             fill="none"
             :stroke="conn.stroke"
-            :stroke-width="conn.width"
+            :stroke-width="conn.selected ? 4 : conn.width"
             :stroke-dasharray="conn.dash"
             :class="conn.lineClass"
             :marker-end="conn.marker"
             :opacity="conn.opacity"
+            style="cursor:pointer"
           />
-          <!-- Label -->
           <rect
             v-if="conn.label"
             :x="conn.labelX - conn.labelW / 2 - 6"
@@ -65,8 +66,18 @@
             font-size="10"
             font-family="Space Grotesk"
             font-weight="bold"
+            style="pointer-events:none"
           >{{ conn.label }}</text>
         </g>
+
+        <!-- Temporary line while dragging -->
+        <line
+          v-if="dragLine.visible"
+          :x1="dragLine.x1" :y1="dragLine.y1"
+          :x2="dragLine.x2" :y2="dragLine.y2"
+          stroke="#4a8eff" stroke-width="2.5"
+          stroke-dasharray="8 4"
+        />
       </svg>
 
       <!-- Node cards -->
@@ -75,8 +86,17 @@
         :key="node.id"
         :node="node"
         :step-number="getStepNumber(node.id)"
+        :edit-mode="editMode"
         @select="onNodeSelect"
+        @port-drag-start="onPortDragStart"
+        @port-click="onPortClick"
       />
+
+      <!-- Empty hint -->
+      <div v-if="editorStore.nodes.length === 0" class="empty-hint">
+        <span class="material-symbols-outlined">dashboard_customize</span>
+        <p>从左侧<span class="hl">工具面板</span>拖拽节点到画布</p>
+      </div>
     </div>
 
     <!-- Zoom controls -->
@@ -97,13 +117,19 @@ import CanvasControls from './CanvasControls.vue'
 import { useEditorStore } from '@/stores/editor.js'
 import { useExecutionStore } from '@/stores/execution.js'
 
+const props = defineProps({
+  editMode: { type: Boolean, default: false },
+})
+
 const editorStore = useEditorStore()
 const executionStore = useExecutionStore()
 
 const canvasRef = ref(null)
+const svgRef = ref(null)
 const currentZoom = ref(1.0)
 const activeFlowView = ref('all')
 const isPanning = ref(false)
+const selectedConnId = ref(null)
 
 const ZOOM_MIN = 0.25
 const ZOOM_MAX = 3.0
@@ -192,95 +218,148 @@ const connectionPaths = computed(() => {
     const toX = toPos.x
     const toY = toPos.y
 
-    // Determine line style based on type and status
     const fromStatus = executionStore.getNodeStatus(conn.from_node).status
     const isActive = fromStatus === 'processing'
-    const isData = conn.type === 'data'
 
     let stroke, width, dash, marker, lineClass, opacity, groupClass
     if (conn.type === 'event') {
-      stroke = '#adc7ff'
-      width = 2.5
-      dash = 'none'
-      marker = 'url(#arrowEvent)'
-      lineClass = ''
-      opacity = 1
+      stroke = '#adc7ff'; width = 2.5; dash = 'none'
+      marker = 'url(#arrowEvent)'; lineClass = ''; opacity = 1
       groupClass = 'event-only'
     } else if (isActive) {
-      stroke = '#4a8eff'
-      width = 2.5
-      dash = 'none'
-      marker = 'url(#arrowDataFlow)'
-      lineClass = 'flow-line'
-      opacity = 1
+      stroke = '#4a8eff'; width = 2.5; dash = 'none'
+      marker = 'url(#arrowDataFlow)'; lineClass = 'flow-line'; opacity = 1
       groupClass = 'data-only'
     } else {
-      stroke = '#4edea3'
-      width = 2.5
-      dash = '10 5'
-      marker = 'url(#arrowData)'
-      lineClass = 'flow-line'
-      opacity = 1
+      stroke = '#4edea3'; width = 2.5; dash = '10 5'
+      marker = 'url(#arrowData)'; lineClass = 'flow-line'; opacity = 1
       groupClass = 'data-only'
     }
 
-    // Path: straight if same row (similar y), bezier if cross-row
     const yDiff = Math.abs(fromY - toY)
     let path
     if (yDiff < 80) {
-      // Straight line with horizontal middle
       const midX = (fromX + toX) / 2
       path = `M ${fromX} ${fromY} L ${midX} ${fromY} L ${midX} ${toY} L ${toX} ${toY}`
     } else {
-      // Bezier curve
       const cpOffset = Math.abs(fromX - toX) * 0.5
       path = `M ${fromX} ${fromY} C ${fromX + cpOffset} ${fromY}, ${toX - cpOffset} ${toY}, ${toX} ${toY}`
     }
 
-    // Label at midpoint
     const labelX = (fromX + toX) / 2
     const labelY = (fromY + toY) / 2
     const label = getPortLabel(fromNode, conn.from_port)
 
     return {
-      id: conn.id,
-      path,
+      id: conn.id, path,
       stroke, width, dash, marker, lineClass, opacity, groupClass,
-      label,
-      labelX, labelY,
+      label, labelX, labelY,
       labelW: label ? label.length * 7 : 0,
+      selected: selectedConnId.value === conn.id,
     }
   }).filter(Boolean)
 })
 
-// ── Helpers ──
-function getNodeTypeDef(node) {
-  return editorStore.nodeTypes.find((t) => t.type === node.type)
+function onConnectionClick(conn) {
+  if (!props.editMode) return
+  if (selectedConnId.value === conn.id) {
+    selectedConnId.value = null
+  } else {
+    selectedConnId.value = conn.id
+  }
 }
 
-function getPortPosition(node, portId, side) {
-  const typeDef = getNodeTypeDef(node)
-  if (!typeDef) return null
+// ── Port-to-port connection drag ──
+const dragLine = ref({ visible: false, x1: 0, y1: 0, x2: 0, y2: 0 })
 
+function onPortDragStart({ nodeId, portId, event }) {
+  if (!props.editMode) return
+  const portEl = event.target.closest('.io-port')
+  if (!portEl || portEl.classList.contains('input-port')) return
+
+  const rect = portEl.getBoundingClientRect()
+  const x1 = rect.left + 7
+  const y1 = rect.top + 7
+  dragLine.value = { visible: true, x1, y1, x2: event.clientX, y2: event.clientY }
+
+  const fromNode = nodeId
+  const fromPort = portId
+
+  function onMove(ev) {
+    dragLine.value = { ...dragLine.value, x2: ev.clientX, y2: ev.clientY }
+    // Highlight compatible ports
+    document.querySelectorAll('.io-port.input-port').forEach((el) => {
+      const r = el.getBoundingClientRect()
+      const over = ev.clientX > r.left - 6 && ev.clientX < r.right + 6 &&
+                    ev.clientY > r.top - 6 && ev.clientY < r.bottom + 6
+      el.classList.remove('drag-over', 'valid', 'invalid')
+      if (over) {
+        el.classList.add('drag-over')
+        const toNode = el.dataset.nodeId
+        const toPort = el.dataset.portId
+        const valid = editorStore.arePortsCompatible(fromNode, fromPort, toNode, toPort)
+        el.classList.add(valid ? 'valid' : 'invalid')
+      }
+    })
+  }
+
+  function onUp(ev) {
+    dragLine.value.visible = false
+    document.querySelectorAll('.io-port').forEach((el) => el.classList.remove('drag-over', 'valid', 'invalid'))
+    // Check target
+    const target = document.elementFromPoint(ev.clientX, ev.clientY)
+    const portEl = target?.closest('.io-port.input-port')
+    if (portEl) {
+      const toNode = portEl.dataset.nodeId
+      const toPort = portEl.dataset.portId
+      if (toNode && toPort && editorStore.arePortsCompatible(fromNode, fromPort, toNode, toPort)) {
+        const fromPortDef = getPortDef(fromNode, fromPort, 'output')
+        const type = fromPortDef?.data_type === 'event' ? 'event' : 'data'
+        editorStore.createConnection(fromNode, fromPort, toNode, toPort, type)
+      }
+    }
+    window.removeEventListener('mousemove', onMove)
+    window.removeEventListener('mouseup', onUp)
+  }
+
+  window.addEventListener('mousemove', onMove)
+  window.addEventListener('mouseup', onUp)
+}
+
+// ── Port click ──
+function onPortClick({ nodeId, portId, event }) {
+  if (!props.editMode) return
+  // Deselect connection
+  selectedConnId.value = null
+}
+
+function getPortDef(nodeId, portId, side) {
+  const node = editorStore.nodes.find((n) => n.id === nodeId)
+  if (!node) return null
+  return editorStore.getPortDef(node, portId, side)
+}
+
+// ── Helpers ──
+function getPortPosition(node, portId, side) {
+  const typeDef = editorStore.getNodeTypeDef(node.type)
+  if (!typeDef) return null
   const ports = side === 'input' ? typeDef.ports?.inputs : typeDef.ports?.outputs
   const port = ports?.find((p) => p.id === portId)
   if (!port) {
-    // Fallback: center of node edge
     return {
       x: side === 'input' ? node.position.x : node.position.x + getNodeWidth(node),
       y: node.position.y + 30,
     }
   }
-
   const nodeW = getNodeWidth(node)
   return {
     x: side === 'input' ? node.position.x : node.position.x + nodeW,
-    y: node.position.y + port.position.top + 7, // 7 = half port height
+    y: node.position.y + port.position.top + 7,
   }
 }
 
 function getPortLabel(node, portId) {
-  const typeDef = getNodeTypeDef(node)
+  const typeDef = editorStore.getNodeTypeDef(node.type)
   if (!typeDef) return ''
   const port = typeDef.ports?.outputs?.find((p) => p.id === portId)
   return port?.label || ''
@@ -288,7 +367,7 @@ function getPortLabel(node, portId) {
 
 function getNodeWidth(node) {
   const widthMap = {
-    input_image: 220, ocr: 220, tts: 220, ts_output: 220,
+    input_image: 220, ocr: 220, tts: 220, ts_output: 220, ts_input: 220,
     context_build: 250, llm: 250,
     stt_history: 280,
     stt_listen: 320,
@@ -301,6 +380,31 @@ function getStepNumber(nodeId) {
   return idx >= 0 ? String.fromCharCode(0x2460 + idx) : ''
 }
 
+// ── Keyboard ──
+function onKeydown(e) {
+  if (!props.editMode) return
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    if (selectedConnId.value) {
+      e.preventDefault()
+      editorStore.deleteConnection(selectedConnId.value)
+      selectedConnId.value = null
+    }
+  }
+  if (e.key === 'Escape') {
+    selectedConnId.value = null
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', onKeydown)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKeydown)
+})
+
+// ── Zoom storage for palette ──
+// Expose current zoom as a global for NodePalette coordinate conversion
 const emit = defineEmits(['select-node'])
 
 function onNodeSelect(node) {
@@ -325,11 +429,8 @@ function onNodeSelect(node) {
 
 .canvas-grid {
   position: absolute;
-  top: 0;
-  left: 0;
-  z-index: 0;
-  pointer-events: none;
-  opacity: 0.15;
+  top: 0; left: 0; z-index: 0;
+  pointer-events: none; opacity: 0.15;
   background-image:
     linear-gradient(#31353d 1px, transparent 1px),
     linear-gradient(90deg, #31353d 1px, transparent 1px);
@@ -342,20 +443,16 @@ function onNodeSelect(node) {
   transition: transform 0.2s ease;
 }
 
-/* Flow view system */
 .flow-view[data-flow="data"] .event-only { display: none !important; }
 .flow-view[data-flow="event"] .data-only { display: none !important; }
 
-/* Connections SVG */
 .connections-svg {
   position: absolute;
-  top: 0;
-  left: 0;
+  top: 0; left: 0;
   pointer-events: none;
   z-index: 0;
 }
 
-/* Flow animations */
 .flow-line {
   animation: flowDash 1.0s linear infinite;
 }
@@ -364,7 +461,16 @@ function onNodeSelect(node) {
   to { stroke-dashoffset: -24; }
 }
 
-/* Scrollbar */
+.empty-hint {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  pointer-events: none; z-index: 20;
+  color: rgba(139, 144, 160, 0.4); font-size: 13px; gap: 8px;
+}
+.empty-hint .material-symbols-outlined { font-size: 48px; opacity: 0.3; }
+.empty-hint .hl { color: rgba(173, 199, 255, 0.5); }
+
 .pipeline-canvas::-webkit-scrollbar { width: 6px; height: 6px; }
 .pipeline-canvas::-webkit-scrollbar-track { background: #10131b; }
 .pipeline-canvas::-webkit-scrollbar-thumb { background: #31353d; border-radius: 3px; }

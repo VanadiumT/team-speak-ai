@@ -19,17 +19,25 @@ export const useEditorStore = defineStore('editor', () => {
   const canUndo = ref(false)
   const canRedo = ref(false)
   const isReadOnly = ref(false)     // pipeline 运行时只读
+  const editMode = ref(false)       // 编辑模式（默认流程模式）
   const dirtyFields = ref(new Set()) // 待保存的字段
 
   // ── 计算属性 ──
   const canvasSize = computed(() => flowMeta.value.canvas || { width: 1700, height: 1250 })
 
-  // ── 流程加载 ──
+  // ── 模式切换 ──
+  function enterEditMode() {
+    editMode.value = true
+  }
 
+  function exitEditMode() {
+    editMode.value = false
+  }
+
+  // ── 流程加载 ──
   async function loadFlow(id) {
     flowId.value = id
     const result = await pipelineSocket.sendCommand(id, 'flow.load', { flow_id: id })
-    // flow.loaded event will arrive in event handler
   }
 
   function onFlowLoaded({ flow }) {
@@ -45,9 +53,7 @@ export const useEditorStore = defineStore('editor', () => {
     connections.value = flow.connections || []
   }
 
-  function onFlowCreated({ flow }) {
-    // 新建流程后，新的 flow 出现在侧栏
-  }
+  function onFlowCreated({ flow }) {}
 
   function onFlowDeleted({ flow_id }) {
     if (flowId.value === flow_id) {
@@ -58,7 +64,6 @@ export const useEditorStore = defineStore('editor', () => {
   }
 
   // ── 节点操作 ──
-
   async function createNode(nodeType, position = { x: 100, y: 100 }) {
     const flow = flowId.value
     if (!flow) return
@@ -82,7 +87,6 @@ export const useEditorStore = defineStore('editor', () => {
     nodes.value = nodes.value.filter((n) => n.id !== node_id)
   }
 
-  // 拖拽过程中乐观更新本地 UI（不发送网络请求）
   function moveNodeLocal(nodeId, x, y) {
     const node = nodes.value.find((n) => n.id === nodeId)
     if (node) {
@@ -90,7 +94,6 @@ export const useEditorStore = defineStore('editor', () => {
     }
   }
 
-  // dragend 时发送最终位置
   async function commitMoveNode(nodeId) {
     const flow = flowId.value
     if (!flow) return
@@ -109,7 +112,6 @@ export const useEditorStore = defineStore('editor', () => {
     }
   }
 
-  // 即时控件（switch/toggle/select）：立即发送
   async function updateConfigImmediate(nodeId, config) {
     const flow = flowId.value
     if (!flow || isReadOnly.value) return
@@ -120,7 +122,6 @@ export const useEditorStore = defineStore('editor', () => {
     })
   }
 
-  // 文本输入：500ms debounce
   let _debounceTimers = {}
   function updateConfigDebounced(nodeId, config) {
     const flow = flowId.value
@@ -147,7 +148,6 @@ export const useEditorStore = defineStore('editor', () => {
   }
 
   // ── 连线操作 ──
-
   async function createConnection(fromNode, fromPort, toNode, toPort, type = 'data') {
     const flow = flowId.value
     if (!flow || isReadOnly.value) return
@@ -174,8 +174,40 @@ export const useEditorStore = defineStore('editor', () => {
     connections.value = connections.value.filter((c) => c.id !== connection_id)
   }
 
-  // ── 撤销/重做 ──
+  // ── 端口操作 ──
+  function getNodeTypeDef(nodeType) {
+    return nodeTypes.value.find((t) => t.type === nodeType)
+  }
 
+  function getPortDef(node, portId, side) {
+    const tdef = getNodeTypeDef(node.type)
+    if (!tdef) return null
+    const ports = side === 'input' ? tdef.ports?.inputs : tdef.ports?.outputs
+    return ports?.find((p) => p.id === portId) || null
+  }
+
+  function arePortsCompatible(fromNodeId, fromPortId, toNodeId, toPortId) {
+    const fromNode = nodes.value.find((n) => n.id === fromNodeId)
+    const toNode = nodes.value.find((n) => n.id === toNodeId)
+    if (!fromNode || !toNode) return false
+
+    const fromPort = getPortDef(fromNode, fromPortId, 'output')
+    const toPort = getPortDef(toNode, toPortId, 'input')
+    if (!fromPort || !toPort) return false
+
+    const COMPATIBLE = {
+      image: ['image'],
+      audio: ['audio'],
+      string: ['string', 'string_array'],
+      string_array: ['string_array', 'messages'],
+      messages: ['messages'],
+      event: [],
+    }
+    const compat = COMPATIBLE[fromPort.data_type]
+    return compat && compat.includes(toPort.data_type)
+  }
+
+  // ── 撤销/重做 ──
   async function undo() {
     const flow = flowId.value
     if (!flow || !canUndo.value) return
@@ -194,7 +226,6 @@ export const useEditorStore = defineStore('editor', () => {
   }
 
   // ── Pipeline 执行锁 ──
-
   function onPipelineStarted() {
     isReadOnly.value = true
   }
@@ -207,8 +238,12 @@ export const useEditorStore = defineStore('editor', () => {
     isReadOnly.value = false
   }
 
-  // ── 初始化 ──
+  // ── 工作流管理 ──
+  async function createFlow(name, group, icon) {
+    await pipelineSocket.sendCommand('_system', 'flow.create', { name, group, icon })
+  }
 
+  // ── 初始化 ──
   function init() {
     pipelineSocket.on('node_types', ({ types }) => {
       nodeTypes.value = types || []
@@ -224,14 +259,10 @@ export const useEditorStore = defineStore('editor', () => {
     pipelineSocket.on('connection.created', onConnectionCreated)
     pipelineSocket.on('connection.deleted', onConnectionDeleted)
     pipelineSocket.on('history.state', onHistoryState)
-
-    // 编辑锁
     pipelineSocket.on('pipeline.started', onPipelineStarted)
     pipelineSocket.on('pipeline.completed', onPipelineCompleted)
     pipelineSocket.on('pipeline.stopped', onPipelineStopped)
   }
-
-  // ── 清理 ──
 
   function flushPendingUpdates() {
     Object.values(_debounceTimers).forEach((t) => clearTimeout(t))
@@ -240,10 +271,13 @@ export const useEditorStore = defineStore('editor', () => {
 
   return {
     flowId, flowMeta, nodes, connections, nodeTypes,
-    canUndo, canRedo, isReadOnly, dirtyFields, canvasSize,
+    canUndo, canRedo, isReadOnly, editMode, dirtyFields, canvasSize,
+    enterEditMode, exitEditMode,
     loadFlow, createNode, deleteNode, moveNodeLocal, commitMoveNode,
     updateConfigImmediate, updateConfigDebounced,
     createConnection, deleteConnection,
+    getNodeTypeDef, getPortDef, arePortsCompatible,
     undo, redo, init, flushPendingUpdates,
+    createFlow, onFlowLoaded,
   }
 })
