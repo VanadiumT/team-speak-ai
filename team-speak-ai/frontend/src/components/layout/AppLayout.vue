@@ -53,7 +53,7 @@
                   <span class="sb-section-name">{{ section.name }}</span>
                   <span class="material-symbols-outlined sb-chevron" :class="{ expanded: isExpanded(section.id) }">chevron_right</span>
                 </button>
-                <button v-if="section.id === 'workflows'" class="sb-more-btn" @click.stop="openSidebarMenu($event, section)" title="更多操作">
+                <button v-if="section.id === 'workflows' || section.id === 'system_settings'" class="sb-more-btn" @click.stop="openSidebarMenu($event, section)" title="更多操作">
                   <span class="material-symbols-outlined">more_vert</span>
                 </button>
               </div>
@@ -422,6 +422,7 @@ function openSidebarMenu(event, node) {
   contextMenu.y = event.clientY
 
   const isRoot = node.type === 'section' && node.id === 'workflows'
+  const isSettings = node.type === 'section' && node.id === 'system_settings'
   const isGroup = node.type === 'group'
   const isFlow = node.type === 'flow_ref'
 
@@ -461,6 +462,10 @@ function openSidebarMenu(event, node) {
       { icon: enabled ? 'block' : 'check_circle', label: enabled ? '禁用' : '启用', action: () => { pipelineSocket.sendCommand(flowId, 'flow.toggle_enabled', {}).catch(() => {}) } },
       { separator: true },
       { icon: 'delete', label: '删除', danger: true, action: () => { if (confirm('确认删除此工作流？此操作不可恢复。')) { pipelineSocket.sendCommand(flowId, 'flow.delete', {}) } } },
+    ]
+  } else if (isSettings) {
+    contextMenu.items = [
+      { icon: 'settings', label: '系统设置项', action: () => {} },
     ]
   }
   contextMenu.visible = true
