@@ -3,10 +3,10 @@
     class="node-card"
     :class="[borderClass, { 'node-pulse': isProcessing, 'selected': isSelected }]"
     :style="{ left: node.position?.x + 'px', top: node.position?.y + 'px', width: nodeWidth + 'px' }"
-    @mousedown.stop="onDragStart"
+    @mousedown="onDragStart"
     @click.stop="onClick"
     @dblclick.stop="onDoubleClick"
-    @contextmenu.prevent.stop="onContextMenu"
+    @contextmenu.prevent="onContextMenu"
   >
     <!-- Workflow badge -->
     <div v-if="stepNumber" class="workflow-badge" :style="{ borderColor: badgeColor, color: badgeColor }">
@@ -208,8 +208,9 @@ let dragOffset = { x: 0, y: 0 }
 let isDragging = false
 
 function onDragStart(e) {
+  if (e.button !== 0) return // 中键/右键留给画布平移
+  e.stopPropagation()         // 左键阻止冒泡，防止画布误触发
   if (!props.editMode || editorStore.isReadOnly) return
-  // Don't drag if clicking a port
   if (e.target.closest('.io-port')) return
   isDragging = true
   dragOffset = {

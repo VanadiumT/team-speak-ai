@@ -415,6 +415,17 @@ onMounted(() => {
   // Load recent flows
   recentFlows.value = JSON.parse(localStorage.getItem('recent-flows') || '[]').slice(0, 5)
 
+  // Keyboard: Delete selected node
+  window.addEventListener('keydown', (e) => {
+    if (!editorStore.editMode) return
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
+    if ((e.key === 'Delete' || e.key === 'Backspace') && selectedNode.value) {
+      e.preventDefault()
+      editorStore.deleteNode(selectedNode.value.id)
+      selectedNode.value = null
+    }
+  })
+
   pipelineSocket.connect()
 })
 
