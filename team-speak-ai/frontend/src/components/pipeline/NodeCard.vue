@@ -203,36 +203,46 @@ const nodeWidth = computed(() => {
   return widthMap[props.node.type] || 250
 })
 
-// ── Drag (delta-based, 避免屏幕坐标与画布坐标混用) ──
+// ── Drag (直接操作 DOM，松手才同步 store，确保跟手流畅) ──
 let nodeDragActive = false
 let nodeDragMoved = false
+const cardEl = ref(null)
 
 function onDragStart(e) {
   if (e.button !== 0) return // 中键/右键留给画布平移
   e.stopPropagation()
   if (!props.editMode || editorStore.isReadOnly) return
   if (e.target.closest('.io-port')) return
-  if (nodeDragActive) return // 防止重复拖拽
+  if (nodeDragActive) return
 
   nodeDragActive = true
   nodeDragMoved = false
+  const el = e.currentTarget  // 直接拿 DOM 元素
   const startCanvasX = props.node.position.x
   const startCanvasY = props.node.position.y
   const startScreenX = e.clientX
   const startScreenY = e.clientY
+  el.style.willChange = 'left, top'
+  el.style.zIndex = '25'
 
   const onMove = (ev) => {
     if (!nodeDragActive) return
-    const dx = Math.abs(ev.clientX - startScreenX)
-    const dy = Math.abs(ev.clientY - startScreenY)
-    if (dx < 2 && dy < 2) return // 忽略微小移动
+    const dx = ev.clientX - startScreenX
+    const dy = ev.clientY - startScreenY
+    if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return
     nodeDragMoved = true
-    editorStore.moveNodeLocal(props.node.id, startCanvasX + (ev.clientX - startScreenX), startCanvasY + (ev.clientY - startScreenY))
+    el.style.left = (startCanvasX + dx) + 'px'
+    el.style.top  = (startCanvasY + dy) + 'px'
   }
 
-  const onUp = () => {
+  const onUp = (ev) => {
     nodeDragActive = false
+    el.style.willChange = 'auto'
+    el.style.zIndex = '10'
     if (nodeDragMoved) {
+      const dx = ev.clientX - startScreenX
+      const dy = ev.clientY - startScreenY
+      editorStore.moveNodeLocal(props.node.id, startCanvasX + dx, startCanvasY + dy)
       editorStore.commitMoveNode(props.node.id)
     }
     window.removeEventListener('mousemove', onMove)
