@@ -395,6 +395,7 @@ onMounted(() => {
   notificationsStore.init()
   connectionStore.init()
 
+  // 以下 handler 只在 onMounted 注册一次，不会被重复添加
   pipelineSocket.on('sidebar.tree', ({ groups }) => {
     sidebarTree.value = groups || []
     groups?.forEach((s) => {

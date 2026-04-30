@@ -287,7 +287,8 @@ class PipelineSocket {
 
   on(type, handler) {
     if (!this.handlers.has(type)) this.handlers.set(type, [])
-    this.handlers.get(type).push(handler)
+    const list = this.handlers.get(type)
+    if (!list.includes(handler)) list.push(handler)
   }
 
   off(type, handler) {

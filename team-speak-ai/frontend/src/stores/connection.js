@@ -49,7 +49,10 @@ export const useConnectionStore = defineStore('connection', () => {
     }
   }
 
+  let _initialized = false
   function init() {
+    if (_initialized) return
+    _initialized = true
     pipelineSocket.on('connected', onConnected)
     pipelineSocket.on('disconnected', onDisconnected)
     pipelineSocket.on('connection.status', onConnectionStatus)

@@ -248,7 +248,11 @@ export const useEditorStore = defineStore('editor', () => {
   }
 
   // ── 初始化 ──
+  let _initialized = false
   function init() {
+    if (_initialized) return
+    _initialized = true
+
     pipelineSocket.on('node_types', ({ types }) => {
       nodeTypes.value = types || []
     })

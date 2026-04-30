@@ -81,7 +81,10 @@ export const useExecutionStore = defineStore('execution', () => {
 
   // ── 初始化 ──
 
+  let _initialized = false
   function init() {
+    if (_initialized) return
+    _initialized = true
     pipelineSocket.on('pipeline.started', onPipelineStarted)
     pipelineSocket.on('pipeline.completed', onPipelineCompleted)
     pipelineSocket.on('pipeline.stopped', onPipelineStopped)

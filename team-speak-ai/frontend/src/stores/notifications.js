@@ -59,7 +59,10 @@ export const useNotificationsStore = defineStore('notifications', () => {
     isOpen.value = false
   }
 
+  let _initialized = false
   function init() {
+    if (_initialized) return
+    _initialized = true
     pipelineSocket.on('important_update', onImportantUpdate)
   }
 
