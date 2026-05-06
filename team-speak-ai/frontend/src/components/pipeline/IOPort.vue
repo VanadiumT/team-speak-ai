@@ -56,7 +56,7 @@ function onMouseDown(e) {
       hasDragged = true
       // If output port, emit drag start for connection wiring
       if (props.side === 'right') {
-        emit('portDragStart', e)
+        emit('portDragStart', ev)
       }
       // Vertical port position drag
       if (dy > 5 && Math.abs(ev.clientY - dragStartY) > Math.abs(ev.clientX - dragStartX)) {
@@ -85,17 +85,32 @@ function doVerticalDrag(startEvent, moveEvent) {
   const startTop = parseInt(portEl.style.top) || props.position
   const startY = moveEvent.clientY
 
+  // Measure header height for dynamic min clamp
+  const headerEl = nodeEl.querySelector('.node-header')
+  const tabBarEl = nodeEl.querySelector('.node-tab-bar')
+  let minTop = 28
+  if (headerEl) minTop = Math.round(headerEl.getBoundingClientRect().height)
+  if (tabBarEl) minTop += Math.round(tabBarEl.getBoundingClientRect().height)
+  minTop += 2
+
   const onMove = (ev) => {
     const deltaY = ev.clientY - startY
-    const newTop = Math.max(28, Math.min(nodeRect.height - 20, startTop + deltaY))
+    const newTop = Math.max(minTop, Math.min(nodeRect.height - 20, startTop + deltaY))
     portEl.style.top = newTop + 'px'
   }
 
   const onUp = (ev) => {
     const finalTop = parseInt(portEl.style.top) || startTop
     portEl.style.top = finalTop + 'px'
-    // Persist port position change
     if (props.dataNodeId && props.dataPortId) {
+      // Local immediate update (before backend broadcast)
+      const node = editorStore.nodes.find((n) => n.id === props.dataNodeId)
+      if (node) {
+        if (!node.config) node.config = {}
+        if (!node.config._port_positions) node.config._port_positions = {}
+        node.config._port_positions[props.dataPortId] = { side: props.side, top: finalTop }
+      }
+      // Persist to backend
       pipelineSocket.sendCommand(editorStore.flowId, 'port.move', {
         node_id: props.dataNodeId,
         port_id: props.dataPortId,

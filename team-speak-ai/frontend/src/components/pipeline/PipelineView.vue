@@ -87,6 +87,7 @@
         @select="onNodeSelect"
         @port-drag-start="onPortDragStart"
         @port-click="onPortClick"
+        @node-resize="onNodeResize"
       />
 
       <div v-if="editorStore.nodes.length === 0" class="empty-hint">
@@ -123,6 +124,18 @@ const currentZoom = ref(1.0)
 const activeFlowView = ref('all')
 const isPanning = ref(false)
 const selectedConnId = ref(null)
+
+// ── Per-node height cache (populated by NodeCard @node-resize) ──
+const nodeHeights = ref({})
+
+function onNodeResize({ nodeId, height, headerHeight }) {
+  if (height === 0) {
+    delete nodeHeights.value[nodeId]
+    nodeHeights.value = { ...nodeHeights.value }
+  } else {
+    nodeHeights.value = { ...nodeHeights.value, [nodeId]: { height, headerHeight } }
+  }
+}
 
 const ZOOM_MIN = 0.25
 const ZOOM_MAX = 3.0
@@ -300,9 +313,34 @@ function getPortCanvasPos(node, portId, side) {
   const tdef = editorStore.getNodeTypeDef(node.type)
   if (!tdef) return null
   const ports = side === 'input' ? tdef.ports?.inputs : tdef.ports?.outputs
-  const port = ports?.find((p) => p.id === portId)
-  const top = port?.position?.top || 30
+  const total = ports?.length || 0
+  const idx = ports?.findIndex((p) => p.id === portId) ?? -1
   const w = getNodeWidth(node)
+
+  // Per-instance persisted position (user drag)
+  const saved = node.config?._port_positions?.[portId]
+  if (saved?.top != null) {
+    return {
+      x: side === 'input' ? node.position.x : node.position.x + w,
+      y: node.position.y + saved.top + 7,
+    }
+  }
+
+  let top
+  const hi = nodeHeights.value[node.id]
+  if (hi && idx >= 0 && total > 0) {
+    const available = Math.max(hi.height - 14 - hi.headerHeight, 1)
+    top = Math.round(hi.headerHeight + available * (idx + 1) / (total + 1))
+  } else {
+    const hasTabs = (tdef.tabs?.length || 0) > 0
+    const estH = hasTabs ? 105 : 85
+    const estHeader = hasTabs ? 57 : 33
+    const estAvail = Math.max(estH - 14 - estHeader, 1)
+    top = idx >= 0 && total > 0
+      ? Math.round(estHeader + estAvail * (idx + 1) / (total + 1))
+      : Math.round(estHeader + estAvail / 2)
+  }
+
   return {
     x: side === 'input' ? node.position.x : node.position.x + w,
     y: node.position.y + top + 7,

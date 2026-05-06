@@ -53,6 +53,12 @@ class PipelineSocket {
       this._lastPong = Date.now()
       this._startHeartbeat()
       this.emit('connected')
+      // Re-subscribe to current flow after reconnect so broadcasts (node.created etc.) reach us
+      if (this.activeFlowId) {
+        try {
+          this.sendCommand(this.activeFlowId, 'flow.load', {}).catch(() => {})
+        } catch { /* ignore — editor will retry on user action */ }
+      }
     }
 
     this.ws.onmessage = (event) => {
@@ -235,6 +241,9 @@ class PipelineSocket {
 
     switch (type) {
       case 'event':
+        if (action === 'node.created') {
+          console.log('[PipelineWS] ← node.created event received:', params?.node?.id, params?.node?.type, params?.node?.position)
+        }
         this.emit(action, params)
         this.emit('message', msg)
         break

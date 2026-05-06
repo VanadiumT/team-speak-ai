@@ -1,5 +1,6 @@
 <template>
   <div
+    ref="cardEl"
     class="node-card"
     :class="[borderClass, { 'node-pulse': isProcessing, 'selected': isSelected }]"
     :style="{ left: node.position?.x + 'px', top: node.position?.y + 'px', width: nodeWidth + 'px' }"
@@ -15,7 +16,7 @@
     <IOPort
       v-for="port in inputPorts" :key="port.id"
       side="left"
-      :position="port.position?.top || defaultPortTop(port.id, 'input')"
+      :position="computePortTop(port.id, 'input')"
       :label="port.label" :port-state="getPortState(port.id)"
       :data-type="port.data_type" :data-node-id="node.id" :data-port-id="port.id"
       :edit-mode="editMode"
@@ -25,7 +26,7 @@
     <IOPort
       v-for="port in outputPorts" :key="port.id"
       side="right"
-      :position="port.position?.top || defaultPortTop(port.id, 'output')"
+      :position="computePortTop(port.id, 'output')"
       :label="port.label" :port-state="getPortState(port.id)"
       :data-type="port.data_type" :data-node-id="node.id" :data-port-id="port.id"
       :edit-mode="editMode"
@@ -33,14 +34,14 @@
       @port-click="(e) => $emit('portClick', { nodeId: node.id, portId: port.id, event: e })"
     />
 
-    <div class="node-header">
+    <div ref="headerEl" class="node-header">
       <span class="material-symbols-outlined node-icon" :style="{ color: iconColor }">{{ nodeIcon }}</span>
       <span class="node-title">{{ node.name || nodeTypeDef?.name || node.type }}</span>
       <span class="node-status-badge" :class="statusClass">{{ statusLabel }}</span>
       <div v-if="isListening" class="keyword-dot"></div>
     </div>
 
-    <div v-if="tabs.length > 0" class="node-tab-bar">
+    <div v-if="tabs.length > 0" ref="tabBarEl" class="node-tab-bar">
       <button v-for="tab in tabs" :key="tab.id" class="tab-btn"
         :class="{ active: activeTab === tab.id }" @click.stop="activeTab = tab.id"
       >{{ tab.label }}</button>
@@ -66,7 +67,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import IOPort from './IOPort.vue'
 import { useEditorStore } from '@/stores/editor.js'
 import { useExecutionStore } from '@/stores/execution.js'
@@ -78,15 +79,46 @@ const props = defineProps({
   zoom: { type: Number, default: 1.0 },
 })
 
-const emit = defineEmits(['select', 'dragstart', 'dragend', 'portDragStart', 'portClick'])
+const emit = defineEmits(['select', 'dragstart', 'dragend', 'portDragStart', 'portClick', 'nodeResize'])
 
 const editorStore = useEditorStore()
 const executionStore = useExecutionStore()
 const activeTab = ref('config')
 const isSelected = ref(false)
 
+// ── Port positioning ──
+const cardEl = ref(null)
+const headerEl = ref(null)
+const tabBarEl = ref(null)
+const measuredNodeHeight = ref(0)
+const measuredHeaderHeight = ref(0)
+
+function measureNode() {
+  if (!cardEl.value) return
+  const cr = cardEl.value.getBoundingClientRect()
+  measuredNodeHeight.value = cr.height
+  let h = 0
+  if (headerEl.value) h += headerEl.value.getBoundingClientRect().height
+  if (tabBarEl.value) h += tabBarEl.value.getBoundingClientRect().height
+  measuredHeaderHeight.value = h + 4
+  emit('nodeResize', { nodeId: props.node.id, height: cr.height, headerHeight: measuredHeaderHeight.value })
+}
+
+onMounted(() => {
+  nextTick(() => {
+    measureNode()
+  })
+})
+
+onUnmounted(() => {
+  emit('nodeResize', { nodeId: props.node.id, height: 0, headerHeight: 0 })
+})
+
 const nodeTypeDef = computed(() => editorStore.nodeTypes.find((t) => t.type === props.node.type))
 const tabs = computed(() => nodeTypeDef.value?.tabs || [])
+
+watch(() => tabs.value.length, () => nextTick(() => measureNode()))
+
 const nodeIcon = computed(() => nodeTypeDef.value?.icon || 'smart_toy')
 const iconColor = computed(() => {
   const c = { primary: '#adc7ff', secondary: '#4edea3', tertiary: '#ffb695', outline: '#8b90a0' }
@@ -96,16 +128,22 @@ const iconColor = computed(() => {
 const inputPorts = computed(() => nodeTypeDef.value?.ports?.inputs || [])
 const outputPorts = computed(() => nodeTypeDef.value?.ports?.outputs || [])
 
-function defaultPortTop(portId, side) {
-  const nt = props.node.type
-  if (side === 'input') {
-    if (nt === 'context_build') { const idx = inputPorts.value.findIndex((p) => p.id === portId); return [30, 58, 86, 114][idx] || 30 }
-    return 30
-  }
-  if (nt === 'input_image') { const idx = outputPorts.value.findIndex((p) => p.id === portId); return [30, 72][idx] || 30 }
-  if (nt === 'stt_history') { const idx = outputPorts.value.findIndex((p) => p.id === portId); return [72, 110][idx] || 55 }
-  if (nt === 'ts_output') return 72
-  return 55
+function computePortTop(portId, side) {
+  const ports = side === 'input' ? inputPorts.value : outputPorts.value
+  const total = ports.length
+  if (total === 0) return 30
+
+  const saved = props.node.config?._port_positions?.[portId]
+  if (saved?.top != null) return saved.top
+
+  const idx = ports.findIndex((p) => p.id === portId)
+  if (idx < 0) return 30
+
+  const hasTabs = tabs.value.length > 0
+  const nodeH = measuredNodeHeight.value || (hasTabs ? 105 : 85)
+  const headerH = measuredHeaderHeight.value || (hasTabs ? 57 : 33)
+  const available = Math.max(nodeH - 14 - headerH, 1)
+  return Math.round(headerH + available * (idx + 1) / (total + 1))
 }
 
 function getPortState(portId) {

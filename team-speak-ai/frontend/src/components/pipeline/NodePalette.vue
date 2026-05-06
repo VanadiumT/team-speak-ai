@@ -113,9 +113,18 @@ function startDrag(e, nodeType) {
           const canvasContent = canvas.querySelector('#canvas-content')
           const transform = canvasContent ? getComputedStyle(canvasContent).transform : ''
           const zoom = parseZoomFromTransform(transform)
-          const x = Math.max(32, (ev.clientX - rect.left + canvas.scrollLeft) / zoom - 110)
-          const y = Math.max(32, (ev.clientY - rect.top + canvas.scrollTop) / zoom - 20)
-          editorStore.createNode(nt.type, { x: Math.round(x), y: Math.round(y) })
+          // Content-to-screen: screen = rectLeft + (contentPadding + nodeLeft) * zoom - scroll
+          // Inverse: nodeLeft = (screen - rectLeft + scroll) / zoom - contentPadding
+          const padding = 32
+          const x = Math.max(32, (ev.clientX - rect.left + canvas.scrollLeft) / zoom - padding - 110)
+          const y = Math.max(32, (ev.clientY - rect.top + canvas.scrollTop) / zoom - padding - 20)
+          editorStore.createNode(nt.type, { x: Math.round(x), y: Math.round(y) }).then((ok) => {
+            if (!ok) {
+              // Visual feedback: briefly flash canvas border red
+              canvas.style.boxShadow = 'inset 0 0 0 2px rgba(255,180,171,0.6)'
+              setTimeout(() => { canvas.style.boxShadow = '' }, 600)
+            }
+          })
         }
       }
     }

@@ -37,6 +37,7 @@ export const useEditorStore = defineStore('editor', () => {
   // ── 流程加载 ──
   async function loadFlow(id) {
     flowId.value = id
+    pipelineSocket.activeFlowId = id
     // flow.load 返回 event (flow.loaded)，不是 ack，用 _waitForEvent 等待
     pipelineSocket.sendCommand(id, 'flow.load', {})
     await pipelineSocket._waitForEvent('flow.loaded', 15000)
@@ -60,6 +61,7 @@ export const useEditorStore = defineStore('editor', () => {
   function onFlowDeleted({ flow_id }) {
     if (flowId.value === flow_id) {
       flowId.value = null
+      pipelineSocket.activeFlowId = null
       nodes.value = []
       connections.value = []
     }
@@ -68,15 +70,30 @@ export const useEditorStore = defineStore('editor', () => {
   // ── 节点操作 ──
   async function createNode(nodeType, position = { x: 100, y: 100 }) {
     const flow = flowId.value
-    if (!flow) return
-    await pipelineSocket.sendCommand(flow, 'node.create', {
-      node_type: nodeType,
-      position,
-    })
+    if (!flow) {
+      console.error('[Editor] createNode: no flow loaded')
+      return false
+    }
+    if (!pipelineSocket.connected) {
+      console.error('[Editor] createNode: WebSocket not connected')
+      return false
+    }
+    try {
+      await pipelineSocket.sendCommand(flow, 'node.create', {
+        node_type: nodeType,
+        position,
+      })
+      return true
+    } catch (e) {
+      console.error('[Editor] createNode failed:', e)
+      return false
+    }
   }
 
   function onNodeCreated({ node }) {
+    console.log('[Editor] onNodeCreated — pushing node:', node?.id, 'type:', node?.type, 'pos:', node?.position, 'total before:', nodes.value.length)
     nodes.value.push(node)
+    console.log('[Editor] nodes total after push:', nodes.value.length)
   }
 
   async function deleteNode(nodeId) {
@@ -179,6 +196,14 @@ export const useEditorStore = defineStore('editor', () => {
   }
 
   // ── 端口操作 ──
+  function onPortMoved({ node_id, port_id, side, position }) {
+    const node = nodes.value.find((n) => n.id === node_id)
+    if (!node) return
+    if (!node.config) node.config = {}
+    if (!node.config._port_positions) node.config._port_positions = {}
+    node.config._port_positions[port_id] = { side, top: position }
+  }
+
   function getNodeTypeDef(nodeType) {
     return nodeTypes.value.find((t) => t.type === nodeType)
   }
@@ -267,6 +292,7 @@ export const useEditorStore = defineStore('editor', () => {
     pipelineSocket.on('connection.created', onConnectionCreated)
     pipelineSocket.on('connection.deleted', onConnectionDeleted)
     pipelineSocket.on('history.state', onHistoryState)
+    pipelineSocket.on('port.moved', onPortMoved)
     pipelineSocket.on('pipeline.started', onPipelineStarted)
     pipelineSocket.on('pipeline.completed', onPipelineCompleted)
     pipelineSocket.on('pipeline.stopped', onPipelineStopped)
