@@ -49,6 +49,8 @@ npm run build       # production build
 ### Protocol (envelope format)
 All messages on `/ws` use a unified envelope: `{msg_id, flow_id, type, action, params, ts}`. See `team-speak-ai/docs/websocket-protocol.md` for the full spec and `team-speak-ai/docs/architecture-spec.md` for the architecture rules.
 
+WebSocket heartbeat: client sends `ping` every 30s, expects `pong` within 90s. Server disconnects clients inactive for >90s.
+
 ### Audio flow (TeamSpeak → AI processing)
 ```
 TeamSpeak → Java Bridge (ts3j) → WS :8080 → Python ws_teamspeak.py
@@ -59,6 +61,13 @@ TeamSpeak → Java Bridge (ts3j) → WS :8080 → Python ws_teamspeak.py
 ### Pipeline engine (`core/pipeline/`)
 The central orchestration system. Pipelines are defined as JSON files in `data/flows/`.
 
+Frontend workflow editor features:
+- Edit mode toggle (default is flow view mode)
+- Node palette with drag-to-canvas creation
+- Port drag connection with temp line preview
+- Canvas pan (middle-mouse) and zoom (scroll wheel)
+- Node deletion and connection management
+
 Key files:
 - `definition.py` — `NodeTypeDef`, `PortDef`, `PortsDef`, `TabDef`, `NodeDefinition`, `PipelineDefinition`, `ConnectionDef`, `FlowSummary`, `InputMapping`, `TriggerConfig` data classes
 - `registry.py` — `NodeRegistry`: `@register_node()` decorator for node class registration, `list_type_defs()` returns full type metadata (ports, tabs, colors) for frontend
@@ -68,8 +77,19 @@ Key files:
 
 Nodes live in `core/nodes/`. Each node extends `BaseNode` and implements `execute(context, emit) -> NodeOutput`. Nodes are registered via `@NodeRegistry.register("node_name")` and imported in `core/nodes/__init__.py`.
 
+Available node types:
+- `input_image` — Image input node
+- `ocr` — OCR text extraction
+- `ts_input` — TeamSpeak audio input source (subscribes to AudioBus)
+- `stt_listen` — STT with keyword detection (persistent background node)
+- `stt_history` — STT history + keyword trigger (maintains history window, detects keywords)
+- `context_build` — Context builder for LLM
+- `llm` — LLM inference node
+- `tts` — Text-to-speech output
+- `ts_output` — TeamSpeak audio output
+
 ### Flow management (`core/flow/`)
-- `manager.py` — `FlowManager`: CRUD for flow JSON files, sidebar tree generation, node/connection position persistence, DAG cycle detection, port validation
+- `manager.py` — `FlowManager`: CRUD for flow JSON files, sidebar tree generation, node/connection position persistence, DAG cycle detection, port validation, group hierarchy persistence (`groups.json`), ZIP export/import for groups
 
 ### History / undo-redo (`core/history/`)
 - `manager.py` — `HistoryManager`: per-flow undo/redo stacks (max 100 entries each), JSONL persistence, 500ms merge window for config updates
@@ -98,25 +118,29 @@ Each AI capability has a factory pattern with swappable backends configured via 
 ```
 backend/data/
   flows/         # Flow JSON files (one per flow)
+  groups.json    # Directory/group hierarchy persistence
   defaults/      # Per-node-type default configs (node_ocr.json, etc.)
   history/       # Per-flow operation history JSONL (for undo/redo)
   uploads/       # Uploaded files (by upload_id)
 ```
 
-### Frontend state management (target)
-- `stores/editor.js` — Pinia store for flow editing state: nodes, connections, undo/redo, drag-and-drop, debounced config updates
+### Frontend state management
+- `stores/editor.js` — Pinia store for flow editing state: nodes, connections, undo/redo, drag-and-drop, debounced config updates, edit mode toggle, dirty field tracking
 - `stores/execution.js` — Runtime execution state: node statuses, streaming data, per-node log buffers (max 200 entries FIFO)
 - `stores/sidebar.js` — Receives `sidebar.tree` events from backend, renders tree directly
 - `stores/notifications.js` — Notification bell state: items, unread count, dropdown
 - `stores/connection.js` — WS connection status: service states (ts_bot, backend, pipeline)
 - `api/pipeline.js` — `PipelineSocket` class: envelope protocol, binary frame upload, auto-reconnect with state recovery
 
-### Frontend component system (target)
+### Frontend component system
 - `components/pipeline/NodeCard.vue` — Glassmorphism node card with ports, tabs, workflow badge
 - `components/pipeline/IOPort.vue` — Circular port with hover label, connection state classes
 - `components/pipeline/CanvasControls.vue` — Zoom/pan + flow view toggles (all/data/event)
+- `components/pipeline/NodePalette.vue` — Draggable node palette with categorized types, drag-to-canvas creation
 - `components/pipeline/nodes/registry.js` — Lazy-loaded component registry: type → Vue component
 - `components/pipeline/nodes/<Type>Node.vue` — Per-type node body components
+- `components/layout/AppLayout.vue` — Main layout with sidebar, canvas, and editor integration
+- `components/layout/SidebarTreeNode.vue` — Recursive sidebar renderer for flow_ref, group, and action types
 - `components/layout/BottomStatusBar.vue` — Service status indicators
 - `components/layout/NotificationBell.vue` — Bell icon with badge + dropdown
 

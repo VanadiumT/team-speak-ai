@@ -1,0 +1,14 @@
+{
+  "id": "暗区竞标赛",
+  "name": "暗区竞标赛",
+  "group": "游戏/暗区",
+  "icon": "sports_esports",
+  "enabled": true,
+  "skill_prompt": "",
+  "canvas": {
+    "width": 1700,
+    "height": 1250
+  },
+  "nodes": [],
+  "connections": []
+}
