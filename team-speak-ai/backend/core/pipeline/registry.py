@@ -28,6 +28,23 @@ def _build_metadata():
 
     metadata = [
         NodeTypeDef(
+            type="start", name="开始", icon="play_arrow", color="secondary",
+            default_config={"auto_run": True, "init_params": {}},
+            tabs=[
+                TabDef(id="config", label="配置"),
+                TabDef(id="detail", label="详情"),
+                TabDef(id="io-data", label="IO数据"),
+                TabDef(id="log", label="日志"),
+            ],
+            ports=PortsDef(
+                inputs=[],
+                outputs=[
+                    port("right", 30, "event-out", "启动信号", "event"),
+                    port("right", 72, "data-out", "初始数据", "any", _on),
+                ],
+            ),
+        ),
+        NodeTypeDef(
             type="input_image", name="上传图片", icon="upload_file", color="secondary",
             default_config={"accepted_formats": ["png", "jpg", "webp"], "max_size_mb": 10},
             tabs=[
@@ -215,6 +232,27 @@ def _build_metadata():
             ),
         ),
         NodeTypeDef(
+            type="display_text", name="文本显示", icon="text_fields", color="primary",
+            default_config={"text": "", "mode": "passthrough"},
+            tabs=[
+                TabDef(id="config", label="配置"),
+                TabDef(id="detail", label="详情"),
+                TabDef(id="io-data", label="IO数据"),
+                TabDef(id="io-mgmt", label="IO管理"),
+                TabDef(id="log", label="日志"),
+            ],
+            ports=PortsDef(
+                inputs=[
+                    port("left", 30, "text-in", "文本输入 (String)", "string", _on),
+                    port("left", 68, "trigger-in", "触发", "event", _on),
+                ],
+                outputs=[
+                    port("right", 30, "text-out", "文本输出 (String)", "string"),
+                    port("right", 68, "done", "完成", "event", _on),
+                ],
+            ),
+        ),
+        NodeTypeDef(
             type="flow_var_read", name="读取流程参数", icon="input", color="primary",
             default_config={"key": "", "default_value": ""},
             tabs=[
@@ -229,7 +267,7 @@ def _build_metadata():
                     port("left", 55, "trigger-in", "触发", "event", _on),
                 ],
                 outputs=[
-                    port("right", 30, "data-out", "参数值", "any"),
+                    port("right", 30, "data-out", "参数值", "string"),
                     port("right", 68, "done", "完成", "event", _on),
                 ],
             ),
@@ -246,11 +284,11 @@ def _build_metadata():
             ],
             ports=PortsDef(
                 inputs=[
-                    port("left", 30, "data-in", "待写入值", "any"),
+                    port("left", 30, "data-in", "待写入值", "string"),
                     port("left", 68, "trigger-in", "触发", "event", _on),
                 ],
                 outputs=[
-                    port("right", 30, "data-out", "写入值 (透传)", "any"),
+                    port("right", 30, "data-out", "写入值 (透传)", "string"),
                     port("right", 68, "done", "完成", "event", _on),
                 ],
             ),
@@ -270,7 +308,7 @@ def _build_metadata():
                     port("left", 55, "trigger-in", "触发", "event", _on),
                 ],
                 outputs=[
-                    port("right", 30, "data-out", "变量值", "any"),
+                    port("right", 30, "data-out", "变量值", "string"),
                     port("right", 68, "done", "完成", "event", _on),
                 ],
             ),
@@ -287,11 +325,11 @@ def _build_metadata():
             ],
             ports=PortsDef(
                 inputs=[
-                    port("left", 30, "data-in", "待写入值", "any"),
+                    port("left", 30, "data-in", "待写入值", "string"),
                     port("left", 68, "trigger-in", "触发", "event", _on),
                 ],
                 outputs=[
-                    port("right", 30, "data-out", "写入值 (透传)", "any"),
+                    port("right", 30, "data-out", "写入值 (透传)", "string"),
                     port("right", 68, "done", "完成", "event", _on),
                 ],
             ),

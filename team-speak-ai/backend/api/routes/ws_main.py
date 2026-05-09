@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from core.pipeline.registry import NodeRegistry
-from core.pipeline.definition import NodeDefinition, ConnectionDef
+from core.pipeline.definition import NodeDefinition, ConnectionDef, TriggerConfig, InputMapping
 from core.flow.manager import get_flow_manager
 from core.history.manager import get_history_manager
 from core.config.defaults import get_defaults_manager
@@ -74,6 +74,19 @@ async def _send_error(ws: WebSocket, flow_id: str, code: str, message: str,
         "code": code,
         "message": message,
     }, ref_msg_id)
+
+
+def _port_input_key(port_id: str) -> str:
+    """从输入端口 ID 推导 context.inputs 的 key"""
+    return port_id.replace("-in", "") if port_id.endswith("-in") else port_id
+
+
+def _port_output_key(port_id: str) -> str:
+    """从输出端口 ID 推导 source_field（优先用 value 等通用字段）"""
+    KNOWN = {"data-out": "value", "text-out": "text", "trigger-out": None}
+    if port_id in KNOWN:
+        return KNOWN[port_id]
+    return port_id.replace("-out", "") if port_id.endswith("-out") else port_id
 
 
 # ── 连接生命周期 ───────────────────────────────────────────────
@@ -751,6 +764,31 @@ async def handle_connection_create(websocket: WebSocket, flow_id: str, msg_id: s
     )
     await fm.add_connection(flow_id, conn)
 
+    # 连线 → 执行系统桥接
+    flow = fm.load_flow(flow_id)
+    target = flow.get_node(to_node)
+    if target:
+        if conn_type == "event":
+            # event 连线 → 自动设 trigger
+            target.trigger = TriggerConfig(
+                type="on_complete",
+                source_node=from_node,
+            )
+            fm.save_flow(flow)
+        elif conn_type == "data":
+            # data 连线 → 自动加 input_mapping
+            as_field = _port_input_key(to_port)
+            source_field = _port_output_key(from_port)
+            mapping = InputMapping(
+                from_node=from_node,
+                as_field=as_field,
+                source_field=source_field,
+            )
+            if not any(m.from_node == from_node and m.as_field == as_field
+                       for m in target.input_mappings):
+                target.input_mappings.append(mapping)
+                fm.save_flow(flow)
+
     try:
         hm = get_history_manager()
         await hm.record_operation(flow_id, "connection.create",
@@ -776,6 +814,21 @@ async def handle_connection_delete(websocket: WebSocket, flow_id: str, msg_id: s
         if c["id"] == conn_id:
             saved_conn = c
             break
+
+    # 删除前清理执行桥接（trigger / input_mapping）
+    if saved_conn:
+        target = flow.get_node(saved_conn["to_node"])
+        if target:
+            if saved_conn.get("type") == "event":
+                if target.trigger and target.trigger.source_node == saved_conn["from_node"]:
+                    target.trigger = None
+            elif saved_conn.get("type") == "data":
+                as_field = _port_input_key(saved_conn.get("to_port", ""))
+                target.input_mappings = [
+                    m for m in target.input_mappings
+                    if not (m.from_node == saved_conn["from_node"] and m.as_field == as_field)
+                ]
+        fm.save_flow(flow)
 
     await fm.remove_connection(flow_id, conn_id)
 

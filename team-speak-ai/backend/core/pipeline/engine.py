@@ -304,7 +304,8 @@ class PipelineEngine:
         return PipelineDefinition(
             id=flow.id, name=flow.name, group=flow.group,
             icon=flow.icon, skill_prompt=flow.skill_prompt,
-            canvas=flow.canvas, nodes=nodes, connections=flow.connections,
+            canvas=flow.canvas, params=flow.params,
+            nodes=nodes, connections=flow.connections,
         )
 
     def _start(self, pd: PipelineDefinition, initial_input: dict = None) -> str:
@@ -323,11 +324,44 @@ class PipelineEngine:
 
         instance.accumulated_context["skill_prompt"] = pd.skill_prompt
 
+        # 加载流程参数到 accumulated_context（供 flow_var_read 等节点读取）
+        for key, value in pd.params.items():
+            instance.accumulated_context[key] = value
+
+        # 同步已有连线到执行系统（trigger / input_mapping）
+        _sync_connections_to_nodes(pd)
+
         for node_def in pd.get_listener_nodes():
             task = asyncio.ensure_future(
                 self._run_listener_node(execution_id, node_def)
             )
             instance.listener_tasks.append(task)
+
+        # 找到所有 auto_run 的 start 节点，并行执行
+        start_nodes = [
+            n for n in pd.nodes
+            if n.type == "start" and n.config.get("auto_run", True)
+        ]
+        if start_nodes:
+            logger.info(f"Executing {len(start_nodes)} start node(s) for {pd.id}")
+            async def run_start_nodes():
+                try:
+                    await asyncio.gather(*(
+                        self.execute_node(execution_id, n.id)
+                        for n in start_nodes
+                    ))
+                except Exception as e:
+                    logger.exception(f"Start node execution error for {pd.id}: {e}")
+                finally:
+                    # 全部执行完毕后自动结束（无 listener 节点的流程）
+                    self._running_flows.discard(pd.id)
+                    emit = EventEmitter(self, pd.id)
+                    await emit.emit_pipeline_complete(execution_id)
+            asyncio.ensure_future(run_start_nodes())
+        else:
+            # 无 start 节点也无 listener → 立即完成
+            if not pd.get_listener_nodes():
+                self._running_flows.discard(pd.id)
 
         return execution_id
 
@@ -415,6 +449,8 @@ class PipelineEngine:
             runtime.output = output
             runtime.summary = str(output.data)[:80] if output.data else "完成"
 
+            await emit.emit_node_status_changed(node_id, "completed",
+                summary=runtime.summary, data=output.data)
             await emit.emit_node_complete(node_id, output.data)
             await emit.emit_node_log_entry(node_id, "success", f"完成: {runtime.summary}")
             log_pipeline_event(PipelineEvent(
@@ -519,14 +555,22 @@ class PipelineEngine:
                 break
 
     async def _trigger_downstream(self, instance: PipelineInstance, completed_node_id: str):
-        """节点完成后，自动触发符合条件的下游节点"""
+        """节点完成后，自动触发符合条件的下游节点（trigger 配置 + data 连线）"""
         pd = instance.pipeline_def
+        triggered = set()
         for node_def in pd.nodes:
             if node_def.listener:
                 continue
+            # 通过 trigger 配置触发
             if node_def.trigger and node_def.trigger.source_node == completed_node_id:
-                # 触发条件匹配，执行所有匹配的下游节点
-                await self.execute_node(instance.execution_id, node_def.id)
+                triggered.add(node_def.id)
+            # 通过 data 连线自动触发（有 input_mapping 从该节点来）
+            for m in node_def.input_mappings:
+                if m.from_node == completed_node_id:
+                    triggered.add(node_def.id)
+                    break
+        for nid in triggered:
+            await self.execute_node(instance.execution_id, nid)
 
     async def _fail_node(self, instance: PipelineInstance, node_id: str, error: str, emit: EventEmitter = None):
         runtime = instance.get_runtime(node_id)
@@ -582,6 +626,42 @@ class PipelineEngine:
         elif action == "input_text":
             # 文本输入
             await self.execute_node(execution_id, node_id, {"text": payload.get("text", "")})
+
+
+def _port_input_key(port_id: str) -> str:
+    return port_id.replace("-in", "") if port_id.endswith("-in") else port_id
+
+
+def _port_output_key(port_id: str) -> str:
+    KNOWN = {"data-out": "value", "text-out": "text", "trigger-out": None}
+    if port_id in KNOWN:
+        return KNOWN[port_id]
+    return port_id.replace("-out", "") if port_id.endswith("-out") else port_id
+
+
+def _sync_connections_to_nodes(pd: PipelineDefinition) -> None:
+    """将 connections[] 同步到节点的 trigger / input_mapping（兼容已有流程）"""
+    from core.pipeline.definition import InputMapping, TriggerConfig
+    for conn in pd.connections:
+        target = pd.get_node(conn.to_node)
+        if not target:
+            continue
+        if conn.type == "event":
+            if not target.trigger or target.trigger.source_node != conn.from_node:
+                target.trigger = TriggerConfig(
+                    type="on_complete",
+                    source_node=conn.from_node,
+                )
+        elif conn.type == "data":
+            as_field = _port_input_key(conn.to_port)
+            source_field = _port_output_key(conn.from_port)
+            if not any(m.from_node == conn.from_node and m.as_field == as_field
+                       for m in target.input_mappings):
+                target.input_mappings.append(InputMapping(
+                    from_node=conn.from_node,
+                    as_field=as_field,
+                    source_field=source_field,
+                ))
 
 
 engine = PipelineEngine()

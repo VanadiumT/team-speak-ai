@@ -12,15 +12,18 @@
         </template>
       </div>
       <div class="h-right">
-        <!-- 流程模式（默认）: [运行] [流程设置] -->
+        <!-- 流程模式（默认）: [运行/停止] [参数] [流程设置] -->
         <template v-if="activeFlowId && !editorStore.editMode">
           <button
             class="top-btn run-btn"
-            :disabled="executionStore.status === 'running'"
-            @click="runPipeline"
+            :class="{ 'stop-btn': executionStore.status === 'running' }"
+            @click="executionStore.status === 'running' ? stopPipeline() : runPipeline()"
           >
-            <span class="material-symbols-outlined">{{ executionStore.status === 'running' ? 'hourglass_top' : 'play_arrow' }}</span>
-            {{ executionStore.status === 'running' ? '运行中' : '运行' }}
+            <span class="material-symbols-outlined">{{ executionStore.status === 'running' ? 'stop' : 'play_arrow' }}</span>
+            {{ executionStore.status === 'running' ? '停止' : '运行' }}
+          </button>
+          <button class="top-btn ghost-btn" :class="{ active: showFlowParams }" @click="showFlowParams = !showFlowParams">
+            <span class="material-symbols-outlined">tune</span> 参数
           </button>
           <button class="top-btn primary-btn" :disabled="executionStore.status === 'running'" @click="editorStore.enterEditMode()">
             <span class="material-symbols-outlined">tune</span> 流程设置
@@ -111,8 +114,8 @@
         <!-- Floating Node Palette (edit mode only) -->
         <NodePalette v-if="activeFlowId && editorStore.editMode" />
 
-        <!-- Floating Flow Params Panel (edit mode only) -->
-        <div v-if="showFlowParams && editorStore.editMode" class="flow-params-floating" :class="{ 'shift-left': selectedNode }">
+        <!-- Floating Flow Params Panel -->
+        <div v-if="showFlowParams" class="flow-params-floating" :class="{ 'shift-left': selectedNode }">
           <FlowParamsPanel />
         </div>
 
@@ -351,6 +354,15 @@ async function runPipeline() {
     await pipelineSocket.sendCommand(activeFlowId.value, 'pipeline.run', {})
   } catch (e) {
     console.error('Pipeline run failed:', e)
+  }
+}
+
+async function stopPipeline() {
+  if (!activeFlowId.value || executionStore.status !== 'running') return
+  try {
+    await pipelineSocket.sendCommand(activeFlowId.value, 'pipeline.stop', {})
+  } catch (e) {
+    console.error('Pipeline stop failed:', e)
   }
 }
 
@@ -658,7 +670,8 @@ onUnmounted(() => {
 .top-btn.primary-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .top-btn.run-btn { background: #4edea3; color: #003824; border-color: #4edea3; }
 .top-btn.run-btn:hover { background: #6ffbbe; }
-.top-btn.run-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.top-btn.run-btn.stop-btn { background: #ef4444; color: #fff; border-color: #ef4444; }
+.top-btn.run-btn.stop-btn:hover { background: #f87171; }
 .top-btn.ghost-btn { background: transparent; color: #8b90a0; border-color: #414754; }
 .top-btn.ghost-btn:hover { color: #c1c6d7; border-color: #8b90a0; }
 .top-btn.ghost-btn:disabled { opacity: 0.3; cursor: not-allowed; }

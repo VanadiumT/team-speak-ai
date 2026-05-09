@@ -27,14 +27,14 @@ class SysVarReadNode(BaseNode):
         default = self.config.get("default_value", "")
 
         if not key:
-            emit.emit_node_log_entry(context.node_id, "warn", "未配置变量 key")
+            await emit.emit_node_log_entry(context.node_id, "warn", "未配置变量 key")
             return NodeOutput(data={"value": default, "key": ""}, trigger_next=True)
 
         svm = get_sys_var_manager()
         value = svm.get(key, default)
 
-        emit.emit_node_log_entry(context.node_id, "info", f"读取系统变量 {key} = {value}")
-        emit.emit_node_status_changed(
+        await emit.emit_node_log_entry(context.node_id, "info", f"读取系统变量 {key} = {value}")
+        await emit.emit_node_status_changed(
             context.node_id, "completed",
             summary=f"{key} = {value}",
             data={"key": key, "value": value},

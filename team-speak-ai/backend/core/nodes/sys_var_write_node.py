@@ -27,15 +27,15 @@ class SysVarWriteNode(BaseNode):
         merge_mode = self.config.get("merge_mode", "overwrite")
 
         if not key:
-            emit.emit_node_log_entry(context.node_id, "warn", "未配置变量 key")
+            await emit.emit_node_log_entry(context.node_id, "warn", "未配置变量 key")
             return NodeOutput(data={"value": None, "key": ""}, trigger_next=True)
 
         value = context.inputs.get("data")
         svm = get_sys_var_manager()
         svm.set(key, value, merge_mode)
 
-        emit.emit_node_log_entry(context.node_id, "info", f"写入系统变量 {key} = {value}")
-        emit.emit_node_status_changed(
+        await emit.emit_node_log_entry(context.node_id, "info", f"写入系统变量 {key} = {value}")
+        await emit.emit_node_status_changed(
             context.node_id, "completed",
             summary=f"{key} = {value}",
             data={"key": key, "value": value},

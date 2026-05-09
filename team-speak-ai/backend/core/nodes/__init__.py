@@ -1,5 +1,6 @@
 # 导入所有节点确保注册
 import core.nodes.base
+import core.nodes.start_node
 import core.nodes.input_image
 import core.nodes.ocr_node
 import core.nodes.stt_listen_node
@@ -9,6 +10,7 @@ import core.nodes.llm_node
 import core.nodes.tts_node
 import core.nodes.ts_output_node
 import core.nodes.ts_input_node
+import core.nodes.display_text_node
 import core.nodes.flow_var_read_node
 import core.nodes.flow_var_write_node
 import core.nodes.sys_var_read_node
