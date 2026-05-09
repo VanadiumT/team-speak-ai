@@ -36,7 +36,7 @@
     </template>
 
     <template v-if="activeTab === 'io-data'">
-      <NodeIODataView :inputs="ioInputs" :outputs="ioOutputs" />
+      <NodeIODataView :node="node" :input-ports="inputPorts" :output-ports="outputPorts" />
     </template>
     <template v-if="activeTab === 'io-mgmt' && editMode">
       <NodeIOMgmt :node="node" :edit-mode="editMode" :input-ports="inputPorts" :output-ports="outputPorts" @toggle-port="onTogglePort" />
@@ -96,13 +96,6 @@ const configFields = [
   ]},
 ]
 
-const ioInputs = computed(() => ({
-  'trigger-in': props.status === 'listening' ? '✓ 已触发 (常驻自启动)' : '(等待)'
-}))
-const ioOutputs = computed(() => ({
-  'audio-out': props.status === 'listening' ? '持续发布到 AudioBus' : '(未激活)',
-  'trigger-out': props.status === 'listening' ? '✓ 已触发' : '(等待)'
-}))
 
 function onUpdate({ key, value }) {
   editorStore.updateConfigImmediate(props.node.id, { [key]: value })

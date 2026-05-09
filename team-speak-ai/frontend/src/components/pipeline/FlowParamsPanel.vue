@@ -7,13 +7,13 @@
     <div class="fpp-header">
       <span class="material-symbols-outlined fpp-icon">tune</span>
       <span class="fpp-title">流程参数</span>
-      <button class="fpp-add-btn" @click="addParam" title="添加参数">
+      <button v-if="editorStore.editMode" class="fpp-add-btn" @click="addParam" title="添加参数">
         <span class="material-symbols-outlined">add</span>
       </button>
     </div>
 
     <div v-if="paramList.length === 0" class="fpp-empty">
-      暂无参数，点击 + 添加
+      {{ editorStore.editMode ? '暂无参数，点击 + 添加' : '暂无参数' }}
     </div>
 
     <template v-for="(item, idx) in paramList" :key="item.key">
@@ -26,11 +26,12 @@
               :value="item.key"
               placeholder="key"
               rows="1"
+              :disabled="!editorStore.editMode"
               @input="onInput"
               @change="onKeyChange(item.key, $event.target.value)"
               data-fpp-textarea
             />
-            <button class="fpp-copy-btn" @click="copyRef('$param.' + item.key)" :title="copied === '$param.' + item.key ? '已复制 $param.' + item.key : '复制引用'">
+            <button v-if="editorStore.editMode" class="fpp-copy-btn" @click="copyRef('$param.' + item.key)" :title="copied === '$param.' + item.key ? '已复制 $param.' + item.key : '复制引用'">
               <span class="material-symbols-outlined">{{ copied === '$param.' + item.key ? 'check' : 'content_copy' }}</span>
             </button>
           </div>
@@ -39,12 +40,13 @@
             :value="item.value"
             placeholder="value"
             rows="1"
+            :disabled="!editorStore.editMode"
             @input="onInput"
             @change="onValueChange(item.key, $event.target.value)"
             data-fpp-textarea
           />
         </div>
-        <button class="fpp-del-btn" @click="removeParam(item.key)" title="删除">
+        <button v-if="editorStore.editMode" class="fpp-del-btn" @click="removeParam(item.key)" title="删除">
           <span class="material-symbols-outlined">close</span>
         </button>
       </div>
@@ -182,6 +184,7 @@ async function removeParam(key) {
   line-height: 1.4; box-sizing: border-box;
 }
 .fpp-key:focus { border-color: #adc7ff; }
+.fpp-key:disabled { opacity: 0.6; cursor: default; }
 
 /* ── Copy button ── */
 .fpp-copy-btn {
@@ -204,6 +207,7 @@ async function removeParam(key) {
   line-height: 1.4; box-sizing: border-box;
 }
 .fpp-value:focus { border-color: #adc7ff; }
+.fpp-value:disabled { opacity: 0.6; cursor: default; }
 
 .fpp-del-btn {
   display: flex; align-items: center; justify-content: center;

@@ -33,7 +33,7 @@
       <NodeConfigForm :config="node.config || {}" :fields="configFields" :readonly="false" @update="onUpdate" />
     </template>
     <template v-if="activeTab === 'io-data'">
-      <NodeIODataView :inputs="ioInputs" :outputs="ioOutputs" />
+      <NodeIODataView :node="node" :input-ports="inputPorts" :output-ports="outputPorts" />
     </template>
     <template v-if="activeTab === 'io-mgmt' && editMode">
       <NodeIOMgmt :node="node" :edit-mode="editMode" :input-ports="inputPorts" :output-ports="outputPorts" @toggle-port="onTogglePort" />
@@ -86,15 +86,6 @@ const inputSources = computed(() => [
 
 const totalTokens = computed(() => props.data?.total_tokens)
 
-const ioInputs = computed(() => ({
-  'ctx-in1': props.data?.skill_prompt ? props.data.skill_prompt.slice(0, 60) + '...' : '(来自流程参数)',
-  'ctx-in2': props.data?.ocr_text ? props.data.ocr_text.slice(0, 60) + '...' : '(无数据)',
-  'ctx-in3': props.data?.stt_history ? `${props.data.stt_history.length || props.data.stt_count} 条` : '(无数据)',
-  'ctx-in4': props.data?.chat_history ? `${props.data.chat_history.length || 0} 条` : '(无数据)'
-}))
-const ioOutputs = computed(() => ({
-  'ctx-out': props.data?.message_count ? `${props.data.message_count} 条消息, ${props.data.total_tokens} tokens` : '(无数据)'
-}))
 
 function onUpdate({ key, value }) {
   editorStore.updateConfigImmediate(props.node.id, { [key]: value })

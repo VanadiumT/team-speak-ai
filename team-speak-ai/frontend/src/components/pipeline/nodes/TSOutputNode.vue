@@ -24,7 +24,7 @@
     </template>
 
     <template v-if="activeTab === 'io-data'">
-      <NodeIODataView :inputs="ioInputs" :outputs="ioOutputs" />
+      <NodeIODataView :node="node" :input-ports="inputPorts" :output-ports="outputPorts" />
     </template>
     <template v-if="activeTab === 'io-mgmt' && editMode">
       <NodeIOMgmt :node="node" :edit-mode="editMode" :input-ports="inputPorts" :output-ports="outputPorts" @toggle-port="onTogglePort" />
@@ -63,12 +63,6 @@ const statusLabel = computed(() => {
   return map[props.status] || props.status
 })
 
-const ioInputs = computed(() => ({
-  'out-in': props.data?.text ? `文本: ${props.data.text.slice(0, 60)}...` : '(无数据)'
-}))
-const ioOutputs = computed(() => ({
-  'out-done': props.status === 'completed' ? '✓ 已触发' : '(等待)'
-}))
 
 function onTogglePort(portId, show) {
   const vis = new Set(props.node.config?._visible_ports || [])

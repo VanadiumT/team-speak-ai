@@ -48,7 +48,7 @@
     </template>
 
     <template v-if="activeTab === 'io-data'">
-      <NodeIODataView :inputs="ioInputs" :outputs="ioOutputs" />
+      <NodeIODataView :node="node" :input-ports="inputPorts" :output-ports="outputPorts" />
     </template>
     <template v-if="activeTab === 'io-mgmt' && editMode">
       <NodeIOMgmt :node="node" :edit-mode="editMode" :input-ports="inputPorts" :output-ports="outputPorts" @toggle-port="onTogglePort" />
@@ -131,15 +131,6 @@ const fulltextLines = computed(() => {
     })
 })
 
-const ioInputs = computed(() => ({
-  'stt-in': 'AudioBus（内部音频总线）'
-}))
-const ioOutputs = computed(() => ({
-  'text-out': props.data?.text || '(等待识别)',
-  'meta-keyword': props.data?.trigger_keyword || '(未触发)',
-  'meta-confidence': props.data?.confidence != null ? String(props.data.confidence) : '(无数据)',
-  'meta-history-count': props.data?.history_count != null ? String(props.data.history_count) : '0'
-}))
 
 function onUpdate({ key, value }) {
   editorStore.updateConfigImmediate(props.node.id, { [key]: value })

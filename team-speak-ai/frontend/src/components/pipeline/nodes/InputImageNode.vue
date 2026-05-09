@@ -52,7 +52,7 @@
 
     <!-- IO Data tab -->
     <template v-if="activeTab === 'io-data'">
-      <NodeIODataView :outputs="outputPorts" />
+      <NodeIODataView :node="node" :input-ports="inputPorts" :output-ports="outputPorts" />
     </template>
 
     <!-- IO管理 tab -->

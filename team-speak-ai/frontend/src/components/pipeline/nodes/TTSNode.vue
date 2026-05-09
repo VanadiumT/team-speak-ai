@@ -28,7 +28,7 @@
       <NodeConfigForm :config="node.config || {}" :fields="configFields" :readonly="false" @update="onUpdate" />
     </template>
     <template v-if="activeTab === 'io-data'">
-      <NodeIODataView :inputs="ioInputs" :outputs="ioOutputs" />
+      <NodeIODataView :node="node" :input-ports="inputPorts" :output-ports="outputPorts" />
     </template>
     <template v-if="activeTab === 'io-mgmt' && editMode">
       <NodeIOMgmt :node="node" :edit-mode="editMode" :input-ports="inputPorts" :output-ports="outputPorts" @toggle-port="onTogglePort" />
@@ -80,12 +80,6 @@ const configFields = [
   { key: 'speed', label: '语速', type: 'range', min: 0.5, max: 2.0, step: 0.1 }
 ]
 
-const ioInputs = computed(() => ({
-  'tts-in': props.data?.text ? props.data.text.slice(0, 60) + '...' : '(无数据)'
-}))
-const ioOutputs = computed(() => ({
-  'tts-out': props.data?.total_segments ? `${props.data.total_segments} 段音频` : '(无数据)'
-}))
 
 function onUpdate({ key, value }) {
   editorStore.updateConfigImmediate(props.node.id, { [key]: value })

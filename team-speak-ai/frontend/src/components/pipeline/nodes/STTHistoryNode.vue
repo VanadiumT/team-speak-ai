@@ -38,7 +38,7 @@
       <NodeConfigForm :config="node.config || {}" :fields="configFields" :readonly="false" @update="onUpdate" />
     </template>
     <template v-if="activeTab === 'io-data'">
-      <NodeIODataView :inputs="ioInputs" :outputs="ioOutputs" />
+      <NodeIODataView :node="node" :input-ports="inputPorts" :output-ports="outputPorts" />
     </template>
     <template v-if="activeTab === 'io-mgmt' && editMode">
       <NodeIOMgmt :node="node" :edit-mode="editMode" :input-ports="inputPorts" :output-ports="outputPorts" @toggle-port="onTogglePort" />
@@ -88,13 +88,6 @@ const configFields = [
   { key: 'context_window', label: '上下文窗口 (tokens)', type: 'number', min: 1024, max: 256000, placeholder: '128000' }
 ]
 
-const ioInputs = computed(() => ({
-  'hist-in': props.data?.latest_text ? `"${props.data.latest_text}"` : '(无数据)'
-}))
-const ioOutputs = computed(() => ({
-  'hist-out': props.data?.history ? `${props.data.history.length} 条` : '(无数据)',
-  'hist-trigger': isMatched.value ? `★ 已触发 (${props.data.trigger_keyword})` : '(未触发)'
-}))
 
 function onUpdate({ key, value }) {
   editorStore.updateConfigImmediate(props.node.id, { [key]: value })

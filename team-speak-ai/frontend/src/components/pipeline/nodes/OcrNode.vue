@@ -30,7 +30,7 @@
     </template>
 
     <template v-if="activeTab === 'io-data'">
-      <NodeIODataView :inputs="inputRuntime" :outputs="outputRuntime" />
+      <NodeIODataView :node="node" :input-ports="inputPorts" :output-ports="outputPorts" />
     </template>
     <template v-if="activeTab === 'io-mgmt' && editMode">
       <NodeIOMgmt :node="node" :edit-mode="editMode" :input-ports="inputPorts" :output-ports="outputPorts" @toggle-port="onTogglePort" />
@@ -80,14 +80,6 @@ const configFields = [
   { key: 'confidence_threshold', label: '置信度阈值', type: 'range', min: 0, max: 1, step: 0.05 }
 ]
 
-const inputRuntime = computed(() => ({
-  'ocr-in': props.data?.file_name ? `来源: ${props.data.file_name}` : '(无数据)'
-}))
-const outputRuntime = computed(() => ({
-  'ocr-out': props.data?.text || '(无数据)',
-  'meta-confidence': props.data?.confidence != null ? String(props.data.confidence) : '(无数据)',
-  'meta-region-count': props.data?.region_count != null ? String(props.data.region_count) : '(无数据)'
-}))
 
 function onUpdate({ key, value }) {
   editorStore.updateConfigImmediate(props.node.id, { [key]: value })

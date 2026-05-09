@@ -21,7 +21,7 @@
     </template>
 
     <template v-if="activeTab === 'io-data'">
-      <NodeIODataView :outputs="outputPorts" />
+      <NodeIODataView :node="node" :input-ports="inputPorts" :output-ports="outputPorts" />
     </template>
 
     <template v-if="activeTab === 'io-mgmt' && editMode">

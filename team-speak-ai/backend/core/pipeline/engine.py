@@ -355,8 +355,11 @@ class PipelineEngine:
                 finally:
                     # 全部执行完毕后自动结束（无 listener 节点的流程）
                     self._running_flows.discard(pd.id)
-                    emit = EventEmitter(self, pd.id)
-                    await emit.emit_pipeline_complete(execution_id)
+                    try:
+                        emit = EventEmitter(self, pd.id)
+                        await emit.emit_pipeline_complete(execution_id)
+                    except Exception as e2:
+                        logger.error(f"Failed to emit pipeline.completed for {pd.id}: {e2}")
             asyncio.ensure_future(run_start_nodes())
         else:
             # 无 start 节点也无 listener → 立即完成

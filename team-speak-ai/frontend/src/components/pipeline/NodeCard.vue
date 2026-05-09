@@ -44,8 +44,8 @@
       <div v-if="isListening" class="keyword-dot"></div>
     </div>
 
-    <div v-if="tabs.length > 0 && canSwitchTab" ref="tabBarEl" class="node-tab-bar">
-      <button v-for="tab in tabs" :key="tab.id" class="tab-btn"
+    <div v-if="visibleTabs.length > 0 && canSwitchTab" ref="tabBarEl" class="node-tab-bar">
+      <button v-for="tab in visibleTabs" :key="tab.id" class="tab-btn"
         :class="{ active: activeTab === tab.id }" @click.stop="activeTab = tab.id"
       >{{ tab.label }}</button>
     </div>
@@ -108,8 +108,8 @@ const isSelected = ref(false)
 // ── Dynamic body component ──
 const bodyComponent = computed(() => getNodeComponent(props.node.type))
 
-// ── Tab switching: locked to 'detail' in flow mode ──
-const canSwitchTab = computed(() => props.editMode)
+// ── Tab switching: available in both modes, filtered by mode ──
+const canSwitchTab = computed(() => true)
 
 // ── Runtime data from execution store ──
 const nodeRuntime = computed(() => executionStore.getNodeStatus(props.node.id))
@@ -146,6 +146,13 @@ onUnmounted(() => {
 const nodeTypeDef = computed(() => editorStore.nodeTypes.find((t) => t.type === props.node.type))
 const tabs = computed(() => nodeTypeDef.value?.tabs || [])
 
+// Flow mode: hide config + io-mgmt (editing-only tabs)
+// Edit mode: show all tabs
+const visibleTabs = computed(() => {
+  if (props.editMode) return tabs.value
+  return tabs.value.filter(t => t.id !== 'config' && t.id !== 'io-mgmt')
+})
+
 watch(() => tabs.value.length, () => nextTick(() => measureNode()))
 
 // ── Sync activeTab: 'detail' in flow mode, 'config' in edit mode (if config tab exists) ──
@@ -153,7 +160,7 @@ watch(() => [props.editMode, tabs.value], ([isEdit, t]) => {
   if (isEdit) {
     activeTab.value = t.some(tb => tb.id === 'config') ? 'config' : (t[0]?.id || 'detail')
   } else {
-    activeTab.value = 'detail'
+    activeTab.value = t.some(tb => tb.id === 'io-data') ? 'io-data' : 'detail'
   }
 }, { immediate: true })
 

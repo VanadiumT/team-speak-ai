@@ -39,7 +39,7 @@
       <NodeConfigForm :config="node.config || {}" :fields="configFields" :readonly="false" @update="onUpdate" />
     </template>
     <template v-if="activeTab === 'io-data'">
-      <NodeIODataView :inputs="ioInputs" :outputs="ioOutputs" />
+      <NodeIODataView :node="node" :input-ports="inputPorts" :output-ports="outputPorts" />
     </template>
     <template v-if="activeTab === 'io-mgmt' && editMode">
       <NodeIOMgmt :node="node" :edit-mode="editMode" :input-ports="inputPorts" :output-ports="outputPorts" @toggle-port="onTogglePort" />
@@ -88,15 +88,6 @@ const configFields = [
   { key: 'streaming', label: '流式输出', type: 'switch' }
 ]
 
-const ioInputs = computed(() => ({
-  'llm-in': props.data?.message_count ? `${props.data.message_count} 条消息, ${props.data.total_tokens || '?'} tokens` : '(无数据)'
-}))
-const ioOutputs = computed(() => ({
-  'llm-out': props.data?.response ? props.data.response.slice(0, 80) + '...' : '(无数据)',
-  'meta-token-count': props.data?.total_tokens ? `入 ${props.data.input_tokens || '?'} + 出 ${props.data.output_tokens || '?'} = ${props.data.total_tokens}` : '(无数据)',
-  'meta-reasoning': props.data?.reasoning ? props.data.reasoning.slice(0, 60) + '...' : '(无)',
-  'meta-model': props.data?.model || props.config?.model || '(未知)'
-}))
 
 function onUpdate({ key, value }) {
   editorStore.updateConfigImmediate(props.node.id, { [key]: value })
