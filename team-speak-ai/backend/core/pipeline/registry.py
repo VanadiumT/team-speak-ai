@@ -214,6 +214,88 @@ def _build_metadata():
                 ],
             ),
         ),
+        NodeTypeDef(
+            type="flow_var_read", name="读取流程参数", icon="input", color="primary",
+            default_config={"key": "", "default_value": ""},
+            tabs=[
+                TabDef(id="config", label="配置"),
+                TabDef(id="detail", label="详情"),
+                TabDef(id="io-data", label="IO数据"),
+                TabDef(id="io-mgmt", label="IO管理"),
+                TabDef(id="log", label="日志"),
+            ],
+            ports=PortsDef(
+                inputs=[
+                    port("left", 55, "trigger-in", "触发", "event", _on),
+                ],
+                outputs=[
+                    port("right", 30, "data-out", "参数值", "any"),
+                    port("right", 68, "done", "完成", "event", _on),
+                ],
+            ),
+        ),
+        NodeTypeDef(
+            type="flow_var_write", name="写入流程参数", icon="output", color="primary",
+            default_config={"key": "", "merge_mode": "overwrite"},
+            tabs=[
+                TabDef(id="config", label="配置"),
+                TabDef(id="detail", label="详情"),
+                TabDef(id="io-data", label="IO数据"),
+                TabDef(id="io-mgmt", label="IO管理"),
+                TabDef(id="log", label="日志"),
+            ],
+            ports=PortsDef(
+                inputs=[
+                    port("left", 30, "data-in", "待写入值", "any"),
+                    port("left", 68, "trigger-in", "触发", "event", _on),
+                ],
+                outputs=[
+                    port("right", 30, "data-out", "写入值 (透传)", "any"),
+                    port("right", 68, "done", "完成", "event", _on),
+                ],
+            ),
+        ),
+        NodeTypeDef(
+            type="sys_var_read", name="读取系统变量", icon="settings_input", color="tertiary",
+            default_config={"key": "", "default_value": ""},
+            tabs=[
+                TabDef(id="config", label="配置"),
+                TabDef(id="detail", label="详情"),
+                TabDef(id="io-data", label="IO数据"),
+                TabDef(id="io-mgmt", label="IO管理"),
+                TabDef(id="log", label="日志"),
+            ],
+            ports=PortsDef(
+                inputs=[
+                    port("left", 55, "trigger-in", "触发", "event", _on),
+                ],
+                outputs=[
+                    port("right", 30, "data-out", "变量值", "any"),
+                    port("right", 68, "done", "完成", "event", _on),
+                ],
+            ),
+        ),
+        NodeTypeDef(
+            type="sys_var_write", name="写入系统变量", icon="settings_output", color="tertiary",
+            default_config={"key": "", "merge_mode": "overwrite"},
+            tabs=[
+                TabDef(id="config", label="配置"),
+                TabDef(id="detail", label="详情"),
+                TabDef(id="io-data", label="IO数据"),
+                TabDef(id="io-mgmt", label="IO管理"),
+                TabDef(id="log", label="日志"),
+            ],
+            ports=PortsDef(
+                inputs=[
+                    port("left", 30, "data-in", "待写入值", "any"),
+                    port("left", 68, "trigger-in", "触发", "event", _on),
+                ],
+                outputs=[
+                    port("right", 30, "data-out", "写入值 (透传)", "any"),
+                    port("right", 68, "done", "完成", "event", _on),
+                ],
+            ),
+        ),
     ]
 
     for m in metadata:

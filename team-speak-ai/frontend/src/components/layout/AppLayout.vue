@@ -26,7 +26,7 @@
             <span class="material-symbols-outlined">tune</span> 流程设置
           </button>
         </template>
-        <!-- 编辑模式: [流程模式] [保存] [撤销] [重做] -->
+        <!-- 编辑模式: [流程模式] [保存] [撤销] [重做] [参数] [重命名] [删除] -->
         <template v-if="activeFlowId && editorStore.editMode">
           <button class="top-btn ghost-btn" @click="editorStore.exitEditMode()">
             <span class="material-symbols-outlined">visibility</span> 流程模式
@@ -37,6 +37,16 @@
           </button>
           <button class="top-btn ghost-btn" :disabled="!editorStore.canRedo" @click="editorStore.redo()">
             <span class="material-symbols-outlined">redo</span>
+          </button>
+          <button class="top-btn ghost-btn" :class="{ active: showFlowParams }" @click="showFlowParams = !showFlowParams">
+            <span class="material-symbols-outlined">tune</span> 参数
+          </button>
+          <span class="toolbar-sep"></span>
+          <button class="top-btn ghost-btn" @click="renameCurrentFlow" title="重命名">
+            <span class="material-symbols-outlined">edit</span>
+          </button>
+          <button class="top-btn ghost-btn danger-btn" @click="deleteCurrentFlow" title="删除流程">
+            <span class="material-symbols-outlined">delete</span>
           </button>
         </template>
         <NotificationBell />
@@ -57,7 +67,7 @@
                   <span class="sb-section-name">{{ section.name }}</span>
                   <span class="material-symbols-outlined sb-chevron" :class="{ expanded: isExpanded(section.id) }">chevron_right</span>
                 </button>
-                <button v-if="section.id === 'workflows' || section.id === 'system_settings'" class="sb-more-btn" @click.stop="openSidebarMenu($event, section)" title="更多操作">
+                <button v-if="section.id === 'workflows'" class="sb-more-btn" @click.stop="openSidebarMenu($event, section)" title="更多操作">
                   <span class="material-symbols-outlined">more_vert</span>
                 </button>
               </div>
@@ -69,6 +79,7 @@
                   :activeFlowId="activeFlowId"
                   :expandedSet="expandedSections"
                   :runningFlowIds="runningFlowIds"
+                  :activeSettingsPage="settingsPage"
                   @select-flow="selectFlow"
                   @toggle="toggleSection"
                   @menu="openSidebarMenu"
@@ -100,8 +111,17 @@
         <!-- Floating Node Palette (edit mode only) -->
         <NodePalette v-if="activeFlowId && editorStore.editMode" />
 
+        <!-- Floating Flow Params Panel (edit mode only) -->
+        <div v-if="showFlowParams && editorStore.editMode" class="flow-params-floating" :class="{ 'shift-left': selectedNode }">
+          <FlowParamsPanel />
+        </div>
+
+        <SettingsView
+          v-if="settingsPage"
+          :settingsPage="settingsPage"
+        />
         <PipelineView
-          v-if="activeFlowId"
+          v-else-if="activeFlowId"
           :key="activeFlowId"
           :editMode="editorStore.editMode"
           :detailPanelOpen="!!selectedNode && editorStore.editMode"
@@ -242,6 +262,8 @@ import { useFilesStore } from '@/stores/files.js'
 import PipelineView from '@/components/pipeline/PipelineView.vue'
 import DynamicPanel from '@/components/panels/DynamicPanel.vue'
 import NodePalette from '@/components/pipeline/NodePalette.vue'
+import FlowParamsPanel from '@/components/pipeline/FlowParamsPanel.vue'
+import SettingsView from '@/components/settings/SettingsView.vue'
 import BottomStatusBar from '@/components/layout/BottomStatusBar.vue'
 import NotificationBell from '@/components/layout/NotificationBell.vue'
 import SidebarTreeNode from '@/components/layout/SidebarTreeNode.vue'
@@ -256,6 +278,8 @@ const filesStore = useFilesStore()
 const { sidebarTree, expandedSections, activeFlowId, recentFlows, availableGroups } = storeToRefs(sidebarStore)
 
 const selectedNode = ref(null)
+const settingsPage = ref('')  // 当前设置页面 ('' = 无, 'sys_vars', 'ocr_settings', ...)
+const showFlowParams = ref(false)
 const showFlowCreate = ref(false)
 const showGroupCreate = ref(false)
 const importInput = ref(null)
@@ -295,6 +319,7 @@ const isExpanded = (id) => sidebarStore.isExpanded(id)
 const toggleSection = (id) => sidebarStore.toggleSection(id)
 const selectFlow = (flowId) => {
   selectedNode.value = null
+  settingsPage.value = ''
   sidebarStore.selectFlow(flowId)
 }
 
@@ -307,7 +332,12 @@ const runningFlowIds = computed(() => {
 })
 
 function onAction(actionId) {
-  // System settings actions — handled by router or future implementation
+  // actionId 格式: "action:sys_vars", "action:ocr_settings", ...
+  const page = actionId.replace('action:', '')
+  settingsPage.value = page
+  sidebarStore.activeFlowId = null
+  editorStore.exitEditMode()
+  selectedNode.value = null
 }
 
 function onSelectNode(nodeId) {
@@ -322,6 +352,23 @@ async function runPipeline() {
   } catch (e) {
     console.error('Pipeline run failed:', e)
   }
+}
+
+// ── Flow actions (toolbar) ──
+function renameCurrentFlow() {
+  if (!editorStore.flowId) return
+  renameDialog.title = '重命名工作流'
+  renameDialog.value = editorStore.flowMeta.name || ''
+  renameDialog.flowId = editorStore.flowId
+  renameDialog.groupPath = null
+  renameDialog.visible = true
+}
+
+function deleteCurrentFlow() {
+  if (!editorStore.flowId) return
+  if (!confirm(`确认删除「${editorStore.flowMeta.name || '未命名'}」工作流？此操作不可恢复。`)) return
+  pipelineSocket.sendCommand(editorStore.flowId, 'flow.delete', {})
+  editorStore.exitEditMode()
 }
 
 // ── Flow Create ──
@@ -357,6 +404,8 @@ function getGroupPath(node) {
 }
 
 function openSidebarMenu(event, node) {
+  // 系统设置下的节点设置组不需要右键菜单
+  if (node.type === 'group' && node.id === 'node_settings_group') return
   contextMenu.x = event.clientX
   contextMenu.y = event.clientY
 
@@ -613,6 +662,7 @@ onUnmounted(() => {
 .top-btn.ghost-btn { background: transparent; color: #8b90a0; border-color: #414754; }
 .top-btn.ghost-btn:hover { color: #c1c6d7; border-color: #8b90a0; }
 .top-btn.ghost-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.top-btn.ghost-btn.active { color: #adc7ff; border-color: #adc7ff; background: rgba(173, 199, 255, 0.1); }
 
 .save-indicator {
   display: flex; align-items: center; gap: 4px;
@@ -760,7 +810,7 @@ onUnmounted(() => {
 .sb-recent-empty { font-size: 10px; color: #475569; padding: 4px 8px; }
 
 /* ── Content ── */
-.content { flex: 1; overflow: hidden; position: relative; }
+.content { flex: 1; overflow: hidden; position: relative; margin-left: 256px; }
 
 .no-flow {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -776,6 +826,17 @@ onUnmounted(() => {
   border: none; transition: background 0.15s;
 }
 .new-flow-btn:hover { background: #d8e2ff; }
+
+/* ── Flow Params Floating Panel ── */
+.flow-params-floating {
+  position: fixed;
+  top: 64px; right: 8px;
+  width: 280px;
+  z-index: 45;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+}
+.flow-params-floating.shift-left { right: 328px; }
 
 /* ── Detail Panel ── */
 .detail-panel {

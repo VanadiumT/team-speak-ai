@@ -426,7 +426,7 @@ onUnmounted(() => { window.removeEventListener('keydown', onKeydown) })
 
 <style scoped>
 .pipeline-canvas {
-  flex: 1; margin-left: 256px; position: relative;
+  flex: 1; position: relative;
   background: #121417; overflow: auto; height: calc(100vh - 88px);
   transition: margin-right 0.2s ease;
 }

@@ -423,11 +423,22 @@ async def handle_flow_delete_group(websocket: WebSocket, flow_id: str, msg_id: s
 
 async def handle_flow_update(websocket: WebSocket, flow_id: str, msg_id: str,
                               params: dict) -> None:
-    """更新流程级设置（画布尺寸等）"""
+    """更新流程级设置（画布尺寸、流程参数等）"""
     fm = get_flow_manager()
     if "canvas" in params:
         fm.update_flow_canvas(flow_id, params["canvas"])
+    if "params" in params:
+        fm.update_flow_params(flow_id, params["params"])
+    if "delete_param" in params:
+        fm.delete_flow_param(flow_id, params["delete_param"])
     await _send_ack(websocket, flow_id, msg_id)
+    # 广播参数变更
+    if "params" in params or "delete_param" in params:
+        flow = fm.load_flow(flow_id)
+        await _broadcast_to_flow(flow_id, "flow.params_updated", {
+            "flow_id": flow_id,
+            "params": flow.params,
+        })
 
 
 async def handle_flow_create_group(websocket: WebSocket, flow_id: str, msg_id: str,
@@ -1029,6 +1040,58 @@ async def handle_notification_mark_read(websocket: WebSocket, flow_id: str, msg_
     })
 
 
+# ── 系统变量 ───────────────────────────────────────────────────
+
+async def handle_sys_var_list(websocket: WebSocket, flow_id: str, msg_id: str,
+                               params: dict) -> None:
+    from core.variables.manager import get_sys_var_manager
+    svm = get_sys_var_manager()
+    await _send_ack(websocket, flow_id, msg_id)
+    await _send(websocket, "_system", "event", "sys_var.list_result", {
+        "vars": svm.list_all(),
+    })
+
+
+async def handle_sys_var_get(websocket: WebSocket, flow_id: str, msg_id: str,
+                              params: dict) -> None:
+    from core.variables.manager import get_sys_var_manager
+    key = params.get("key", "")
+    svm = get_sys_var_manager()
+    await _send_ack(websocket, flow_id, msg_id)
+    await _send(websocket, "_system", "event", "sys_var.get_result", {
+        "key": key,
+        "value": svm.get(key),
+    })
+
+
+async def handle_sys_var_set(websocket: WebSocket, flow_id: str, msg_id: str,
+                              params: dict) -> None:
+    from core.variables.manager import get_sys_var_manager
+    key = params.get("key", "")
+    value = params.get("value")
+    merge_mode = params.get("merge_mode", "overwrite")
+    if not key:
+        await _send_error(websocket, flow_id, "INVALID_KEY", "key is required", msg_id)
+        return
+    svm = get_sys_var_manager()
+    svm.set(key, value, merge_mode)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow("__all__", "sys_var.updated", {"key": key, "value": value})
+
+
+async def handle_sys_var_delete(websocket: WebSocket, flow_id: str, msg_id: str,
+                                 params: dict) -> None:
+    from core.variables.manager import get_sys_var_manager
+    key = params.get("key", "")
+    if not key:
+        await _send_error(websocket, flow_id, "INVALID_KEY", "key is required", msg_id)
+        return
+    svm = get_sys_var_manager()
+    svm.delete(key)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow("__all__", "sys_var.deleted", {"key": key})
+
+
 # ── 命令路由表 ─────────────────────────────────────────────────
 
 _COMMAND_HANDLERS = {
@@ -1076,6 +1139,11 @@ _COMMAND_HANDLERS = {
     # Phase 4: 通知
     "notification.list": handle_notification_list,
     "notification.mark_read": handle_notification_mark_read,
+    # Phase 5: 系统变量
+    "sys_var.list": handle_sys_var_list,
+    "sys_var.get": handle_sys_var_get,
+    "sys_var.set": handle_sys_var_set,
+    "sys_var.delete": handle_sys_var_delete,
 }
 
 

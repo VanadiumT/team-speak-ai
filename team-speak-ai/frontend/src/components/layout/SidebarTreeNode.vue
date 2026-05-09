@@ -41,9 +41,11 @@
         :activeFlowId="activeFlowId"
         :expandedSet="expandedSet"
         :runningFlowIds="runningFlowIds"
+        :activeSettingsPage="activeSettingsPage"
         @select-flow="(id) => $emit('select-flow', id)"
         @toggle="(id) => $emit('toggle', id)"
         @menu="(ev, n) => $emit('menu', ev, n)"
+        @action="(id) => $emit('action', id)"
       />
     </div>
   </div>
@@ -51,6 +53,7 @@
   <button
     v-else-if="node.type === 'action'"
     class="sb-item sb-action"
+    :class="{ active: activeSettingsPage === node.id }"
     @click="$emit('action', node.id)"
   >
     <span class="material-symbols-outlined sb-item-icon">{{ node.icon }}</span>
@@ -64,6 +67,7 @@ defineProps({
   activeFlowId: { type: String, default: null },
   expandedSet: { type: Set, default: () => new Set() },
   runningFlowIds: { type: Set, default: () => new Set() },
+  activeSettingsPage: { type: String, default: '' },
 })
 
 defineEmits(['select-flow', 'toggle', 'menu', 'action'])

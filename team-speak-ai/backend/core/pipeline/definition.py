@@ -140,6 +140,7 @@ class PipelineDefinition:
     enabled: bool = True               # 是否启用
     skill_prompt: str = ""             # 技能提示词
     canvas: dict = field(default_factory=lambda: {"width": 2000, "height": 1500})   # 画布尺寸
+    params: dict = field(default_factory=dict)                                       # 流程参数
     nodes: list[NodeDefinition] = field(default_factory=list)                        # 节点列表
     connections: list[ConnectionDef] = field(default_factory=list)                   # 连线列表
 

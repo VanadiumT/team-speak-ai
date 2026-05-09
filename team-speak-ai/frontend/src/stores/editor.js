@@ -21,6 +21,7 @@ export const useEditorStore = defineStore('editor', () => {
   const isReadOnly = ref(false)     // pipeline 运行时只读
   const editMode = ref(false)       // 编辑模式（默认流程模式）
   const dirtyFields = ref(new Set()) // 待保存的字段（使用新 Set 替换保证响应式）
+  const flowParams = ref({})        // 流程参数 (key-value)
 
   // ── 计算属性 ──
   const BASE_CANVAS = { width: 2000, height: 1500 }
@@ -65,6 +66,7 @@ export const useEditorStore = defineStore('editor', () => {
       skill_prompt: flow.skill_prompt,
       canvas: flow.canvas || { width: 2000, height: 1500 },
     }
+    flowParams.value = flow.params || {}
     nodes.value = flow.nodes || []
     connections.value = flow.connections || []
   }
@@ -348,6 +350,7 @@ export const useEditorStore = defineStore('editor', () => {
     pipelineSocket.on('pipeline.started', onPipelineStarted)
     pipelineSocket.on('pipeline.completed', onPipelineCompleted)
     pipelineSocket.on('pipeline.stopped', onPipelineStopped)
+    pipelineSocket.on('flow.params_updated', onFlowParamsUpdated)
   }
 
   function flushPendingUpdates() {
@@ -355,9 +358,28 @@ export const useEditorStore = defineStore('editor', () => {
     _debounceTimers = {}
   }
 
+  // ── 流程参数 ──
+
+  async function updateFlowParams(params) {
+    flowParams.value = { ...flowParams.value, ...params }
+    await pipelineSocket.sendCommand(flowId.value, 'flow.update', { params })
+  }
+
+  async function deleteFlowParam(key) {
+    const { [key]: _, ...rest } = flowParams.value
+    flowParams.value = rest
+    await pipelineSocket.sendCommand(flowId.value, 'flow.update', { delete_param: key })
+  }
+
+  function onFlowParamsUpdated({ flow_id, params }) {
+    if (flowId.value === flow_id) {
+      flowParams.value = params
+    }
+  }
+
   return {
     flowId, flowMeta, nodes, connections, nodeTypes,
-    canUndo, canRedo, isReadOnly, editMode, dirtyFields, canvasSize,
+    canUndo, canRedo, isReadOnly, editMode, dirtyFields, canvasSize, flowParams,
     enterEditMode, exitEditMode,
     loadFlow, createNode, deleteNode, moveNodeLocal, commitMoveNode,
     updateConfigImmediate, updateConfigDebounced,
@@ -365,5 +387,6 @@ export const useEditorStore = defineStore('editor', () => {
     getNodeTypeDef, getPortDef, arePortsCompatible,
     undo, redo, init, flushPendingUpdates,
     createFlow, onFlowLoaded,
+    updateFlowParams, deleteFlowParam, onFlowParamsUpdated,
   }
 })

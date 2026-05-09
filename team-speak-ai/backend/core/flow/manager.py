@@ -187,6 +187,20 @@ class FlowManager:
         self.save_flow(flow)
         return flow
 
+    def update_flow_params(self, flow_id: str, params: dict) -> PipelineDefinition:
+        """更新流程参数（合并写入）"""
+        flow = self.load_flow(flow_id)
+        flow.params.update(params)
+        self.save_flow(flow)
+        return flow
+
+    def delete_flow_param(self, flow_id: str, key: str) -> PipelineDefinition:
+        """删除单个流程参数"""
+        flow = self.load_flow(flow_id)
+        flow.params.pop(key, None)
+        self.save_flow(flow)
+        return flow
+
     def toggle_flow_enabled(self, flow_id: str) -> PipelineDefinition:
         """切换流程启用/禁用状态，返回新状态"""
         flow = self.load_flow(flow_id)
@@ -516,11 +530,21 @@ class FlowManager:
             SidebarNode(
                 id="system_settings", name="系统设置", icon="settings", type="section",
                 children=[
-                    SidebarNode(id="action:ocr_settings", name="OCR设置", icon="document_scanner", type="action"),
-                    SidebarNode(id="action:llm_settings", name="LLM设置", icon="psychology", type="action"),
-                    SidebarNode(id="action:stt_settings", name="STT设置", icon="mic", type="action"),
-                    SidebarNode(id="action:tts_settings", name="TTS设置", icon="record_voice_over", type="action"),
+                    SidebarNode(id="action:sys_vars", name="系统变量", icon="data_object", type="action"),
+                    SidebarNode(
+                        id="node_settings_group", name="节点设置", icon="tune", type="group",
+                        children=[
+                            SidebarNode(id="action:ocr_settings", name="OCR设置", icon="document_scanner", type="action"),
+                            SidebarNode(id="action:llm_settings", name="LLM设置", icon="psychology", type="action"),
+                            SidebarNode(id="action:stt_settings", name="STT设置", icon="mic", type="action"),
+                            SidebarNode(id="action:tts_settings", name="TTS设置", icon="record_voice_over", type="action"),
+                        ],
+                    ),
                 ],
+            ),
+            SidebarNode(
+                id="statistics", name="统计", icon="bar_chart", type="section",
+                children=[],
             ),
         ]
 
@@ -611,6 +635,7 @@ class FlowManager:
             "enabled": flow.enabled,
             "skill_prompt": flow.skill_prompt,
             "canvas": flow.canvas,
+            "params": flow.params,
             "nodes": [
                 {
                     "id": n.id,
@@ -699,6 +724,7 @@ class FlowManager:
             enabled=data.get("enabled", True),
             skill_prompt=data.get("skill_prompt", ""),
             canvas=data.get("canvas", {"width": 2000, "height": 1500}),
+            params=data.get("params", {}),
             nodes=nodes,
             connections=connections,
         )

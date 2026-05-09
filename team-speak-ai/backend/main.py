@@ -103,6 +103,11 @@ async def startup_event():
     init_defaults_manager(data_dir)
     logger.info("ConfigDefaultsManager initialized")
 
+    # 初始化 SysVarManager（系统变量）
+    from core.variables.manager import init_sys_var_manager
+    init_sys_var_manager(data_dir)
+    logger.info("SysVarManager initialized")
+
     # 初始化 ChunkReceiver（文件分块上传）
     from core.upload.chunk_receiver import init_chunk_receiver
     upload_dir = os.path.join(os.path.dirname(__file__), settings.upload_dir)
