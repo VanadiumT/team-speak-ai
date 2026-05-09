@@ -20,15 +20,20 @@ _TYPE_METADATA: dict[str, NodeTypeDef] = {}
 def _build_metadata():
     """构建所有节点类型的元数据。在模块加载时调用一次。"""
 
-    def port(side: str, top: int, id_: str, label: str, data_type: str) -> PortDef:
+    def port(side: str, top: int, id_: str, label: str, data_type: str, visibility: str = "always") -> PortDef:
         return PortDef(id=id_, label=label, data_type=data_type,
-                       position=PortPosition(side=side, top=top))
+                       position=PortPosition(side=side, top=top), visibility=visibility)
+
+    _on = "on-demand"  # shorthand for on-demand ports
 
     metadata = [
         NodeTypeDef(
             type="input_image", name="上传图片", icon="upload_file", color="secondary",
             default_config={"accepted_formats": ["png", "jpg", "webp"], "max_size_mb": 10},
-            tabs=[],
+            tabs=[
+                TabDef(id="detail", label="详情"),
+                TabDef(id="io-data", label="IO数据"),
+            ],
             ports=PortsDef(
                 inputs=[],
                 outputs=[
@@ -43,11 +48,21 @@ def _build_metadata():
             tabs=[
                 TabDef(id="config", label="配置"),
                 TabDef(id="detail", label="详情"),
+                TabDef(id="io-data", label="IO数据"),
+                TabDef(id="io-mgmt", label="IO管理"),
                 TabDef(id="log", label="日志"),
             ],
             ports=PortsDef(
-                inputs=[port("left", 30, "ocr-in", "图片 (PNG/JPG)", "image")],
-                outputs=[port("right", 55, "ocr-out", "OCR文本 (String)", "string")],
+                inputs=[
+                    port("left", 30, "ocr-in", "图片 (PNG/JPG)", "image"),
+                    port("left", 68, "trigger-in", "触发", "event", _on),
+                ],
+                outputs=[
+                    port("right", 30, "ocr-out", "OCR文本 (String)", "string"),
+                    port("right", 68, "done", "完成", "event", _on),
+                    port("right", 106, "meta-confidence", "平均置信度", "number", _on),
+                    port("right", 144, "meta-region-count", "识别区域数", "number", _on),
+                ],
             ),
         ),
         NodeTypeDef(
@@ -56,12 +71,19 @@ def _build_metadata():
             tabs=[
                 TabDef(id="config", label="配置"),
                 TabDef(id="detail", label="详情"),
+                TabDef(id="io-data", label="IO数据"),
+                TabDef(id="io-mgmt", label="IO管理"),
                 TabDef(id="log", label="日志"),
                 TabDef(id="fulltext", label="全文"),
             ],
             ports=PortsDef(
                 inputs=[port("left", 30, "stt-in", "音频帧 (PCM 16bit)", "audio")],
-                outputs=[port("right", 55, "stt-out", "识别文本 (String)", "string")],
+                outputs=[
+                    port("right", 30, "stt-out", "识别文本 (String)", "string"),
+                    port("right", 68, "meta-keyword", "触发关键词", "string", _on),
+                    port("right", 106, "meta-confidence", "STT 置信度", "number", _on),
+                    port("right", 144, "meta-history-count", "累积历史数", "number", _on),
+                ],
             ),
         ),
         NodeTypeDef(
@@ -70,13 +92,19 @@ def _build_metadata():
             tabs=[
                 TabDef(id="config", label="配置"),
                 TabDef(id="detail", label="详情"),
+                TabDef(id="io-data", label="IO数据"),
+                TabDef(id="io-mgmt", label="IO管理"),
                 TabDef(id="log", label="日志"),
             ],
             ports=PortsDef(
-                inputs=[port("left", 30, "hist-in", "文本片段 (String)", "string")],
+                inputs=[
+                    port("left", 30, "hist-in", "文本片段 (String)", "string"),
+                    port("left", 68, "trigger-in", "触发", "event", _on),
+                ],
                 outputs=[
-                    port("right", 72, "hist-out", "stt_history (String[])", "string_array"),
-                    port("right", 110, "hist-trigger", "触发信号 (Keyword)", "event"),
+                    port("right", 30, "hist-out", "stt_history (String[])", "string_array"),
+                    port("right", 68, "hist-trigger", "触发信号 (Keyword)", "event"),
+                    port("right", 106, "done", "完成", "event", _on),
                 ],
             ),
         ),
@@ -86,16 +114,22 @@ def _build_metadata():
             tabs=[
                 TabDef(id="config", label="配置"),
                 TabDef(id="detail", label="详情"),
+                TabDef(id="io-data", label="IO数据"),
+                TabDef(id="io-mgmt", label="IO管理"),
                 TabDef(id="log", label="日志"),
             ],
             ports=PortsDef(
                 inputs=[
                     port("left", 30, "ctx-in1", "skill_prompt (String)", "string"),
-                    port("left", 58, "ctx-in2", "OCR文本 (String)", "string"),
-                    port("left", 86, "ctx-in3", "stt_history (String[])", "string_array"),
-                    port("left", 114, "ctx-in4", "对话历史 (String[])", "string_array"),
+                    port("left", 58, "ctx-in2", "OCR文本 (String)", "string", _on),
+                    port("left", 86, "ctx-in3", "stt_history (String[])", "string_array", _on),
+                    port("left", 114, "ctx-in4", "对话历史 (String[])", "string_array", _on),
+                    port("left", 142, "trigger-in", "触发", "event", _on),
                 ],
-                outputs=[port("right", 55, "ctx-out", "组合上下文 (Messages[])", "messages")],
+                outputs=[
+                    port("right", 55, "ctx-out", "组合上下文 (Messages[])", "messages"),
+                    port("right", 93, "done", "完成", "event", _on),
+                ],
             ),
         ),
         NodeTypeDef(
@@ -104,11 +138,22 @@ def _build_metadata():
             tabs=[
                 TabDef(id="config", label="配置"),
                 TabDef(id="detail", label="详情"),
+                TabDef(id="io-data", label="IO数据"),
+                TabDef(id="io-mgmt", label="IO管理"),
                 TabDef(id="log", label="日志"),
             ],
             ports=PortsDef(
-                inputs=[port("left", 30, "llm-in", "组合上下文 (Messages[])", "messages")],
-                outputs=[port("right", 55, "llm-out", "流式文本 (String)", "string")],
+                inputs=[
+                    port("left", 30, "llm-in", "组合上下文 (Messages[])", "messages"),
+                    port("left", 68, "trigger-in", "触发", "event", _on),
+                ],
+                outputs=[
+                    port("right", 30, "llm-out", "流式文本 (String)", "string"),
+                    port("right", 68, "done", "完成", "event", _on),
+                    port("right", 106, "meta-token-count", "Token 消耗", "number", _on),
+                    port("right", 144, "meta-reasoning", "思考过程", "string", _on),
+                    port("right", 182, "meta-model", "模型名", "string", _on),
+                ],
             ),
         ),
         NodeTypeDef(
@@ -117,28 +162,52 @@ def _build_metadata():
             tabs=[
                 TabDef(id="config", label="配置"),
                 TabDef(id="detail", label="详情"),
+                TabDef(id="io-data", label="IO数据"),
+                TabDef(id="io-mgmt", label="IO管理"),
                 TabDef(id="log", label="日志"),
             ],
             ports=PortsDef(
-                inputs=[port("left", 30, "tts-in", "文本 (String)", "string")],
-                outputs=[port("right", 55, "tts-out", "合成音频 (WAV)", "audio")],
+                inputs=[
+                    port("left", 30, "tts-in", "文本 (String)", "string"),
+                    port("left", 68, "trigger-in", "触发", "event", _on),
+                ],
+                outputs=[
+                    port("right", 30, "tts-out", "合成音频 (WAV)", "audio"),
+                    port("right", 68, "done", "完成", "event", _on),
+                ],
             ),
         ),
         NodeTypeDef(
             type="ts_output", name="TS 音频输出", icon="volume_up", color="secondary",
             default_config={"mode": "segment"},
-            tabs=[],
+            tabs=[
+                TabDef(id="detail", label="详情"),
+                TabDef(id="io-data", label="IO数据"),
+                TabDef(id="io-mgmt", label="IO管理"),
+                TabDef(id="log", label="日志"),
+            ],
             ports=PortsDef(
-                inputs=[port("left", 30, "out-in", "音频数据 (WAV)", "audio")],
+                inputs=[
+                    port("left", 30, "out-in", "音频数据 (WAV)", "audio"),
+                    port("left", 68, "trigger-in", "触发", "event", _on),
+                ],
                 outputs=[port("right", 72, "out-done", "播放完成信号", "event")],
             ),
         ),
         NodeTypeDef(
             type="ts_input", name="TS 音频输入", icon="headset_mic", color="secondary",
-            default_config={"max_buffer_bytes": 10485760},
-            tabs=[],
+            default_config={"max_buffer_bytes": 10485760, "sample_rate": 16000, "channels": 1},
+            tabs=[
+                TabDef(id="config", label="配置"),
+                TabDef(id="detail", label="详情"),
+                TabDef(id="io-data", label="IO数据"),
+                TabDef(id="io-mgmt", label="IO管理"),
+                TabDef(id="log", label="日志"),
+            ],
             ports=PortsDef(
-                inputs=[],
+                inputs=[
+                    port("left", 55, "trigger-in", "触发", "event", _on),
+                ],
                 outputs=[
                     port("right", 30, "audio-out", "音频流 (PCM)", "audio"),
                     port("right", 72, "trigger-out", "触发信号", "event"),

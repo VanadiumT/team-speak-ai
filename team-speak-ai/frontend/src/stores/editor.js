@@ -131,31 +131,43 @@ export const useEditorStore = defineStore('editor', () => {
     }
   }
 
+  function _applyConfigLocal(nodeId, config) {
+    const idx = nodes.value.findIndex((n) => n.id === nodeId)
+    if (idx < 0) return
+    const node = nodes.value[idx]
+    nodes.value[idx] = { ...node, config: { ...(node.config || {}), ...config } }
+  }
+
   async function updateConfigImmediate(nodeId, config) {
     const flow = flowId.value
     if (!flow || isReadOnly.value) return
+    _applyConfigLocal(nodeId, config)
     dirtyFields.value = new Set(dirtyFields.value).add(nodeId)
-    await pipelineSocket.sendCommand(flow, 'node.update_config', {
-      node_id: nodeId,
-      config,
-    })
+    try {
+      await pipelineSocket.sendCommand(flow, 'node.update_config', {
+        node_id: nodeId,
+        config,
+      })
+    } catch (_) { /* server will broadcast corrected state */ }
   }
 
   let _debounceTimers = {}
   function updateConfigDebounced(nodeId, config) {
     const flow = flowId.value
     if (!flow || isReadOnly.value) return
+    _applyConfigLocal(nodeId, config)
     dirtyFields.value = new Set(dirtyFields.value).add(nodeId)
 
     const key = nodeId
     if (_debounceTimers[key]) clearTimeout(_debounceTimers[key])
     _debounceTimers[key] = setTimeout(async () => {
-      dirtyFields.value.delete(nodeId)
-      dirtyFields.value = new Set(dirtyFields.value)
-      await pipelineSocket.sendCommand(flow, 'node.update_config', {
-        node_id: nodeId,
-        config,
-      })
+      dirtyFields.value = new Set([...dirtyFields.value].filter(id => id !== nodeId))
+      try {
+        await pipelineSocket.sendCommand(flow, 'node.update_config', {
+          node_id: nodeId,
+          config,
+        })
+      } catch (_) { /* server will broadcast corrected state */ }
     }, 500)
   }
 
@@ -172,23 +184,45 @@ export const useEditorStore = defineStore('editor', () => {
   async function createConnection(fromNode, fromPort, toNode, toPort, type = 'data') {
     const flow = flowId.value
     if (!flow || isReadOnly.value) return
-    await pipelineSocket.sendCommand(flow, 'connection.create', {
-      from_node: fromNode,
-      from_port: fromPort,
-      to_node: toNode,
-      to_port: toPort,
-      type,
-    })
+    // Optimistic: add a temp connection with generated id
+    const tempId = 'conn_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7)
+    const tempConn = { id: tempId, from_node: fromNode, from_port: fromPort, to_node: toNode, to_port: toPort, type }
+    connections.value = [...connections.value, tempConn]
+    try {
+      await pipelineSocket.sendCommand(flow, 'connection.create', {
+        from_node: fromNode, from_port: fromPort,
+        to_node: toNode, to_port: toPort, type,
+      })
+    } catch (_) {
+      // Remove temp on failure; server will broadcast the real one on success
+      connections.value = connections.value.filter((c) => c.id !== tempId)
+    }
   }
 
   function onConnectionCreated({ connection }) {
-    connections.value.push(connection)
+    // Replace temp connection or add new one
+    const existing = connections.value.findIndex((c) =>
+      c.from_node === connection.from_node && c.from_port === connection.from_port &&
+      c.to_node === connection.to_node && c.to_port === connection.to_port &&
+      String(c.id).startsWith('conn_'))
+    if (existing >= 0) {
+      connections.value[existing] = connection
+    } else {
+      connections.value.push(connection)
+    }
   }
 
   async function deleteConnection(connId) {
     const flow = flowId.value
     if (!flow || isReadOnly.value) return
-    await pipelineSocket.sendCommand(flow, 'connection.delete', { connection_id: connId })
+    // Optimistic removal
+    const prev = [...connections.value]
+    connections.value = connections.value.filter((c) => c.id !== connId)
+    try {
+      await pipelineSocket.sendCommand(flow, 'connection.delete', { connection_id: connId })
+    } catch (_) {
+      connections.value = prev
+    }
   }
 
   function onConnectionDeleted({ connection_id }) {
@@ -225,15 +259,20 @@ export const useEditorStore = defineStore('editor', () => {
     if (!fromPort || !toPort) return false
 
     const COMPATIBLE = {
-      image: ['image'],
-      audio: ['audio'],
-      string: ['string', 'string_array'],
-      string_array: ['string_array', 'messages'],
-      messages: ['messages'],
-      event: [],
+      image: ['image', 'any'],
+      audio: ['audio', 'any'],
+      string: ['string', 'string_array', 'any'],
+      string_array: ['string_array', 'messages', 'any'],
+      messages: ['messages', 'any'],
+      event: ['event', 'any'],
+      any: ['image', 'audio', 'string', 'string_array', 'messages', 'event', 'any'],
+      number: ['number', 'any'],
+      list: ['list', 'any'],
+      dict: ['dict', 'any'],
     }
     const compat = COMPATIBLE[fromPort.data_type]
-    return compat && compat.includes(toPort.data_type)
+    if (!compat) return true
+    return compat.includes(toPort.data_type)
   }
 
   // ── 撤销/重做 ──

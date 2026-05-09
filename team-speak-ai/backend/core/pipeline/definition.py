@@ -48,6 +48,11 @@ class PortDef:
     label: str              # 悬停提示文字
     data_type: str          # "image" | "audio" | "string" | "string_array" | "messages" | "event"
     position: PortPosition  # 渲染位置
+    visibility: str = "always"   # "always"（始终可见）| "on-demand"（默认隐藏，通过 "+" 露出）
+    group: Optional[str] = None  # 端口组名（repeatable 端口共用）
+    repeatable: bool = False     # 是否允许多实例
+    min: Optional[int] = None    # 最少实例数
+    max: Optional[int] = None    # 最多实例数
 
 
 @dataclass
@@ -99,6 +104,7 @@ class NodeDefinition:
     input_mappings: list[InputMapping] = field(default_factory=list)   # 输入映射
     trigger: Optional[TriggerConfig] = None             # 触发条件
     listener: bool = False                              # 是否后台常驻节点
+    visible_ports: list[str] = field(default_factory=list)  # 用户已露出的 on-demand 端口 ID 列表
 
 
 @dataclass

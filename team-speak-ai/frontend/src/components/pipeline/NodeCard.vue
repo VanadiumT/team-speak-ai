@@ -13,8 +13,9 @@
       {{ stepNumber }}
     </div>
 
+    <!-- Visible input ports -->
     <IOPort
-      v-for="port in inputPorts" :key="port.id"
+      v-for="port in visibleInputPorts" :key="port.id"
       side="left"
       :position="computePortTop(port.id, 'input')"
       :label="port.label" :port-state="getPortState(port.id)"
@@ -23,8 +24,10 @@
       @port-drag-start="(e) => $emit('portDragStart', { nodeId: node.id, portId: port.id, event: e })"
       @port-click="(e) => $emit('portClick', { nodeId: node.id, portId: port.id, event: e })"
     />
+
+    <!-- Visible output ports -->
     <IOPort
-      v-for="port in outputPorts" :key="port.id"
+      v-for="port in visibleOutputPorts" :key="port.id"
       side="right"
       :position="computePortTop(port.id, 'output')"
       :label="port.label" :port-state="getPortState(port.id)"
@@ -41,27 +44,42 @@
       <div v-if="isListening" class="keyword-dot"></div>
     </div>
 
-    <div v-if="tabs.length > 0" ref="tabBarEl" class="node-tab-bar">
+    <div v-if="tabs.length > 0 && canSwitchTab" ref="tabBarEl" class="node-tab-bar">
       <button v-for="tab in tabs" :key="tab.id" class="tab-btn"
         :class="{ active: activeTab === tab.id }" @click.stop="activeTab = tab.id"
       >{{ tab.label }}</button>
     </div>
 
     <div class="node-body">
-      <slot :tab="activeTab" :status="nodeStatus">
-        <div class="node-default-body">
-          <div class="node-status-row">
-            <span class="node-status-label">状态</span>
-            <span :class="statusClass" class="node-status-value">
-              <span class="status-dot" :class="statusClass"></span>
-              {{ statusLabel }}
-            </span>
-          </div>
-          <div v-if="nodeStatus === 'processing'" class="progress-bar">
-            <div class="progress-fill" :style="{ width: progressPercent + '%' }"></div>
-          </div>
+      <!-- Dynamic body component based on node type -->
+      <component
+        v-if="bodyComponent"
+        :is="bodyComponent"
+        :node="node"
+        :status="nodeStatus"
+        :active-tab="activeTab"
+        :edit-mode="props.editMode"
+        :summary="nodeRuntime.summary || ''"
+        :progress="nodeRuntime.progress"
+        :data="nodeRuntime.data || {}"
+        :config="node.config || {}"
+        :logs="nodeLogs"
+        :input-ports="inputPorts"
+        :output-ports="outputPorts"
+      />
+      <!-- Fallback: default body -->
+      <div v-else class="node-default-body">
+        <div class="node-status-row">
+          <span class="node-status-label">状态</span>
+          <span :class="statusClass" class="node-status-value">
+            <span class="status-dot" :class="statusClass"></span>
+            {{ statusLabel }}
+          </span>
         </div>
-      </slot>
+        <div v-if="nodeStatus === 'processing'" class="progress-bar">
+          <div class="progress-fill" :style="{ width: progressPercent + '%' }"></div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -69,6 +87,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import IOPort from './IOPort.vue'
+import { getNodeComponent } from './nodes/registry.js'
 import { useEditorStore } from '@/stores/editor.js'
 import { useExecutionStore } from '@/stores/execution.js'
 
@@ -83,8 +102,18 @@ const emit = defineEmits(['select', 'dragstart', 'dragend', 'portDragStart', 'po
 
 const editorStore = useEditorStore()
 const executionStore = useExecutionStore()
-const activeTab = ref('config')
+const activeTab = ref('detail')
 const isSelected = ref(false)
+
+// ── Dynamic body component ──
+const bodyComponent = computed(() => getNodeComponent(props.node.type))
+
+// ── Tab switching: locked to 'detail' in flow mode ──
+const canSwitchTab = computed(() => props.editMode)
+
+// ── Runtime data from execution store ──
+const nodeRuntime = computed(() => executionStore.getNodeStatus(props.node.id))
+const nodeLogs = computed(() => executionStore.getNodeLogs(props.node.id, 200))
 
 // ── Port positioning ──
 const cardEl = ref(null)
@@ -119,6 +148,15 @@ const tabs = computed(() => nodeTypeDef.value?.tabs || [])
 
 watch(() => tabs.value.length, () => nextTick(() => measureNode()))
 
+// ── Sync activeTab: 'detail' in flow mode, 'config' in edit mode (if config tab exists) ──
+watch(() => [props.editMode, tabs.value], ([isEdit, t]) => {
+  if (isEdit) {
+    activeTab.value = t.some(tb => tb.id === 'config') ? 'config' : (t[0]?.id || 'detail')
+  } else {
+    activeTab.value = 'detail'
+  }
+}, { immediate: true })
+
 const nodeIcon = computed(() => nodeTypeDef.value?.icon || 'smart_toy')
 const iconColor = computed(() => {
   const c = { primary: '#adc7ff', secondary: '#4edea3', tertiary: '#ffb695', outline: '#8b90a0' }
@@ -128,22 +166,48 @@ const iconColor = computed(() => {
 const inputPorts = computed(() => nodeTypeDef.value?.ports?.inputs || [])
 const outputPorts = computed(() => nodeTypeDef.value?.ports?.outputs || [])
 
+// ── On-demand port visibility ──
+// A port is "visible" on the node card if it's always, or is on-demand and either in _visible_ports or has a connection
+function isPortVisible(port) {
+  if (port.visibility === 'always' || !port.visibility) return true
+  if (port.visibility !== 'on-demand') return true
+  const vis = props.node.config?._visible_ports || []
+  if (vis.includes(port.id)) return true
+  // Also show if it has a connection
+  return editorStore.connections.some((c) =>
+    (c.from_node === props.node.id && c.from_port === port.id) ||
+    (c.to_node === props.node.id && c.to_port === port.id))
+}
+
+const visibleInputPorts = computed(() => inputPorts.value.filter(isPortVisible))
+const visibleOutputPorts = computed(() => outputPorts.value.filter(isPortVisible))
+
 function computePortTop(portId, side) {
   const ports = side === 'input' ? inputPorts.value : outputPorts.value
   const total = ports.length
   if (total === 0) return 30
 
+  // 1) User-saved position — clamp to card bounds
   const saved = props.node.config?._port_positions?.[portId]
-  if (saved?.top != null) return saved.top
+  if (saved?.top != null) {
+    const nodeH = measuredNodeHeight.value || 120
+    return Math.max(28, Math.min(nodeH - 11, saved.top))
+  }
 
+  // 2) Type definition default position
+  const portDef = ports.find((p) => p.id === portId)
+  if (portDef?.position?.top != null) return portDef.position.top
+
+  // 3) Fallback: distribute evenly within card bounds
   const idx = ports.findIndex((p) => p.id === portId)
   if (idx < 0) return 30
 
-  const hasTabs = tabs.value.length > 0
-  const nodeH = measuredNodeHeight.value || (hasTabs ? 105 : 85)
-  const headerH = measuredHeaderHeight.value || (hasTabs ? 57 : 33)
-  const available = Math.max(nodeH - 14 - headerH, 1)
-  return Math.round(headerH + available * (idx + 1) / (total + 1))
+  const nodeH = measuredNodeHeight.value || (tabs.value.length > 0 ? 140 : 120)
+  const headerH = measuredHeaderHeight.value || 33
+  const minTop = headerH + 6
+  const maxTop = nodeH - 11
+  const available = Math.max(maxTop - minTop, 1)
+  return Math.round(minTop + available * (idx + 1) / (total + 1))
 }
 
 function getPortState(portId) {
@@ -231,13 +295,25 @@ function onDragStart(e) {
 }
 
 function onClick() {
-  if (!props.editMode) return
-  isSelected.value = !isSelected.value
+  // Skip click if we just finished a drag
+  if (nodeDragMoved) {
+    nodeDragMoved = false
+    return
+  }
+  // In edit mode: toggle selection
+  // In flow mode: select node to open detail panel (read-only)
+  if (props.editMode) {
+    isSelected.value = !isSelected.value
+  }
   emit('select', props.node)
 }
 
 function onDoubleClick() {
   if (!props.editMode) return
+  if (nodeDragMoved) {
+    nodeDragMoved = false
+    return
+  }
   emit('select', props.node)
 }
 

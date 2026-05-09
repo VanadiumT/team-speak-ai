@@ -20,9 +20,11 @@
         :height="canvasHeight"
       >
         <defs>
+          <!-- Event arrow: triangle (事件=三角箭头, 控制执行时机) -->
           <marker id="arrowEvent" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
-            <polygon points="0,2 10,5 0,8" fill="#adc7ff" opacity="0.6" />
+            <polygon points="0,2 10,5 0,8" fill="#adc7ff" opacity="0.85" />
           </marker>
+          <!-- Data arrow: triangle (数据=三角, 传递内容) -->
           <marker id="arrowData" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
             <polygon points="0,2 10,5 0,8" fill="#4edea3" opacity="0.8" />
           </marker>
@@ -103,6 +105,18 @@
       @zoom="zoomBy"
       @reset-zoom="resetZoom"
     />
+
+    <!-- Port click popover -->
+    <PortPopover
+      v-if="portPopover.visible"
+      :node-id="portPopover.nodeId"
+      :port-id="portPopover.portId"
+      :side="portPopover.side"
+      :edit-mode="props.editMode"
+      :x="portPopover.x"
+      :y="portPopover.y"
+      @close="portPopover.visible = false"
+    />
   </div>
 </template>
 
@@ -110,6 +124,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import NodeCard from './NodeCard.vue'
 import CanvasControls from './CanvasControls.vue'
+import PortPopover from './PortPopover.vue'
 import { useEditorStore } from '@/stores/editor.js'
 import { useExecutionStore } from '@/stores/execution.js'
 
@@ -207,14 +222,33 @@ const connectionPaths = computed(() => {
     // 直接读取 nodeStatuses 保证响应式追踪
     const fromStatus = executionStore.nodeStatuses[conn.from_node]?.status || 'pending'
     const isActive = fromStatus === 'processing'
+    const view = activeFlowView.value
 
-    let stroke, dash, marker, lineClass, groupClass
+    let stroke, dash, marker, lineClass, groupClass, width, opacity
     if (conn.type === 'event') {
-      stroke = '#adc7ff'; dash = 'none'; marker = 'url(#arrowEvent)'; lineClass = ''; groupClass = 'event-only'
+      stroke = '#adc7ff'
+      dash = 'none'
+      marker = 'url(#arrowEvent)'
+      lineClass = ''
+      groupClass = 'conn-event'
+      width = view === 'event' ? 3 : 2.5
+      opacity = view === 'data' ? 0.2 : 1
     } else if (isActive) {
-      stroke = '#4a8eff'; dash = 'none'; marker = 'url(#arrowDataFlow)'; lineClass = 'flow-line'; groupClass = 'data-only'
+      stroke = '#4a8eff'
+      dash = 'none'
+      marker = 'url(#arrowDataFlow)'
+      lineClass = 'flow-line'
+      groupClass = 'conn-data'
+      width = 2.5
+      opacity = view === 'event' ? 0.2 : 1
     } else {
-      stroke = '#4edea3'; dash = '10 5'; marker = 'url(#arrowData)'; lineClass = 'flow-line'; groupClass = 'data-only'
+      stroke = '#4edea3'
+      dash = '10 5'
+      marker = 'url(#arrowData)'
+      lineClass = 'flow-line'
+      groupClass = 'conn-data'
+      width = 2.5
+      opacity = view === 'event' ? 0.2 : 1
     }
 
     const yDiff = Math.abs(fromY - toY)
@@ -232,7 +266,7 @@ const connectionPaths = computed(() => {
     const label = getPortLabel(fromNode, conn.from_port)
 
     return {
-      id: conn.id, path, stroke, width: 2.5, dash, marker, lineClass, opacity: 1, groupClass,
+      id: conn.id, path, stroke, width, dash, marker, lineClass, opacity, groupClass,
       label, labelX, labelY, labelW: label ? label.length * 7 : 0,
       selected: selectedConnId.value === conn.id,
     }
@@ -245,9 +279,21 @@ function onConnectionClick(conn) {
 }
 
 // ── Port click ──
+const portPopover = ref({ visible: false, nodeId: '', portId: '', side: '', x: 0, y: 0 })
+
 function onPortClick({ nodeId, portId, event }) {
-  if (!props.editMode) return
   selectedConnId.value = null
+  // Determine if input or output port
+  const tdef = editorStore.getNodeTypeDef(editorStore.nodes.find(n => n.id === nodeId)?.type)
+  const isInput = tdef?.ports?.inputs?.some(p => p.id === portId)
+  portPopover.value = {
+    visible: true,
+    nodeId,
+    portId,
+    side: isInput ? 'input' : 'output',
+    x: event.clientX,
+    y: event.clientY,
+  }
 }
 
 // ── Port-to-port connection drag ──
@@ -256,8 +302,7 @@ let connDragFrom = { nodeId: '', portId: '' }
 
 function onPortDragStart({ nodeId, portId, event }) {
   if (!props.editMode) return
-  const portEl = event.target?.closest('.io-port')
-  if (!portEl || portEl.classList.contains('input-port')) return
+  // Only output ports emit portDragStart (IOPort already filters on side + direction)
 
   const node = editorStore.nodes.find((n) => n.id === nodeId)
   if (!node) return
@@ -317,34 +362,37 @@ function getPortCanvasPos(node, portId, side) {
   const idx = ports?.findIndex((p) => p.id === portId) ?? -1
   const w = getNodeWidth(node)
 
-  // Per-instance persisted position (user drag)
+  const calcX = side === 'input' ? node.position.x : node.position.x + w
+
+  // 1) Per-instance persisted position (user drag) — clamp to card bounds
   const saved = node.config?._port_positions?.[portId]
   if (saved?.top != null) {
-    return {
-      x: side === 'input' ? node.position.x : node.position.x + w,
-      y: node.position.y + saved.top + 7,
-    }
+    const nodeH = (nodeHeights.value[node.id]?.height) || 120
+    const clamped = Math.max(28, Math.min(nodeH - 11, saved.top))
+    return { x: calcX, y: node.position.y + clamped + 7 }
   }
 
+  // 2) Type definition default position
+  const portDef = ports.find((p) => p.id === portId)
+  if (portDef?.position?.top != null) {
+    return { x: calcX, y: node.position.y + portDef.position.top + 7 }
+  }
+
+  // 3) Fallback: distribute evenly within card bounds
   let top
   const hi = nodeHeights.value[node.id]
-  if (hi && idx >= 0 && total > 0) {
-    const available = Math.max(hi.height - 14 - hi.headerHeight, 1)
-    top = Math.round(hi.headerHeight + available * (idx + 1) / (total + 1))
-  } else {
-    const hasTabs = (tdef.tabs?.length || 0) > 0
-    const estH = hasTabs ? 105 : 85
-    const estHeader = hasTabs ? 57 : 33
-    const estAvail = Math.max(estH - 14 - estHeader, 1)
-    top = idx >= 0 && total > 0
-      ? Math.round(estHeader + estAvail * (idx + 1) / (total + 1))
-      : Math.round(estHeader + estAvail / 2)
-  }
+  const hasTabs = (tdef.tabs?.length || 0) > 0
+  const estH = hasTabs ? 140 : 120
+  const nodeH = hi?.height || estH
+  const headerH = hi?.headerHeight || 33
+  const minTop = headerH + 6
+  const maxTop = nodeH - 11
+  const available = Math.max(maxTop - minTop, 1)
+  top = idx >= 0 && total > 0
+    ? Math.round(minTop + available * (idx + 1) / (total + 1))
+    : Math.round(minTop + available / 2)
 
-  return {
-    x: side === 'input' ? node.position.x : node.position.x + w,
-    y: node.position.y + top + 7,
-  }
+  return { x: calcX, y: node.position.y + top + 7 }
 }
 
 function getPortLabel(node, portId) {
@@ -389,8 +437,15 @@ onUnmounted(() => { window.removeEventListener('keydown', onKeydown) })
   background-image: linear-gradient(#31353d 1px, transparent 1px), linear-gradient(90deg, #31353d 1px, transparent 1px);
 }
 .canvas-content { position: relative; z-index: 10; padding: 32px; transition: transform 0.2s ease; }
-.flow-view[data-flow="data"] .event-only { display: none !important; }
-.flow-view[data-flow="event"] .data-only { display: none !important; }
+/* View filter: opacity-based — never hide, just dim */
+.flow-view[data-flow="event"] .conn-data text,
+.flow-view[data-flow="event"] .conn-data rect { opacity: 0.15; }
+.flow-view[data-flow="data"] .conn-event text,
+.flow-view[data-flow="data"] .conn-event rect { opacity: 0.15; }
+/* Event view: event connections glow */
+.flow-view[data-flow="event"] .conn-event path {
+  filter: drop-shadow(0 0 4px rgba(173, 199, 255, 0.5));
+}
 .connections-svg { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 0; }
 .conn-hit-area { pointer-events: stroke; cursor: pointer; }
 .flow-line { animation: flowDash 1.0s linear infinite; }
@@ -406,4 +461,10 @@ onUnmounted(() => { window.removeEventListener('keydown', onKeydown) })
 .pipeline-canvas::-webkit-scrollbar-track { background: #10131b; }
 .pipeline-canvas::-webkit-scrollbar-thumb { background: #31353d; border-radius: 3px; }
 .pipeline-canvas::-webkit-scrollbar-thumb:hover { background: #414754; }
+</style>
+
+<!-- Unscoped: port view filter (targets IOPort elements from NodeCard) -->
+<style>
+.flow-view[data-flow="data"] .io-port[data-data-type="event"] { opacity: 0.2; pointer-events: none; }
+.flow-view[data-flow="event"] .io-port:not([data-data-type="event"]) { opacity: 0.2; pointer-events: none; }
 </style>

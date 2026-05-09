@@ -1,21 +1,29 @@
 /**
  * Node Component Registry
  *
- * 按 node.type 懒加载 Vue 组件。后端决定类型+状态，前端决定渲染方式。
- * 使用方式: registry[type] → AsyncComponent
+ * 按 node.type 加载 Vue 组件。后端决定类型+状态，前端决定渲染方式。
+ * 使用方式: registry[type] → Component
  */
+import InputImageNode from './InputImageNode.vue'
+import OcrNode from './OcrNode.vue'
+import STTListenNode from './STTListenNode.vue'
+import STTHistoryNode from './STTHistoryNode.vue'
+import ContextBuildNode from './ContextBuildNode.vue'
+import LLMNode from './LLMNode.vue'
+import TTSNode from './TTSNode.vue'
+import TSOutputNode from './TSOutputNode.vue'
+import TSInputNode from './TSInputNode.vue'
 
-// 现阶段使用 NodeCard.vue 的 slot 机制渲染 body，
-// 复杂节点可在后续扩展为独立组件。
 export const nodeComponentRegistry = {
-  input_image: null,   // → InputImageNode.vue
-  ocr: null,           // → OcrNode.vue
-  stt_listen: null,    // → STTListenNode.vue
-  stt_history: null,   // → STTHistoryNode.vue
-  context_build: null, // → ContextBuildNode.vue
-  llm: null,           // → LLMNode.vue
-  tts: null,           // → TTSNode.vue
-  ts_output: null,     // → TSOutputNode.vue
+  input_image: InputImageNode,
+  ocr: OcrNode,
+  stt_listen: STTListenNode,
+  stt_history: STTHistoryNode,
+  context_build: ContextBuildNode,
+  llm: LLMNode,
+  tts: TTSNode,
+  ts_output: TSOutputNode,
+  ts_input: TSInputNode,
 }
 
 /**

@@ -12,9 +12,17 @@
         </template>
       </div>
       <div class="h-right">
-        <!-- 流程模式（默认）: [流程设置] -->
+        <!-- 流程模式（默认）: [运行] [流程设置] -->
         <template v-if="activeFlowId && !editorStore.editMode">
-          <button class="top-btn primary-btn" @click="editorStore.enterEditMode()">
+          <button
+            class="top-btn run-btn"
+            :disabled="executionStore.status === 'running'"
+            @click="runPipeline"
+          >
+            <span class="material-symbols-outlined">{{ executionStore.status === 'running' ? 'hourglass_top' : 'play_arrow' }}</span>
+            {{ executionStore.status === 'running' ? '运行中' : '运行' }}
+          </button>
+          <button class="top-btn primary-btn" :disabled="executionStore.status === 'running'" @click="editorStore.enterEditMode()">
             <span class="material-symbols-outlined">tune</span> 流程设置
           </button>
         </template>
@@ -112,9 +120,9 @@
         </div>
       </main>
 
-      <!-- Detail panel (edit mode only) -->
-      <aside v-if="selectedNode && editorStore.editMode" class="detail-panel" id="detail-panel">
-        <DynamicPanel :node="selectedNode" @close="selectedNode = null" />
+      <!-- Detail panel (both modes; readonly in flow mode) -->
+      <aside v-if="selectedNode" class="detail-panel" id="detail-panel">
+        <DynamicPanel :node="selectedNode" :readonly="!editorStore.editMode" @close="selectedNode = null" />
       </aside>
     </div>
 
@@ -368,8 +376,17 @@ function onAction(actionId) {
 }
 
 function onSelectNode(nodeId) {
-  if (!editorStore.editMode) return
   selectedNode.value = editorStore.nodes.find((n) => n.id === nodeId) || null
+}
+
+// ── Pipeline execution ──
+async function runPipeline() {
+  if (!activeFlowId.value || executionStore.status === 'running') return
+  try {
+    await pipelineSocket.sendCommand(activeFlowId.value, 'pipeline.run', {})
+  } catch (e) {
+    console.error('Pipeline run failed:', e)
+  }
 }
 
 // ── Flow Create ──
@@ -753,6 +770,10 @@ onUnmounted(() => {
 }
 .top-btn.primary-btn { background: #adc7ff; color: #002e68; border-color: #adc7ff; }
 .top-btn.primary-btn:hover { background: #d8e2ff; }
+.top-btn.primary-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.top-btn.run-btn { background: #4edea3; color: #003824; border-color: #4edea3; }
+.top-btn.run-btn:hover { background: #6ffbbe; }
+.top-btn.run-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .top-btn.ghost-btn { background: transparent; color: #8b90a0; border-color: #414754; }
 .top-btn.ghost-btn:hover { color: #c1c6d7; border-color: #8b90a0; }
 .top-btn.ghost-btn:disabled { opacity: 0.3; cursor: not-allowed; }

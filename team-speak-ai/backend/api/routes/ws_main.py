@@ -120,11 +120,13 @@ async def ws_main(websocket: WebSocket):
                 "ports": {
                     "inputs": [
                         {"id": p.id, "label": p.label, "data_type": p.data_type,
+                         "visibility": getattr(p, 'visibility', 'always') or 'always',
                          "position": {"side": p.position.side, "top": p.position.top}}
                         for p in t.ports.inputs
                     ],
                     "outputs": [
                         {"id": p.id, "label": p.label, "data_type": p.data_type,
+                         "visibility": getattr(p, 'visibility', 'always') or 'always',
                          "position": {"side": p.position.side, "top": p.position.top}}
                         for p in t.ports.outputs
                     ],

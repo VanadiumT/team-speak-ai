@@ -12,7 +12,6 @@
     @mouseenter="showLabel = true"
     @mouseleave="showLabel = false"
     @mousedown.stop="onMouseDown"
-    @click.stop="onClick"
   >
     <span class="io-label" :class="{ visible: showLabel }">{{ label }}</span>
   </div>
@@ -38,101 +37,116 @@ const emit = defineEmits(['portDragStart', 'portClick'])
 const showLabel = ref(false)
 const editorStore = useEditorStore()
 
-let dragStartX = 0
-let dragStartY = 0
-let hasDragged = false
+// ── Direction-locked drag state machine ──
+// idle → tracking → vertical | horizontal | click
+let dragState = 'idle'
+let startX = 0, startY = 0, startTop = 0
 
 function onMouseDown(e) {
-  if (!props.editMode) return
-  dragStartX = e.clientX
-  dragStartY = e.clientY
-  hasDragged = false
-
-  // Start listening for moves
-  const onMove = (ev) => {
-    const dx = Math.abs(ev.clientX - dragStartX)
-    const dy = Math.abs(ev.clientY - dragStartY)
-    if (dx > 3 || dy > 3) {
-      hasDragged = true
-      // If output port, emit drag start for connection wiring
-      if (props.side === 'right') {
-        emit('portDragStart', ev)
-      }
-      // Vertical port position drag
-      if (dy > 5 && Math.abs(ev.clientY - dragStartY) > Math.abs(ev.clientX - dragStartX)) {
-        doVerticalDrag(e, ev)
-      }
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-    }
-  }
-
-  const onUp = () => {
-    window.removeEventListener('mousemove', onMove)
-    window.removeEventListener('mouseup', onUp)
-  }
-
-  window.addEventListener('mousemove', onMove)
-  window.addEventListener('mouseup', onUp)
-}
-
-function doVerticalDrag(startEvent, moveEvent) {
-  const portEl = startEvent.target.closest('.io-port')
-  const nodeEl = portEl?.closest('.node-card')
+  if (e.button !== 0) return
+  const portEl = e.currentTarget
+  const nodeEl = portEl.closest('.node-card')
   if (!nodeEl) return
 
-  const nodeRect = nodeEl.getBoundingClientRect()
-  const startTop = parseInt(portEl.style.top) || props.position
-  const startY = moveEvent.clientY
+  startX = e.clientX
+  startY = e.clientY
+  startTop = parseInt(portEl.style.top) || props.position
+  dragState = 'tracking'
 
-  // Measure header height for dynamic min clamp
-  const headerEl = nodeEl.querySelector('.node-header')
-  const tabBarEl = nodeEl.querySelector('.node-tab-bar')
-  let minTop = 28
-  if (headerEl) minTop = Math.round(headerEl.getBoundingClientRect().height)
-  if (tabBarEl) minTop += Math.round(tabBarEl.getBoundingClientRect().height)
-  minTop += 2
+  function onMove(ev) {
+    if (dragState === 'horizontal' || dragState === 'idle') return
 
-  const onMove = (ev) => {
-    const deltaY = ev.clientY - startY
-    const newTop = Math.max(minTop, Math.min(nodeRect.height - 20, startTop + deltaY))
-    portEl.style.top = newTop + 'px'
+    const dx = ev.clientX - startX
+    const dy = ev.clientY - startY
+    const dist = Math.abs(dx) + Math.abs(dy)
+
+    if (dragState === 'tracking' && dist >= 4) {
+      const isOutput = props.side === 'right'
+      // Output port with rightward movement → connection wiring
+      if (isOutput && dx > 2 && dx > Math.abs(dy)) {
+        dragState = 'horizontal'
+        emit('portDragStart', ev)
+        cleanup()
+        return
+      }
+      // Otherwise → vertical reposition
+      dragState = 'vertical'
+      portEl.style.transition = 'none'
+    }
+
+    if (dragState === 'vertical') {
+      if (!props.editMode) return
+      const nodeRect = nodeEl.getBoundingClientRect()
+      const headerEl = nodeEl.querySelector('.node-header')
+      const tabBarEl = nodeEl.querySelector('.node-tab-bar')
+      let minTop = 4
+      if (headerEl) minTop = Math.round(headerEl.getBoundingClientRect().height)
+      if (tabBarEl) minTop += Math.round(tabBarEl.getBoundingClientRect().height)
+      minTop += 6
+      const maxTop = nodeRect.height - 11
+      const newTop = Math.max(minTop, Math.min(maxTop, startTop + dy))
+      portEl.style.top = newTop + 'px'
+
+      // Show / update range track on first vertical frame
+      if (!nodeEl.querySelector('.port-drag-track')) {
+        const track = document.createElement('div')
+        track.className = 'port-drag-track'
+        track.style.cssText = [
+          'position: absolute', 'width: 2px', 'border-radius: 1px',
+          'background: rgba(173,199,255,0.35)', 'pointer-events: none', 'z-index: 34',
+          `top: ${minTop}px`, `height: ${maxTop - minTop}px`,
+          props.side === 'left' ? 'left: 2px' : 'right: 2px',
+        ].join(';')
+        nodeEl.appendChild(track)
+      }
+
+      // Pulse when hitting boundary
+      const atBoundary = newTop <= minTop + 1 || newTop >= maxTop - 1
+      if (atBoundary) {
+        if (!portEl.classList.contains('at-boundary')) {
+          portEl.classList.add('at-boundary')
+          setTimeout(() => portEl.classList.remove('at-boundary'), 300)
+        }
+      }
+    }
   }
 
-  const onUp = (ev) => {
-    const finalTop = parseInt(portEl.style.top) || startTop
-    portEl.style.top = finalTop + 'px'
-    if (props.dataNodeId && props.dataPortId) {
-      // Local immediate update (before backend broadcast)
-      const node = editorStore.nodes.find((n) => n.id === props.dataNodeId)
-      if (node) {
-        if (!node.config) node.config = {}
-        if (!node.config._port_positions) node.config._port_positions = {}
-        node.config._port_positions[props.dataPortId] = { side: props.side, top: finalTop }
-      }
-      // Persist to backend
-      pipelineSocket.sendCommand(editorStore.flowId, 'port.move', {
-        node_id: props.dataNodeId,
-        port_id: props.dataPortId,
-        side: props.side,
-        position: finalTop,
-      }).catch(() => {})
+  function onUp(ev) {
+    if (dragState === 'tracking') {
+      emit('portClick', ev)
     }
+    if (dragState === 'vertical') {
+      portEl.style.transition = ''
+      const finalTop = parseInt(portEl.style.top) || startTop
+      if (props.editMode && props.dataNodeId && props.dataPortId) {
+        const node = editorStore.nodes.find(n => n.id === props.dataNodeId)
+        if (node) {
+          if (!node.config) node.config = {}
+          if (!node.config._port_positions) node.config._port_positions = {}
+          node.config._port_positions[props.dataPortId] = { side: props.side, top: finalTop }
+        }
+        pipelineSocket.sendCommand(editorStore.flowId, 'port.move', {
+          node_id: props.dataNodeId,
+          port_id: props.dataPortId,
+          side: props.side,
+          position: finalTop,
+        }).catch(() => {})
+      }
+    }
+    dragState = 'idle'
+    cleanup()
+  }
+
+  function cleanup() {
     window.removeEventListener('mousemove', onMove)
     window.removeEventListener('mouseup', onUp)
+    const track = nodeEl.querySelector('.port-drag-track')
+    if (track) track.remove()
+    portEl.classList.remove('at-boundary')
   }
 
   window.addEventListener('mousemove', onMove)
   window.addEventListener('mouseup', onUp)
-}
-
-function onClick(e) {
-  if (!props.editMode) return
-  // Only emit click if not dragged
-  if (!hasDragged) {
-    emit('portClick', e)
-  }
-  hasDragged = false
 }
 </script>
 
@@ -152,6 +166,29 @@ function onClick(e) {
 .io-port.output-port { right: -7px; }
 
 .io-port:hover { transform: scale(1.5); z-index: 60; }
+
+/* Event ports: diamond shape (rotated square) */
+.io-port[data-data-type="event"] {
+  border-radius: 2px;
+  transform: rotate(45deg);
+  width: 12px; height: 12px;
+}
+.io-port[data-data-type="event"]:hover {
+  transform: rotate(45deg) scale(1.5);
+}
+.io-port[data-data-type="event"].disconnected {
+  border-color: rgba(173, 199, 255, 0.45);
+}
+.io-port[data-data-type="event"].connected {
+  border-color: #adc7ff;
+  background: rgba(173, 199, 255, 0.15);
+  box-shadow: 0 0 8px rgba(173, 199, 255, 0.35);
+}
+.io-port[data-data-type="event"].flowing {
+  border-color: #ffb695;
+  background: rgba(255, 182, 149, 0.22);
+  box-shadow: 0 0 14px rgba(255, 182, 149, 0.6);
+}
 
 .io-port.disconnected {
   border-color: #8b90a0;
@@ -213,5 +250,12 @@ function onClick(e) {
 .io-port.output-port .io-label {
   left: auto; right: 0;
   transform: translateX(0);
+}
+
+/* Boundary pulse when port hits min/max edge */
+.io-port.at-boundary {
+  box-shadow: 0 0 12px rgba(255, 182, 149, 0.7);
+  border-color: #ffb695;
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
 }
 </style>

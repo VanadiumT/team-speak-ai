@@ -57,13 +57,24 @@
 
       <!-- Config tab -->
       <div v-if="activeTab === 'config'" class="dp-config">
-        <div v-if="node.config" class="config-grid">
-          <div v-for="(val, key) in node.config" :key="key" class="config-row">
+        <div v-if="node.config && Object.keys(node.config).length" class="config-grid">
+          <div v-for="(val, key) in displayConfig" :key="key" class="config-row">
             <span class="config-key">{{ key }}</span>
             <span class="config-val">{{ formatConfigVal(val) }}</span>
           </div>
         </div>
         <div v-else class="dp-state dp-pending">无配置</div>
+        <div class="config-hint" v-if="readonly">流程模式下只读</div>
+      </div>
+
+      <!-- IO Data tab -->
+      <div v-if="activeTab === 'io-data'" class="dp-iodata">
+        <NodeIODataView :inputs="ioInputs" :outputs="ioOutputs" :last-execution="ioLastExec" />
+      </div>
+
+      <!-- IO管理 tab -->
+      <div v-if="activeTab === 'io-mgmt' && !readonly" class="dp-iodata">
+        <NodeIOMgmt :node="node" :edit-mode="true" :input-ports="nodeTypeDef?.ports?.inputs || []" :output-ports="nodeTypeDef?.ports?.outputs || []" @toggle-port="onTogglePort" />
       </div>
 
       <!-- Log tab -->
@@ -87,12 +98,15 @@
 import { ref, computed, watch } from 'vue'
 import { useEditorStore } from '@/stores/editor.js'
 import { useExecutionStore } from '@/stores/execution.js'
+import NodeIODataView from '@/components/pipeline/nodes/NodeIODataView.vue'
+import NodeIOMgmt from '@/components/pipeline/nodes/NodeIOMgmt.vue'
 
 const props = defineProps({
   node: { type: Object, default: null },
+  readonly: { type: Boolean, default: false },
 })
 
-defineEmits(['close'])
+defineEmits(['close', 'configUpdate'])
 
 const editorStore = useEditorStore()
 const executionStore = useExecutionStore()
@@ -108,7 +122,14 @@ const nodeTypeDef = computed(() =>
   editorStore.nodeTypes.find((t) => t.type === props.node?.type)
 )
 
-const tabs = computed(() => nodeTypeDef.value?.tabs || [])
+const tabs = computed(() => {
+  const t = nodeTypeDef.value?.tabs || []
+  // Always include io-data tab
+  if (!t.some(tb => tb.id === 'io-data')) {
+    return [...t, { id: 'io-data', label: 'IO数据' }]
+  }
+  return t
+})
 
 const nodeIcon = computed(() => nodeTypeDef.value?.icon || 'smart_toy')
 
@@ -122,10 +143,53 @@ const nodeLogs = computed(() =>
   props.node ? executionStore.getNodeLogs(props.node.id, 50) : []
 )
 
+// Filter out internal config keys for display
+const displayConfig = computed(() => {
+  if (!props.node?.config) return {}
+  const cfg = { ...props.node.config }
+  delete cfg._port_positions
+  return cfg
+})
+
+// Build IO data from runtime state
+const ioInputs = computed(() => {
+  const inputs = {}
+  const typeDef = nodeTypeDef.value
+  if (!typeDef?.ports?.inputs) return inputs
+  for (const port of typeDef.ports.inputs) {
+    const data = nodeState.value.data
+    inputs[port.id] = data?.[port.id] || data?.[`in_${port.id}`] || '(无数据)'
+  }
+  return inputs
+})
+
+const ioOutputs = computed(() => {
+  const outputs = {}
+  const typeDef = nodeTypeDef.value
+  if (!typeDef?.ports?.outputs) return outputs
+  for (const port of typeDef.ports.outputs) {
+    const data = nodeState.value.data
+    outputs[port.id] = data?.[port.id] || data?.[`out_${port.id}`] || '(无数据)'
+  }
+  return outputs
+})
+
+const ioLastExec = computed(() => {
+  return nodeState.value.data?._ts || ''
+})
+
 function formatConfigVal(val) {
   if (Array.isArray(val)) return val.join(', ')
   if (typeof val === 'object') return JSON.stringify(val)
   return String(val)
+}
+
+function onTogglePort(portId, show) {
+  if (!props.node) return
+  const vis = new Set(props.node.config?._visible_ports || [])
+  if (show) vis.add(portId)
+  else vis.delete(portId)
+  editorStore.updateConfigImmediate(props.node.id, { _visible_ports: [...vis] })
 }
 </script>
 
@@ -269,5 +333,13 @@ function formatConfigVal(val) {
   line-height: 1.6; white-space: pre-wrap;
   padding: 8px; background: rgba(11, 14, 22, 0.5);
   border-radius: 4px;
+}
+
+/* IO Data */
+.dp-iodata { padding: 4px 0; }
+
+.config-hint {
+  font-size: 9px; color: #64748b; text-align: center;
+  padding: 6px 0; font-family: 'Space Grotesk', sans-serif;
 }
 </style>
