@@ -211,7 +211,7 @@ ConnectionDef {
 | **data** | 数据连线（默认） | 数据视图显示，event 视图隐藏 | 传递数据 + **推导**事件关系 |
 | **event** | 纯事件连线 | 事件视图显示，data 视图隐藏 | 只传递触发信号，不传数据 |
 
-> **与当前代码的关系**：代码中 `ConnectionDef.type` 已有 `"data" | "event" | "trigger"` 三值。v2.1 去掉 `"trigger"`——触发关系由 data 连线推导或 event 连线显式表达，不需要第三种类型。迁移时 `"trigger"` 映射为 `"event"`。
+> **与当前代码的关系**：代码中 `ConnectionDef.type` 已统一为 `"data" | "event"` 两值。触发关系由 data 连线推导或 event 连线显式表达。
 
 ### 4.3 三个视图：同一张图的三层滤镜
 
@@ -1294,12 +1294,11 @@ ConnectionDef {
 
 #### ConnectionDef.type 迁移
 
-当前代码中 `ConnectionDef.type` 为三值 `"data" | "event" | "trigger"`：
+当前代码中 `ConnectionDef.type` 已统一为两值 `"data" | "event"`：
 
 ```
 "data"    → "data"    （不变）
 "event"   → "event"   （不变）
-"trigger" → "event"   （"trigger" 合并入 "event"，触发语义由引擎从 data 连线推导）
 ```
 
 #### 迁移步骤建议

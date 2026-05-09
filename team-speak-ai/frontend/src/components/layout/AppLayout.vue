@@ -231,11 +231,14 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { storeToRefs } from 'pinia'
 import { pipelineSocket } from '@/api/pipeline.js'
 import { useEditorStore } from '@/stores/editor.js'
 import { useExecutionStore } from '@/stores/execution.js'
 import { useNotificationsStore } from '@/stores/notifications.js'
 import { useConnectionStore } from '@/stores/connection.js'
+import { useSidebarStore } from '@/stores/sidebar.js'
+import { useFilesStore } from '@/stores/files.js'
 import PipelineView from '@/components/pipeline/PipelineView.vue'
 import DynamicPanel from '@/components/panels/DynamicPanel.vue'
 import NodePalette from '@/components/pipeline/NodePalette.vue'
@@ -247,10 +250,11 @@ const editorStore = useEditorStore()
 const executionStore = useExecutionStore()
 const notificationsStore = useNotificationsStore()
 const connectionStore = useConnectionStore()
+const sidebarStore = useSidebarStore()
+const filesStore = useFilesStore()
 
-const sidebarTree = ref([])
-const expandedSections = ref(new Set())
-const activeFlowId = ref(null)
+const { sidebarTree, expandedSections, activeFlowId, recentFlows, availableGroups } = storeToRefs(sidebarStore)
+
 const selectedNode = ref(null)
 const showFlowCreate = ref(false)
 const showGroupCreate = ref(false)
@@ -268,23 +272,6 @@ const moveDialog = reactive({ visible: false, groupPath: '', flowId: '' })
 // Import group target path
 const importGroupTarget = ref('')
 
-// Collect all available group paths from sidebar tree
-const availableGroups = computed(() => {
-  const paths = new Set()
-  function walk(nodes, prefix = '') {
-    for (const n of nodes) {
-      if (n.type === 'group') {
-        const path = prefix ? prefix + '/' + n.name : n.name
-        paths.add(path)
-        if (n.children) walk(n.children, path)
-      }
-    }
-  }
-  for (const s of sidebarTree.value) {
-    if (s.children) walk(s.children)
-  }
-  return [...paths].sort()
-})
 
 const iconOptions = [
   'sports_esports', 'account_tree', 'smart_toy', 'psychology', 'mic',
@@ -303,38 +290,12 @@ const saveLabel = computed(() => {
   return { saved: '已保存', saving: '保存中...', unsaved: '未保存' }[saveState.value] || ''
 })
 
-// ── Recent flows (localStorage) ──
-const recentFlows = ref([])
-function updateRecent(flowId, flowName, flowIcon) {
-  const stored = JSON.parse(localStorage.getItem('recent-flows') || '[]')
-  const filtered = stored.filter((r) => r.id !== flowId)
-  filtered.unshift({ id: flowId, name: flowName, icon: flowIcon })
-  recentFlows.value = filtered.slice(0, 5)
-  localStorage.setItem('recent-flows', JSON.stringify(recentFlows.value))
-}
-
-// ── Sidebar ──
-function isExpanded(id) { return expandedSections.value.has(id) }
-function toggleSection(id) {
-  if (expandedSections.value.has(id)) {
-    expandedSections.value.delete(id)
-  } else {
-    expandedSections.value.add(id)
-  }
-  expandedSections.value = new Set(expandedSections.value)
-}
-
-async function selectFlow(flowId) {
-  activeFlowId.value = flowId
+// Sidebar helpers (delegated to sidebarStore)
+const isExpanded = (id) => sidebarStore.isExpanded(id)
+const toggleSection = (id) => sidebarStore.toggleSection(id)
+const selectFlow = (flowId) => {
   selectedNode.value = null
-  editorStore.exitEditMode()
-  try {
-    await editorStore.loadFlow(flowId)
-    const meta = editorStore.flowMeta
-    updateRecent(flowId, meta.name || '', meta.icon || '')
-  } catch (e) {
-    console.error('Failed to load flow:', e)
-  }
+  sidebarStore.selectFlow(flowId)
 }
 
 const runningFlowIds = computed(() => {
@@ -541,89 +502,18 @@ onMounted(() => {
   executionStore.init()
   notificationsStore.init()
   connectionStore.init()
+  sidebarStore.init()
+  filesStore.init()
 
   // 以下 handler 只在 onMounted 注册一次，不会被重复添加
-  pipelineSocket.on('sidebar.tree', ({ groups }) => {
-    // Save currently expanded IDs so we can restore them
-    const prevExpanded = new Set(expandedSections.value)
-    sidebarTree.value = groups || []
-
-    // Recursively expand all sections and groups so no flow is hidden after tree refresh.
-    // Clear stale IDs first, then expand everything in the new tree.
-    const fresh = new Set()
-    function expandAll(nodes) {
-      for (const n of nodes) {
-        if (n.type === 'section' || n.type === 'group') {
-          fresh.add(n.id)
-          if (n.children) expandAll(n.children)
-        }
-      }
-    }
-    expandAll(groups || [])
-    expandedSections.value = fresh
-  })
-
   pipelineSocket.on('flow.loaded', ({ flow }) => {
     editorStore.onFlowLoaded({ flow })
-  })
-
-  let _pendingAutoOpen = null
-  pipelineSocket.on('flow.created', ({ flow }) => {
-    // Auto-open the newly created flow
-    if (flow && flow.id) {
-      _pendingAutoOpen = flow.id
-      // sidebar.tree will arrive next; select after a short delay to let tree render
-      setTimeout(() => {
-        if (_pendingAutoOpen === flow.id) {
-          selectFlow(flow.id)
-          _pendingAutoOpen = null
-        }
-      }, 100)
-    }
-  })
-
-  pipelineSocket.on('flow.deleted', ({ flow_id }) => {
-    if (activeFlowId.value === flow_id) {
-      activeFlowId.value = null
-      selectedNode.value = null
-      editorStore.exitEditMode()
-    }
-  })
-
-  pipelineSocket.on('flow.copied', ({ flow }) => {
-    // Auto-open the copied flow
-    if (flow && flow.id) {
-      _pendingAutoOpen = flow.id
-      setTimeout(() => {
-        if (_pendingAutoOpen === flow.id) {
-          selectFlow(flow.id)
-          _pendingAutoOpen = null
-        }
-      }, 100)
-    }
+    notificationsStore.fetchList(flow.id)
   })
 
   pipelineSocket.on('flow.renamed', ({ flow_id, name }) => {
     if (editorStore.flowId === flow_id) {
       editorStore.flowMeta.name = name
-    }
-  })
-
-  pipelineSocket.on('flow.enabled_toggled', ({ flow_id, enabled }) => {
-    // Update sidebar tree node in place so the UI reflects the change
-    function updateNode(nodes) {
-      for (const n of nodes) {
-        if (n.type === 'flow_ref' && n.flow_id === flow_id) {
-          n.enabled = enabled
-          return true
-        }
-        if (n.children && updateNode(n.children)) return true
-      }
-      return false
-    }
-    updateNode(sidebarTree.value)
-    if (editorStore.flowId === flow_id) {
-      editorStore.flowMeta.enabled = enabled
     }
   })
 
@@ -635,18 +525,6 @@ onMounted(() => {
 
   pipelineSocket.on('flow.group_renamed', () => {
     // sidebar.tree will be broadcast by backend
-  })
-
-  pipelineSocket.on('flow.group_deleted', ({ group_path }) => {
-    // Clear active flow if it was in the deleted group
-    const flowGroup = editorStore.flowMeta.group || ''
-    if (flowGroup === group_path || flowGroup.startsWith(group_path + '/')) {
-      activeFlowId.value = null
-      selectedNode.value = null
-      editorStore.exitEditMode()
-      editorStore.nodes = []
-      editorStore.connections = []
-    }
   })
 
   pipelineSocket.on('flow.exported', ({ flow_id, data }) => {
@@ -664,9 +542,6 @@ onMounted(() => {
   pipelineSocket.on('flow.group_imported', ({ count }) => {
     // sidebar.tree will be broadcast by backend
   })
-
-  // Load recent flows
-  recentFlows.value = JSON.parse(localStorage.getItem('recent-flows') || '[]').slice(0, 5)
 
   // Keyboard: Delete selected node
   window.addEventListener('keydown', (e) => {

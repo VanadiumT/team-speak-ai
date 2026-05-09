@@ -204,8 +204,13 @@ class PipelineSocket {
 
   /**
    * 上传文件（完整流程）
+   * @param {string} flowId
+   * @param {File} file
+   * @param {string|null} nodeId
+   * @param {function|null} onReady - 收到 upload_id 后、发送 chunk 前回调
+   * @returns {Promise<string>} file_id
    */
-  async uploadFile(flowId, file, nodeId = null) {
+  async uploadFile(flowId, file, nodeId = null, onReady = null) {
     const msgId = crypto.randomUUID()
 
     // ① 发起上传请求
@@ -219,6 +224,9 @@ class PipelineSocket {
     // ② 等待 ready 事件
     const readyEvent = await this._waitForEvent('file.upload_ready', 10000)
     const uploadId = readyEvent.upload_id
+
+    // 通知调用方 upload_id 已就绪（用于注册到 files store）
+    onReady?.(uploadId)
 
     // ③ 分块发送
     const buffer = await file.arrayBuffer()

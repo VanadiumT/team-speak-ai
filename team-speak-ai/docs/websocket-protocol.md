@@ -1,12 +1,12 @@
 # TeamSpeak AI WebSocket 协议规范
 
-> 前后端统一通信协议。单一 `/ws` 端点承载全部交互。
+> 前后端统一通信协议。`/ws` 端点承载全部流程管理交互，`/ws/teamspeak` 端点承载语音桥接。
 
 ---
 
 ## 1. 设计原则
 
-1. **单一连接** — 一个 WebSocket 承载流程管理、节点编辑、文件上传、配置持久化、执行状态推送，不再混用 REST API。
+1. **双端点分离** — `/ws` 承载流程管理、节点编辑、文件上传、配置持久化、执行状态推送；`/ws/teamspeak` 专用于语音桥接（独立信道，转发 Java 桥协议）。不再混用 REST API。
 2. **信封模型** — 所有消息共用外层信封，`action` 字段路由到具体处理器。
 3. **命令/事件分离** — 前端发 `command`，后端回 `event` + 可选 `ack`。
 4. **`flow_id` 路由** — 一条连接可操作多个流程，后端按 `flow_id` 分发到对应引擎实例。
@@ -17,10 +17,15 @@
 
 ## 2. 端点
 
-| 环境 | URL |
-|---|---|
-| 开发 | `ws://localhost:8000/ws` |
-| 生产 | `wss://{host}/ws` |
+| 端点 | 用途 | 信封格式 |
+|---|---|---|
+| `/ws` | 流程管理、节点编辑、文件上传、执行控制、状态推送 | `{msg_id, flow_id, type, action, params, ts}` |
+| `/ws/teamspeak` | 语音桥接（Java TeamSpeak 桥中继） | `{type, ...fields}`（转发 Java 桥协议） |
+
+| 环境 | `/ws` URL | `/ws/teamspeak` URL |
+|---|---|---|
+| 开发 | `ws://localhost:8000/ws` | `ws://localhost:8000/ws/teamspeak` |
+| 生产 | `wss://{host}/ws` | `wss://{host}/ws/teamspeak` |
 
 Vite 代理配置（`vite.config.js`）：
 ```js
@@ -31,6 +36,8 @@ proxy: {
   },
 }
 ```
+
+> **注**: `/ws/teamspeak` 由 Java 桥的音频数据量决定需要独立信道。前端一般不直接连接此端点，由后端内部管理。
 
 ---
 
@@ -535,17 +542,20 @@ Byte N+1-*: file_data — 原始文件二进制数据
 
 | action | dir | params | 说明 |
 |---|---|---|---|
-| `important_update` | S→C | `{title, content, level, node_id?}` | 实时推送一条通知 |
-| `notification.list` | C→S | `{limit?, before?}` | 查询历史通知 |
-| `notification.list_result` | S→C | `{items: NotificationItem[], unread: int}` | 返回通知列表 + 未读计数 |
-| `notification.mark_read` | C→S | `{notification_id?}` | 标记已读（缺省 = 全部已读） |
+| `important_update` | S→C | `{notification_id, title, content, level, timestamp, node_id?}` | 实时推送一条通知 |
+| `notification.list` | C→S | `{flow_id?, limit?, before?}` | 查询历史通知（cursor 分页） |
+| `notification.list_result` | S→C | `{items: NotificationItem[], unread: int, has_more: bool}` | 返回通知列表 + 未读计数 |
+| `notification.mark_read` | C→S | `{flow_id?, notification_id?}` | 标记已读（缺省 = 全部已读） |
+| `notification.unread` | S→C | `{flow_id, unread: int}` | 连接建立时推送各 flow 未读计数 |
 
 **`important_update` params：**
 ```json
 {
+  "notification_id": "uuid",
   "title": "关键词触发",
   "content": "STT 检测到关键词 \"集合\"，已触发上下文构建",
   "level": "warning",
+  "timestamp": "2026-05-09T12:00:00+00:00",
   "node_id": "stt_listen_01"
 }
 ```
@@ -599,7 +609,7 @@ Byte N+1-*: file_data — 原始文件二进制数据
   "group": "game_features",
   "icon": "sports_esports",
   "skill_prompt": "你是 TeamSpeak 频道监控助手。根据 OCR 信息和语音上下文，生成战术指导。",
-  "canvas": { "width": 1700, "height": 1250 },
+  "canvas": { "width": 2000, "height": 1500 },
   "nodes": [ /* NodeDef[] */ ],
   "connections": [ /* ConnectionDef[] */ ]
 }
@@ -642,7 +652,7 @@ Byte N+1-*: file_data — 原始文件二进制数据
 }
 ```
 
-**type 枚举：** `"data"` | `"event"` | `"trigger"`
+**type 枚举：** `"data"` | `"event"`
 
 ### 5.4 SidebarGroup（侧栏分组）
 
@@ -715,7 +725,7 @@ Byte N+1-*: file_data — 原始文件二进制数据
 
 ### 6.4 并发编辑
 
-- 单一 `/ws` 支持多 tab 连接同一 flow
+- `/ws` 支持多 tab 连接同一 flow
 - 后端在每次持久化操作后，向**所有订阅该 flow 的连接**广播 `event`
 - 前端收到 event 后更新 UI（无需自身发 command 的连接也会收到）
 
@@ -896,7 +906,6 @@ async def handle_command(ws, msg):
 前端 ──REST──→ POST /api/files/upload
 前端 ──REST──→ POST /api/ocr/recognize
 前端 ──REST──→ POST /api/tts/*
-前端 ──WS────→ ws://localhost:8000/ws/pipeline  ({type, data})
 前端 ──WS────→ ws://localhost:8000/ws/teamspeak  (音频中继)
 ```
 
@@ -904,6 +913,7 @@ async def handle_command(ws, msg):
 
 ```
 前端 ──WS────→ ws://localhost:8000/ws  (流程编辑 + 执行 + 文件上传 + 配置 + 通知)
+前端 ──WS────→ ws://localhost:8000/ws/teamspeak  (语音桥接，独立信道)
 
 后端内部连接（不暴露给前端）：
 后端 ──WS────→ ws://localhost:8080/teamspeak/voice  (Java Voice Bridge, 音频出入)

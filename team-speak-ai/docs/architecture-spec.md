@@ -90,8 +90,8 @@ backend/
     "canvas": {
       "type": "object",
       "properties": {
-        "width":  { "type": "number", "default": 1700 },
-        "height": { "type": "number", "default": 1250 }
+        "width":  { "type": "number", "default": 2000 },
+        "height": { "type": "number", "default": 1500 }
       }
     },
     "nodes": {
@@ -146,7 +146,7 @@ backend/
         "from_port": { "type": "string" },
         "to_node":   { "type": "string" },
         "to_port":   { "type": "string" },
-        "type":      { "enum": ["data", "event", "trigger"], "default": "data" }
+        "type":      { "enum": ["data", "event"], "default": "data" }
       }
     }
   }
@@ -735,8 +735,8 @@ backend/
       chunk_receiver.py          ← 新增：分块文件接收
   api/
     routes/
-      ws_main.py                 ← 新增：主 WebSocket 端点 (合并 ws_pipeline + 编辑功能)
-      ws_teamspeak.py            ← 重构：改为后端内部音频桥接模块（连接 Java Voice Bridge），不再暴露前端端点
+      ws_main.py                 ← 新增：主 WebSocket 端点 `/ws`（流程编辑 + 执行控制）
+      ws_teamspeak.py            ← 语音桥接端点 `/ws/teamspeak`（连接 Java Voice Bridge，独立信道）
 ```
 
 ### 11.2 废弃模块
@@ -745,7 +745,7 @@ backend/
 |---|---|
 | `api/routes/files.py` | 删除 REST 文件路由，合并到 `ws_main.py` |
 | `api/routes/ocr.py` | 删除 REST OCR 路由 |
-| `api/routes/ws_pipeline.py` | 合并到 `ws_main.py` |
+| `api/routes/ws_pipeline.py` | 已删除，功能合并到 `ws_main.py` |
 
 ### 11.3 更新模块
 
@@ -798,7 +798,7 @@ class FlowManager:
 
 ### 12.1 阶段 1
 
-1. 创建 `api/routes/ws_main.py`，实现新的 `/ws` 端点（与现有 `/ws/pipeline` 并行运行）。
+1. 创建 `api/routes/ws_main.py`，实现新的 `/ws` 端点。
 2. 实现信封格式解析和 `action` 路由。
 3. 先实现 `flow.list` / `flow.load` / `sidebar.tree` / `node_types` 只读命令。
 
@@ -819,7 +819,7 @@ class FlowManager:
 1. 前端删除 `layout.js`、`files.js`、`ocr.js`。
 2. 前端切换到新的 `editor.js` + 重构的 `pipeline.js`。
 3. 后端移除 `ws_pipeline.py`、`files.py`、`ocr.py`。
-4. `/ws` 端点成为唯一流程入口。
+4. `/ws` 端点成为流程管理唯一入口（`/ws/teamspeak` 独立保留）。
 
 ---
 

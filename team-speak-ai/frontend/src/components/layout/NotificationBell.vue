@@ -24,8 +24,10 @@
           <div class="notif-content">
             <div class="notif-title">{{ item.title }}</div>
             <div class="notif-text">{{ item.content }}</div>
+            <div class="notif-time">{{ formatTime(item.timestamp) }}</div>
           </div>
         </div>
+        <button v-if="store.hasMore" class="load-more-btn" @click="store.loadMore()">加载更多</button>
       </div>
     </div>
 
@@ -38,6 +40,20 @@
 import { useNotificationsStore } from '@/stores/notifications.js'
 
 const store = useNotificationsStore()
+
+function formatTime(ts) {
+  if (!ts) return ''
+  const d = new Date(ts)
+  const now = new Date()
+  const diffMs = now - d
+  const diffMin = Math.floor(diffMs / 60000)
+  if (diffMin < 1) return '刚刚'
+  if (diffMin < 60) return `${diffMin} 分钟前`
+  const diffHour = Math.floor(diffMin / 60)
+  if (diffHour < 24) return `${diffHour} 小时前`
+  const diffDay = Math.floor(diffHour / 24)
+  return `${diffDay} 天前`
+}
 </script>
 
 <style scoped>
@@ -172,6 +188,26 @@ const store = useNotificationsStore()
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.notif-time {
+  font-size: 10px;
+  color: #475569;
+  margin-top: 2px;
+}
+
+.load-more-btn {
+  width: 100%;
+  padding: 10px;
+  font-size: 12px;
+  color: #adc7ff;
+  background: none;
+  border: none;
+  border-top: 1px solid rgba(65, 71, 84, 0.2);
+  cursor: pointer;
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+.load-more-btn:hover { background: rgba(255, 255, 255, 0.03); }
 
 /* Backdrop */
 .backdrop {

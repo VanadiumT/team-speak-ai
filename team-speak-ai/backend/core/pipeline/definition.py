@@ -115,7 +115,7 @@ class ConnectionDef:
     from_port: str              # 源端口 ID
     to_node: str                # 目标节点 ID
     to_port: str                # 目标端口 ID
-    type: str = "data"          # "data" | "event" | "trigger"
+    type: str = "data"          # "data" | "event"
 
 
 @dataclass
@@ -139,7 +139,7 @@ class PipelineDefinition:
     icon: str = "account_tree"         # 图标
     enabled: bool = True               # 是否启用
     skill_prompt: str = ""             # 技能提示词
-    canvas: dict = field(default_factory=lambda: {"width": 1700, "height": 1250})   # 画布尺寸
+    canvas: dict = field(default_factory=lambda: {"width": 2000, "height": 1500})   # 画布尺寸
     nodes: list[NodeDefinition] = field(default_factory=list)                        # 节点列表
     connections: list[ConnectionDef] = field(default_factory=list)                   # 连线列表
 

@@ -63,7 +63,7 @@ export const useEditorStore = defineStore('editor', () => {
       group: flow.group,
       icon: flow.icon,
       skill_prompt: flow.skill_prompt,
-      canvas: flow.canvas || { width: 1700, height: 1250 },
+      canvas: flow.canvas || { width: 2000, height: 1500 },
     }
     nodes.value = flow.nodes || []
     connections.value = flow.connections || []

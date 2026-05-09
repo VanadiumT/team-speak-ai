@@ -77,7 +77,7 @@ Key files:
 
 Nodes live in `core/nodes/`. Each node extends `BaseNode` and implements `execute(context, emit) -> NodeOutput`. Nodes are registered via `@NodeRegistry.register("node_name")` and imported in `core/nodes/__init__.py`.
 
-Available node types:
+Available node types (extensible — register new types via `@NodeRegistry.register()`):
 - `input_image` — Image input node
 - `ocr` — OCR text extraction
 - `ts_input` — TeamSpeak audio input source (subscribes to AudioBus)
@@ -104,6 +104,9 @@ Available node types:
 - `audio_bus.py` — publish/subscribe bus: `ws_teamspeak.py` publishes incoming audio, `stt_listen_node` consumes it
 - `audio_buffer.py` — per-speaker audio buffering with timeout and voice activity detection
 
+### Notification (`core/notification/`)
+- `manager.py` — `NotificationManager`: JSONL per-flow persistence, cursor-based pagination, read state tracking, 7-day auto-cleanup. Integrated via `emitter.py` (auto-persist on `emit_important_update`) and `ws_main.py` (`notification.list`, `notification.mark_read` commands)
+
 ### Provider factories
 Each AI capability has a factory pattern with swappable backends configured via `config.py` / `.env`:
 
@@ -122,13 +125,15 @@ backend/data/
   defaults/      # Per-node-type default configs (node_ocr.json, etc.)
   history/       # Per-flow operation history JSONL (for undo/redo)
   uploads/       # Uploaded files (by upload_id)
+  notifications/ # Per-flow notification history JSONL + read_state.json
 ```
 
 ### Frontend state management
 - `stores/editor.js` — Pinia store for flow editing state: nodes, connections, undo/redo, drag-and-drop, debounced config updates, edit mode toggle, dirty field tracking
 - `stores/execution.js` — Runtime execution state: node statuses, streaming data, per-node log buffers (max 200 entries FIFO)
 - `stores/sidebar.js` — Receives `sidebar.tree` events from backend, renders tree directly
-- `stores/notifications.js` — Notification bell state: items, unread count, dropdown
+- `stores/notifications.js` — Notification bell state: items, unread count, dropdown, pagination (fetchList/loadMore), mark read via backend
+- `stores/files.js` — File upload progress tracking: per-upload state, real-time progress (received/total), cancel, clear completed
 - `stores/connection.js` — WS connection status: service states (ts_bot, backend, pipeline)
 - `api/pipeline.js` — `PipelineSocket` class: envelope protocol, binary frame upload, auto-reconnect with state recovery
 
@@ -163,6 +168,6 @@ backend/data/
 - STT `stt_listen_node` is a persistent background node — it subscribes to AudioBus and runs continuously, triggering downstream nodes on keyword detection
 - The LLM is configured for MiniMax's OpenAI-compatible API (`openai_base_url: https://api.minimaxi.com/v1`) with `openai_reasoning_split: True` for separated thinking output
 - Frontend uses dark glassmorphism design language — see `docs/ui-style-guide.md` and `frontend/docs/pipeline-prototype.html`
-- All frontend-backend communication goes through a single `/ws` WebSocket using the envelope protocol
+- Frontend-backend communication uses `/ws` (envelope protocol for all management) and `/ws/teamspeak` (voice bridge relay, independent channel)
 - Backend owns all state (node positions, connections, configs); frontend is an editor + renderer only
 - Pipeline definitions use JSON (not YAML), persisted to `data/flows/`

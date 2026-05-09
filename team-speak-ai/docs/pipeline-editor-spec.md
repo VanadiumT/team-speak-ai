@@ -15,7 +15,7 @@
 │ └────────┴────────────────────────────────────────────────────────────┘  │
 ├────────┬───────────────────────────────────────────────┬──────────────────┤
 │②Sidebar│            ③ Canvas (可缩放/平移)             │④ Right Panel     │
-│256px   │   1700 × 1250 (默认), 网格背景                │ 320px, z-30      │
+│256px   │   2000 × 1500 (默认), 网格背景                │ 320px, z-30      │
 │z-40    │                                               │ fixed            │
 │        │  ┌─────────┐     ┌─────────┐                │ (仅编辑模式显示)  │
 │ 工作流树 │  │ ① 上传  │────→│ ② OCR   │                │ ┌──────────────┐ │
@@ -49,7 +49,7 @@
 
 | 属性 | 值 |
 |------|-----|
-| 默认尺寸 | 1700 × 1250 px |
+| 默认尺寸 | 2000 × 1500 px |
 | 最小尺寸 | 800 × 600 px |
 | 最大尺寸 | 5000 × 5000 px |
 | 网格单元 | 32px |
@@ -664,7 +664,7 @@ function startPortDrag(e, nodeId, portId, side) {
 | `string` | `string`, `string_array` | OCR 文本 → ContextBuild |
 | `string_array` | `string_array`, `messages` | STT History → ContextBuild |
 | `messages` | `messages` | ContextBuild → LLM |
-| `event` | `event` 连线 type | 仅用于事件流（trigger），不参与数据流校验 |
+| `event` | `event` 连线 type | 仅用于事件流，不参与数据流校验 |
 
 跨类型连接直接拒绝（视觉红色提示 + 不可松手创建）。
 
@@ -675,7 +675,7 @@ function startPortDrag(e, nodeId, portId, side) {
 ### 8.1 SVG 结构
 
 ```svg
-<svg class="connections-svg" width="1700" height="1250">
+<svg class="connections-svg" width="2000" height="1500">
   <defs> (箭头标记) </defs>
 
   <!-- 数据流连线 -->
@@ -810,8 +810,8 @@ function computePath(fromX, fromY, toX, toY) {
 ┌──────────────────────────────┐
 │ ⚙ 画布设置                    │
 │                              │
-│ 画布宽度  [____1700____] px  │
-│ 画布高度  [____1250____] px  │
+│ 画布宽度  [____2000____] px  │
+│ 画布高度  [____1500____] px  │
 │                              │
 │         [取消]    [保存]      │
 └──────────────────────────────┘
@@ -957,7 +957,7 @@ function computePath(fromX, fromY, toX, toY) {
 
 ### 16.1 总览
 
-共 9 种节点（与后端 `NodeRegistry` 中 `_TYPE_METADATA` 一致）：
+当前已注册的节点类型（通过 `@NodeRegistry.register()` 按需扩展，数量不固定）：
 
 | # | type | 名称 | 颜色 | 宽度 | 类别 | tabs |
 |---|------|------|------|------|------|------|

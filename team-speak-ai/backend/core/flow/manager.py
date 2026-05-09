@@ -158,7 +158,7 @@ class FlowManager:
             group=original.group,
             icon=original.icon,
             skill_prompt=original.skill_prompt,
-            canvas=dict(original.canvas) if original.canvas else {"width": 1700, "height": 1250},
+            canvas=dict(original.canvas) if original.canvas else {"width": 2000, "height": 1500},
             nodes=[NodeDefinition(
                 id=n.id, type=n.type, name=n.name,
                 position=dict(n.position), config=dict(n.config),
@@ -698,7 +698,7 @@ class FlowManager:
             icon=data.get("icon", "account_tree"),
             enabled=data.get("enabled", True),
             skill_prompt=data.get("skill_prompt", ""),
-            canvas=data.get("canvas", {"width": 1700, "height": 1250}),
+            canvas=data.get("canvas", {"width": 2000, "height": 1500}),
             nodes=nodes,
             connections=connections,
         )

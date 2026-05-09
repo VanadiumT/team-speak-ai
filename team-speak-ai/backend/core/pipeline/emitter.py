@@ -151,10 +151,16 @@ class EventEmitter:
 
     async def emit_important_update(self, title: str, content: str,
                                     event_type: str = "info", node_id: str = None):
+        from core.notification.manager import get_notification_manager
+        nm = get_notification_manager()
+        saved = nm.save(self._feature_id, title, content, event_type, node_id)
+
         params = {
+            "notification_id": saved["id"],
             "title": title,
             "content": content,
             "level": event_type,
+            "timestamp": saved["timestamp"],
         }
         if node_id:
             params["node_id"] = node_id

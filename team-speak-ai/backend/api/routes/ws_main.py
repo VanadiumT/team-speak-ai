@@ -21,6 +21,7 @@ from core.pipeline.definition import NodeDefinition, ConnectionDef
 from core.flow.manager import get_flow_manager
 from core.history.manager import get_history_manager
 from core.config.defaults import get_defaults_manager
+from core.notification.manager import get_notification_manager
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +143,17 @@ async def ws_main(websocket: WebSocket):
 
         # 3. 服务连接状态
         await _broadcast_connection_status(websocket, flow_id)
+
+        # 4. 通知未读计数
+        nm = get_notification_manager()
+        tree = fm.build_sidebar_tree()
+        for fid in _collect_flow_ids(tree):
+            count = nm.get_unread_count(fid)
+            if count > 0:
+                await _send(websocket, "_system", "event", "notification.unread", {
+                    "flow_id": fid,
+                    "unread": count,
+                })
 
         # 消息循环（文本 + 二进制帧）
         while True:
@@ -703,6 +715,11 @@ async def handle_connection_create(websocket: WebSocket, flow_id: str, msg_id: s
     to_port = params["to_port"]
     conn_type = params.get("type", "data")
 
+    # 校验 type 白名单
+    if conn_type not in ("data", "event"):
+        await _send_error(websocket, flow_id, "INVALID_TYPE", f"Invalid connection type: {conn_type!r}", msg_id)
+        return
+
     # 校验
     err = fm.validate_connection(flow_id, from_node, from_port, to_node, to_port)
     if err:
@@ -984,6 +1001,34 @@ async def handle_file_upload_cancel(websocket: WebSocket, flow_id: str, msg_id: 
     await _send_ack(websocket, flow_id, msg_id)
 
 
+# ── Phase 4: 通知 ──────────────────────────────────────────────
+
+async def handle_notification_list(websocket: WebSocket, flow_id: str, msg_id: str,
+                                   params: dict) -> None:
+    """查询历史通知（分页）"""
+    nm = get_notification_manager()
+    target_flow_id = params.get("flow_id", flow_id)
+    limit = params.get("limit", 20)
+    before = params.get("before")
+    result = nm.list_notifications(target_flow_id, limit, before)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _send(websocket, target_flow_id, "event", "notification.list_result", result)
+
+
+async def handle_notification_mark_read(websocket: WebSocket, flow_id: str, msg_id: str,
+                                        params: dict) -> None:
+    """标记已读（单条或全部）"""
+    nm = get_notification_manager()
+    target_flow_id = params.get("flow_id", flow_id)
+    notification_id = params.get("notification_id")
+    unread = nm.mark_read(target_flow_id, notification_id)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _send(websocket, target_flow_id, "event", "notification.read", {
+        "notification_id": notification_id,
+        "unread": unread,
+    })
+
+
 # ── 命令路由表 ─────────────────────────────────────────────────
 
 _COMMAND_HANDLERS = {
@@ -1028,6 +1073,9 @@ _COMMAND_HANDLERS = {
     # Phase 3: 文件上传
     "file.upload_start": handle_file_upload_start,
     "file.upload_cancel": handle_file_upload_cancel,
+    # Phase 4: 通知
+    "notification.list": handle_notification_list,
+    "notification.mark_read": handle_notification_mark_read,
 }
 
 
@@ -1162,6 +1210,19 @@ async def _push_history_state(websocket: WebSocket, flow_id: str) -> None:
         await _send(websocket, flow_id, "event", "history.state", state)
     except RuntimeError:
         pass
+
+
+# ── 侧栏工具 ──────────────────────────────────────────────────
+
+def _collect_flow_ids(nodes) -> list[str]:
+    """递归收集侧栏树中所有 flow_id"""
+    result = []
+    for node in nodes:
+        if node.flow_id:
+            result.append(node.flow_id)
+        if node.children:
+            result.extend(_collect_flow_ids(node.children))
+    return result
 
 
 # ── 侧栏序列化 ─────────────────────────────────────────────────

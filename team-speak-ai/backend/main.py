@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
-from api.routes import ws_teamspeak, ws_pipeline, ws_main
+from api.routes import ws_teamspeak, ws_main
 
 logging.basicConfig(
     level=logging.DEBUG if settings.debug else logging.INFO,
@@ -30,9 +30,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(ws_teamspeak.router)
-app.include_router(ws_pipeline.router)
-app.include_router(ws_main.router)  # 统一 /ws 端点
+app.include_router(ws_teamspeak.router)  # /ws/teamspeak — 语音桥接
+app.include_router(ws_main.router)       # /ws — 统一管理端点
 
 
 @app.get("/")

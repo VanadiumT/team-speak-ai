@@ -193,7 +193,7 @@
 | 右侧详情面板 | 320px (fixed) | top:56px, bottom:32px |
 | 底部状态栏 | 100% (fixed) | 32px |
 | 主画布区域 | flex-1, ml-64 | 可滚动 |
-| 画布 | 1700px | 1250px（可缩放） |
+| 画布 | 2000px | 1500px（可缩放） |
 | 节点卡片宽度 | 220px / 250px / 280px / 320px | 取决于节点复杂度 |
 | 工作流徽章 | 24px × 24px | 圆形，位于节点右上角 -10px 偏移 |
 | I/O 端口 | 14px × 14px | 圆形 |
@@ -818,7 +818,7 @@ background-size: 32px 32px;
 opacity: 0.15;
 ```
 
-**尺寸：** 1700px × 1250px（可缩放，`transform-origin: 0 0`）。
+**尺寸：** 2000px × 1500px（可缩放，`transform-origin: 0 0`）。
 
 **中键拖拽：** mouse button === 1 激活平移，cursor 变为 `grabbing`。
 

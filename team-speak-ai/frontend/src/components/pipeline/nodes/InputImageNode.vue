@@ -9,14 +9,14 @@
         <span class="upload-hint">PNG / JPG / WebP · 最大 10 MB</span>
       </div>
 
-      <!-- PROCESSING: progress bar -->
-      <div v-else-if="status === 'processing'" class="upload-progress">
+      <!-- PROCESSING: progress bar (优先显示 files store 实时进度) -->
+      <div v-else-if="status === 'processing' || (uploadState && uploadState.status === 'uploading')" class="upload-progress">
         <span class="material-symbols-outlined spin-icon">sync</span>
         <span class="progress-label">上传中...</span>
         <div class="mini-bar">
-          <div class="mini-bar-fill" :style="{ width: (progress ?? 0) * 100 + '%' }" />
+          <div class="mini-bar-fill" :style="{ width: uploadPercent + '%' }" />
         </div>
-        <span class="progress-pct">{{ Math.round((progress ?? 0) * 100) }}%</span>
+        <span class="progress-pct">{{ uploadPercent }}%</span>
       </div>
 
       <!-- COMPLETED: file info -->
@@ -70,6 +70,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useEditorStore } from '@/stores/editor'
+import { useFilesStore } from '@/stores/files'
 import NodeConfigForm from './NodeConfigForm.vue'
 import NodeIODataView from './NodeIODataView.vue'
 import NodeIOMgmt from './NodeIOMgmt.vue'
@@ -90,6 +91,15 @@ const props = defineProps({
 })
 
 const editorStore = useEditorStore()
+const filesStore = useFilesStore()
+
+// 从 files store 获取当前节点的上传状态（实时进度）
+const uploadState = computed(() => filesStore.getUploadByNodeId(props.node.id))
+const uploadPercent = computed(() => {
+  const u = uploadState.value
+  if (u && u.total > 0) return Math.round((u.received / u.total) * 100)
+  return Math.round((props.progress ?? 0) * 100)
+})
 
 const configFields = [
   { key: 'accepted_formats', label: '接受格式', type: 'checkbox-group', options: [
@@ -117,7 +127,6 @@ function onTogglePort(portId, show) {
 }
 
 function triggerUpload() {
-  // Trigger file input via pipelineView or parent — for now placeholder
   const input = document.createElement('input')
   input.type = 'file'
   input.accept = 'image/png,image/jpeg,image/webp'
@@ -125,7 +134,19 @@ function triggerUpload() {
     const file = e.target.files?.[0]
     if (!file) return
     const { pipelineSocket } = await import('@/api/pipeline')
-    await pipelineSocket.uploadFile(editorStore.flowId, file, props.node.id)
+    let uploadId = null
+    try {
+      await pipelineSocket.uploadFile(editorStore.flowId, file, props.node.id, (id) => {
+        uploadId = id
+        filesStore.registerUpload(id, {
+          nodeId: props.node.id,
+          fileName: file.name,
+          fileSize: file.size,
+        })
+      })
+    } catch (err) {
+      if (uploadId) filesStore.markError(uploadId, err.message || '上传失败')
+    }
   }
   input.click()
 }
