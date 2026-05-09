@@ -39,10 +39,6 @@
             <span class="material-symbols-outlined">redo</span>
           </button>
         </template>
-        <!-- 画布设置（编辑模式下右键画布或空面板打开） -->
-        <button v-if="activeFlowId && editorStore.editMode" class="top-btn ghost-btn" @click="showCanvasSettings = true" title="画布设置">
-          <span class="material-symbols-outlined">aspect_ratio</span>
-        </button>
         <NotificationBell />
       </div>
     </header>
@@ -165,25 +161,6 @@
       </div>
     </div>
 
-    <!-- ═══ Canvas Settings Modal ═══ -->
-    <div v-if="showCanvasSettings" class="modal-overlay" @click.self="showCanvasSettings = false">
-      <div class="modal-card modal-sm">
-        <h3 class="modal-title"><span class="material-symbols-outlined">aspect_ratio</span> 画布设置</h3>
-        <div class="modal-field-row">
-          <label>宽度 (px)</label>
-          <input v-model.number="canvasForm.width" type="number" class="modal-input" min="800" max="5000" />
-        </div>
-        <div class="modal-field-row">
-          <label>高度 (px)</label>
-          <input v-model.number="canvasForm.height" type="number" class="modal-input" min="600" max="5000" />
-        </div>
-        <div class="modal-actions">
-          <button class="btn-cancel" @click="showCanvasSettings = false">取消</button>
-          <button class="btn-save" @click="doSaveCanvas">保存</button>
-        </div>
-      </div>
-    </div>
-
     <!-- ═══ Rename Modal ═══ -->
     <div v-if="renameDialog.visible" class="modal-overlay" @click.self="renameDialog.visible = false">
       <div class="modal-card modal-sm">
@@ -253,7 +230,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { pipelineSocket } from '@/api/pipeline.js'
 import { useEditorStore } from '@/stores/editor.js'
 import { useExecutionStore } from '@/stores/execution.js'
@@ -277,14 +254,11 @@ const activeFlowId = ref(null)
 const selectedNode = ref(null)
 const showFlowCreate = ref(false)
 const showGroupCreate = ref(false)
-const showCanvasSettings = ref(false)
 const importInput = ref(null)
 const importGroupInput = ref(null)
 
 const flowForm = reactive({ name: '', group: '', icon: 'sports_esports' })
 const groupForm = reactive({ path: '', icon: 'folder' })
-const canvasForm = reactive({ width: 1700, height: 1250 })
-
 // Rename dialog
 const renameDialog = reactive({ visible: false, title: '', value: '', flowId: '', groupPath: '' })
 
@@ -411,19 +385,6 @@ async function doCreateGroup() {
   groupForm.path = ''
   groupForm.icon = 'folder'
 }
-
-// ── Canvas Settings ──
-function doSaveCanvas() {
-  editorStore.flowMeta.canvas = { width: canvasForm.width, height: canvasForm.height }
-  pipelineSocket.sendCommand(editorStore.flowId, 'flow.update', {
-    canvas: { width: canvasForm.width, height: canvasForm.height },
-  }).catch(() => {})
-  showCanvasSettings.value = false
-}
-
-watch(() => editorStore.flowMeta.canvas, (c) => {
-  if (c) { canvasForm.width = c.width; canvasForm.height = c.height }
-})
 
 // ── Sidebar ⋮ context menu ──
 const contextMenu = reactive({ visible: false, x: 0, y: 0, items: [] })

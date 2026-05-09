@@ -23,7 +23,20 @@ export const useEditorStore = defineStore('editor', () => {
   const dirtyFields = ref(new Set()) // 待保存的字段（使用新 Set 替换保证响应式）
 
   // ── 计算属性 ──
-  const canvasSize = computed(() => flowMeta.value.canvas || { width: 1700, height: 1250 })
+  const BASE_CANVAS = { width: 2000, height: 1500 }
+  const NODE_W = { input_image: 220, ocr: 220, tts: 220, ts_output: 220, ts_input: 220, context_build: 250, llm: 250, stt_history: 280, stt_listen: 320 }
+  const CANVAS_PAD = 400  // 节点超出后额外留白
+
+  const canvasSize = computed(() => {
+    let w = BASE_CANVAS.width, h = BASE_CANVAS.height
+    for (const node of nodes.value) {
+      const nw = (NODE_W[node.type] || 250) + CANVAS_PAD
+      const nh = 200 + CANVAS_PAD  // 估算节点高度 + 留白
+      if (node.position.x + nw > w) w = node.position.x + nw
+      if (node.position.y + nh > h) h = node.position.y + nh
+    }
+    return { width: Math.max(w, 800), height: Math.max(h, 600) }
+  })
 
   // ── 模式切换 ──
   function enterEditMode() {
