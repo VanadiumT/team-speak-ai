@@ -259,7 +259,7 @@ function onDragStart(e) {
   if (e.button !== 0) return
   e.stopPropagation()
   if (!props.editMode || editorStore.isReadOnly) return
-  if (e.target.closest('.io-port')) return
+  if (e.target.closest('.io-port') || e.target.closest('input, textarea, button, select, label')) return
   if (nodeDragActive) return
 
   nodeDragActive = true

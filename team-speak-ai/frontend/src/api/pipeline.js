@@ -160,8 +160,8 @@ class PipelineSocket {
   /**
    * 发送命令，返回 Promise<params> (对应 ack 后的事件 params)
    */
-  sendCommand(flowId, action, params = {}) {
-    const msgId = crypto.randomUUID()
+  sendCommand(flowId, action, params = {}, msgId = null) {
+    msgId = msgId || crypto.randomUUID()
     const msg = {
       msg_id: msgId,
       flow_id: flowId,
@@ -213,13 +213,13 @@ class PipelineSocket {
   async uploadFile(flowId, file, nodeId = null, onReady = null) {
     const msgId = crypto.randomUUID()
 
-    // ① 发起上传请求
+    // ① 发起上传请求（使用同一 msgId，后续二进制帧共用）
     await this.sendCommand(flowId, 'file.upload_start', {
       name: file.name,
       size: file.size,
       mime_type: file.type,
       node_id: nodeId,
-    })
+    }, msgId)
 
     // ② 等待 ready 事件
     const readyEvent = await this._waitForEvent('file.upload_ready', 10000)

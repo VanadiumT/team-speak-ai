@@ -22,6 +22,7 @@ class InputImageNode(BaseNode):
 
     async def execute(self, context: NodeContext, emit: EventEmitter) -> NodeOutput:
         file_input = context.inputs.get("file", {})
+        notify_on_reach = self.config.get("notify_on_reach", True)
 
         # file_input can be a string (base64 data), a dict with metadata, or empty
         if isinstance(file_input, str):
@@ -37,6 +38,28 @@ class InputImageNode(BaseNode):
             filename = "unknown"
             mime_type = ""
 
+        # No file uploaded yet — pause and notify user
+        if not file_data:
+            if notify_on_reach:
+                await emit.emit_important_update(
+                    "请上传图片",
+                    "流程已到达上传图片节点，请上传图片后继续。",
+                    event_type="info",
+                    node_id=context.node_id,
+                )
+
+            await emit.emit_node_log_entry(
+                context.node_id, "info",
+                "等待用户上传图片...",
+            )
+
+            await emit.emit_node_status_changed(
+                context.node_id, "processing",
+                summary="等待上传...",
+            )
+
+            return NodeOutput(data={"status": "waiting"}, trigger_next=False)
+
         # Ensure data is string, not bytes
         if isinstance(file_data, bytes):
             import base64
@@ -48,11 +71,17 @@ class InputImageNode(BaseNode):
             "mime_type": mime_type,
         }
 
-        await emit.emit_node_update(
-            context.node_id,
-            "completed",
-            f"已接收: {filename}",
+        await emit.emit_node_status_changed(context.node_id, "processing")
+
+        await emit.emit_node_log_entry(
+            context.node_id, "info",
+            f"已接收图片: {filename}",
+        )
+
+        await emit.emit_node_status_changed(
+            context.node_id, "completed",
+            summary=f"已接收: {filename}",
             data=result,
         )
 
-        return NodeOutput(result)
+        return NodeOutput(data=result, trigger_next=True)

@@ -353,13 +353,20 @@ class PipelineEngine:
                 except Exception as e:
                     logger.exception(f"Start node execution error for {pd.id}: {e}")
                 finally:
-                    # 全部执行完毕后自动结束（无 listener 节点的流程）
-                    self._running_flows.discard(pd.id)
-                    try:
-                        emit = EventEmitter(self, pd.id)
-                        await emit.emit_pipeline_complete(execution_id)
-                    except Exception as e2:
-                        logger.error(f"Failed to emit pipeline.completed for {pd.id}: {e2}")
+                    # 检查是否所有非监听节点已完成（有等待中的节点则不结束）
+                    inst = self.get_instance(execution_id)
+                    all_done = inst and all(
+                        rt.status in (NodeState.COMPLETED, NodeState.ERROR)
+                        for nid, rt in inst.node_runtimes.items()
+                        if not any(n.listener for n in pd.nodes if n.id == nid)
+                    )
+                    if all_done:
+                        self._running_flows.discard(pd.id)
+                        try:
+                            emit = EventEmitter(self, pd.id)
+                            await emit.emit_pipeline_complete(execution_id)
+                        except Exception as e2:
+                            logger.error(f"Failed to emit pipeline.completed for {pd.id}: {e2}")
             asyncio.ensure_future(run_start_nodes())
         else:
             # 无 start 节点也无 listener → 立即完成
@@ -448,32 +455,31 @@ class PipelineEngine:
 
         try:
             output = await node_cls.execute(ctx, emit)
-            runtime.status = NodeState.COMPLETED
             runtime.output = output
-            runtime.summary = str(output.data)[:80] if output.data else "完成"
 
-            await emit.emit_node_status_changed(node_id, "completed",
-                summary=runtime.summary, data=output.data)
-            await emit.emit_node_complete(node_id, output.data)
-            await emit.emit_node_log_entry(node_id, "success", f"完成: {runtime.summary}")
-            log_pipeline_event(PipelineEvent(
-                event_type="node_complete",
-                pipeline_id=pd.id,
-                execution_id=execution_id,
-                node_id=node_id,
-                data={"summary": runtime.summary},
-            ))
-
-            # 累积到 instance context
-            for k, v in output.data.items():
-                if k in instance.accumulated_context:
-                    if isinstance(instance.accumulated_context[k], list):
-                        instance.accumulated_context[k].append(v)
-                    else:
-                        instance.accumulated_context[k] = v
-
-            # 自动触发下游（如果有 next_on_complete 配置）
             if output.trigger_next:
+                runtime.status = NodeState.COMPLETED
+                runtime.summary = str(output.data.get("text", output.data.get("value", "")))[:40] if output.data else "完成"
+
+                await emit.emit_node_complete(node_id, output.data)
+                await emit.emit_node_log_entry(node_id, "success", f"完成: {runtime.summary}")
+                log_pipeline_event(PipelineEvent(
+                    event_type="node_complete",
+                    pipeline_id=pd.id,
+                    execution_id=execution_id,
+                    node_id=node_id,
+                    data={"summary": runtime.summary},
+                ))
+
+                # 累积到 instance context
+                for k, v in output.data.items():
+                    if k in instance.accumulated_context:
+                        if isinstance(instance.accumulated_context[k], list):
+                            instance.accumulated_context[k].append(v)
+                        else:
+                            instance.accumulated_context[k] = v
+
+                # 自动触发下游
                 await self._trigger_downstream(instance, node_id)
 
         except Exception as e:
@@ -575,6 +581,17 @@ class PipelineEngine:
         for nid in triggered:
             await self.execute_node(instance.execution_id, nid)
 
+        # 检查是否所有非监听节点已完成（含等待中节点的流程不结束）
+        all_done = all(
+            rt.status in (NodeState.COMPLETED, NodeState.ERROR)
+            for nid, rt in instance.node_runtimes.items()
+            if not any(n.listener for n in pd.nodes if n.id == nid)
+        )
+        if all_done:
+            self._running_flows.discard(pd.id)
+            emit = EventEmitter(self, pd.id)
+            await emit.emit_pipeline_complete(instance.execution_id)
+
     async def _fail_node(self, instance: PipelineInstance, node_id: str, error: str, emit: EventEmitter = None):
         runtime = instance.get_runtime(node_id)
         if runtime:
@@ -636,7 +653,7 @@ def _port_input_key(port_id: str) -> str:
 
 
 def _port_output_key(port_id: str) -> str:
-    KNOWN = {"data-out": "value", "text-out": "text", "trigger-out": None}
+    KNOWN = {"data-out": "value", "text-out": "text", "img-out": "file", "ocr-out": "text", "line-count": "line_count", "provider": "provider", "trigger-out": None}
     if port_id in KNOWN:
         return KNOWN[port_id]
     return port_id.replace("-out", "") if port_id.endswith("-out") else port_id
@@ -658,8 +675,11 @@ def _sync_connections_to_nodes(pd: PipelineDefinition) -> None:
         elif conn.type == "data":
             as_field = _port_input_key(conn.to_port)
             source_field = _port_output_key(conn.from_port)
-            if not any(m.from_node == conn.from_node and m.as_field == as_field
-                       for m in target.input_mappings):
+            existing = next((m for m in target.input_mappings
+                           if m.from_node == conn.from_node and m.as_field == as_field), None)
+            if existing:
+                existing.source_field = source_field
+            else:
                 target.input_mappings.append(InputMapping(
                     from_node=conn.from_node,
                     as_field=as_field,

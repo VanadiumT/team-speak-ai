@@ -49,7 +49,7 @@ const hasMore = computed(() => props.logs.length > props.limit)
   border-radius: 2px;
 }
 .log-ts { color: #64748b; flex-shrink: 0; }
-.log-msg { color: #c1c6d7; word-break: break-all; }
+.log-msg { color: #c1c6d7; word-break: break-all; white-space: pre-wrap; min-width: 0; }
 
 .log-muted .log-msg { color: #64748b; }
 .log-info .log-msg { color: #adc7ff; }

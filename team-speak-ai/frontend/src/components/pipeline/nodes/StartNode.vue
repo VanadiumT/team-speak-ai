@@ -66,6 +66,10 @@
       <NodeIODataView :node="node" :input-ports="inputPorts" :output-ports="outputPorts" />
     </template>
 
+    <template v-if="activeTab === 'io-mgmt' && editMode">
+      <NodeIOMgmt :node="node" :edit-mode="editMode" :input-ports="inputPorts" :output-ports="outputPorts" @toggle-port="onTogglePort" />
+    </template>
+
     <template v-if="activeTab === 'log'">
       <NodeLogView :logs="logs" />
     </template>
@@ -76,6 +80,7 @@
 import { computed } from 'vue'
 import { useEditorStore } from '@/stores/editor'
 import NodeIODataView from './NodeIODataView.vue'
+import NodeIOMgmt from './NodeIOMgmt.vue'
 import NodeLogView from './NodeLogView.vue'
 
 const props = defineProps({
@@ -86,6 +91,7 @@ const props = defineProps({
   data: { type: Object, default: () => ({}) },
   config: { type: Object, default: () => ({}) },
   logs: { type: Array, default: () => [] },
+  inputPorts: { type: Array, default: () => [] },
   outputPorts: { type: Array, default: () => [] },
 })
 
@@ -97,11 +103,26 @@ const paramsList = computed(() => {
 })
 
 function updateInitParams(changed) {
-  const current = { ...(props.config?.init_params || {}) }
+  const oldParams = { ...(props.config?.init_params || {}) }
+  const current = { ...oldParams }
   Object.assign(current, changed)
   // Remove keys set to undefined
   Object.keys(current).forEach(k => { if (current[k] === undefined) delete current[k] })
+
+  // Update node config
   editorStore.updateConfigImmediate(props.node.id, { init_params: current })
+
+  // Sync to flow params: handle adds, changes, and deletes individually
+  for (const key of Object.keys(oldParams)) {
+    if (!(key in current)) {
+      editorStore.deleteFlowParam(key)
+    }
+  }
+  for (const [key, value] of Object.entries(current)) {
+    if (oldParams[key] !== value) {
+      editorStore.updateFlowParams({ [key]: value })
+    }
+  }
 }
 
 function onAutoRunToggle(e) {
@@ -116,11 +137,8 @@ function addParam() {
 function onParamKeyChange(oldKey, newKey) {
   newKey = newKey.trim()
   if (!newKey || oldKey === newKey) return
-  const current = { ...(props.config?.init_params || {}) }
-  const value = current[oldKey]
-  current[newKey] = value
-  delete current[oldKey]
-  editorStore.updateConfigImmediate(props.node.id, { init_params: current })
+  const value = (props.config?.init_params || {})[oldKey]
+  updateInitParams({ [oldKey]: undefined, [newKey]: value })
 }
 
 function onParamValueChange(key, newValue) {
@@ -129,6 +147,12 @@ function onParamValueChange(key, newValue) {
 
 function removeParam(key) {
   updateInitParams({ [key]: undefined })
+}
+
+function onTogglePort(portId, show) {
+  const vis = new Set(props.node.config?._visible_ports || [])
+  if (show) vis.add(portId); else vis.delete(portId)
+  editorStore.updateConfigImmediate(props.node.id, { _visible_ports: [...vis] })
 }
 </script>
 

@@ -40,7 +40,6 @@
             :value="item.value"
             placeholder="value"
             rows="1"
-            :disabled="!editorStore.editMode"
             @input="onInput"
             @change="onValueChange(item.key, $event.target.value)"
             data-fpp-textarea

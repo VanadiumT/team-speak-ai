@@ -5,6 +5,7 @@ DisplayText 节点 — 文本显示/输入
 """
 
 import logging
+import re
 
 from core.nodes.base import BaseNode
 from core.pipeline.context import NodeContext, NodeOutput
@@ -12,6 +13,24 @@ from core.pipeline.emitter import EventEmitter
 from core.pipeline.registry import NodeRegistry
 
 logger = logging.getLogger(__name__)
+
+_VAR_PATTERN = re.compile(r'\$(param|sys)\.(\w+)')
+
+
+def _resolve_vars(text: str, context: NodeContext) -> str:
+    """Replace $param.key and $sys.key with actual values."""
+    from core.variables.manager import get_sys_var_manager
+
+    def replacer(match):
+        var_type = match.group(1)
+        key = match.group(2)
+        if var_type == "param":
+            return str(context.accumulated_context.get(key, match.group(0)))
+        else:
+            svm = get_sys_var_manager()
+            return str(svm.get(key, match.group(0)))
+
+    return _VAR_PATTERN.sub(replacer, text)
 
 
 @NodeRegistry.register("display_text")
@@ -28,7 +47,7 @@ class DisplayTextNode(BaseNode):
         if mode == "passthrough" and upstream_text is not None:
             text = str(upstream_text)
         else:
-            text = static_text
+            text = _resolve_vars(static_text, context)
 
         await emit.emit_node_status_changed(context.node_id, "processing")
 

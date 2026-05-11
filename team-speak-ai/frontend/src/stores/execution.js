@@ -28,6 +28,7 @@ export const useExecutionStore = defineStore('execution', () => {
 
   function getNodeLogs(nodeId, limit = DEFAULT_LOG_DISPLAY) {
     const logs = nodeLogs.value[nodeId] || []
+    if (!limit) return logs
     return logs.slice(-limit)
   }
 

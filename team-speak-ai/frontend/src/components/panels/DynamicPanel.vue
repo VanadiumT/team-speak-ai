@@ -124,11 +124,15 @@ const nodeTypeDef = computed(() =>
 
 const tabs = computed(() => {
   const t = nodeTypeDef.value?.tabs || []
+  // 流程模式隐藏编辑专用 tab：config、io-mgmt
+  const filtered = props.readonly
+    ? t.filter(tb => tb.id !== 'config' && tb.id !== 'io-mgmt')
+    : t
   // Always include io-data tab
-  if (!t.some(tb => tb.id === 'io-data')) {
-    return [...t, { id: 'io-data', label: 'IO数据' }]
+  if (!filtered.some(tb => tb.id === 'io-data')) {
+    return [...filtered, { id: 'io-data', label: 'IO数据' }]
   }
-  return t
+  return filtered
 })
 
 const nodeIcon = computed(() => nodeTypeDef.value?.icon || 'smart_toy')
@@ -140,7 +144,7 @@ const nodeState = computed(() =>
 const nodeStatus = computed(() => nodeState.value.status)
 
 const nodeLogs = computed(() =>
-  props.node ? executionStore.getNodeLogs(props.node.id, 50) : []
+  props.node ? executionStore.getNodeLogs(props.node.id, 0) : []
 )
 
 // Filter out internal config keys for display
@@ -310,11 +314,14 @@ function onTogglePort(portId, show) {
 .dp-log {
   font-size: 10px; font-family: 'Space Grotesk', sans-serif;
   display: flex; flex-direction: column; gap: 4px;
+  max-height: calc(100vh - 180px);
+  overflow-y: auto;
 }
 
 .dp-empty-log { color: #64748b; text-align: center; padding: 24px; }
 
 .log-line { display: flex; gap: 6px; }
+.log-msg { word-break: break-all; white-space: pre-wrap; min-width: 0; }
 
 .log-time { color: #64748b; flex-shrink: 0; }
 

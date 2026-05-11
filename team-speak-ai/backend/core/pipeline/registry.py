@@ -34,6 +34,7 @@ def _build_metadata():
                 TabDef(id="config", label="配置"),
                 TabDef(id="detail", label="详情"),
                 TabDef(id="io-data", label="IO数据"),
+                TabDef(id="io-mgmt", label="IO管理"),
                 TabDef(id="log", label="日志"),
             ],
             ports=PortsDef(
@@ -46,16 +47,21 @@ def _build_metadata():
         ),
         NodeTypeDef(
             type="input_image", name="上传图片", icon="upload_file", color="secondary",
-            default_config={"accepted_formats": ["png", "jpg", "webp"], "max_size_mb": 10},
+            default_config={"accepted_formats": ["png", "jpg", "webp"], "max_size_mb": 10, "notify_on_reach": True},
             tabs=[
+                TabDef(id="config", label="配置"),
                 TabDef(id="detail", label="详情"),
                 TabDef(id="io-data", label="IO数据"),
+                TabDef(id="io-mgmt", label="IO管理"),
+                TabDef(id="log", label="日志"),
             ],
             ports=PortsDef(
-                inputs=[],
+                inputs=[
+                    port("left", 55, "trigger-in", "触发", "event", _on),
+                ],
                 outputs=[
                     port("right", 30, "img-out", "图片数据 (PNG/JPG)", "image"),
-                    port("right", 72, "trigger-out", "触发信号", "event"),
+                    port("right", 72, "trigger-out", "触发信号", "event", _on),
                 ],
             ),
         ),
@@ -77,8 +83,8 @@ def _build_metadata():
                 outputs=[
                     port("right", 30, "ocr-out", "OCR文本 (String)", "string"),
                     port("right", 68, "done", "完成", "event", _on),
-                    port("right", 106, "meta-confidence", "平均置信度", "number", _on),
-                    port("right", 144, "meta-region-count", "识别区域数", "number", _on),
+                    port("right", 106, "line-count", "识别行数", "number", _on),
+                    port("right", 144, "provider", "识别引擎", "string", _on),
                 ],
             ),
         ),

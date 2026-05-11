@@ -1,0 +1,72 @@
+{
+  "id": "测试_显示系统和流程变量",
+  "name": "测试-显示系统和流程变量",
+  "group": "测试/开始",
+  "icon": "sports_esports",
+  "enabled": true,
+  "skill_prompt": "",
+  "canvas": {
+    "width": 2000,
+    "height": 1500
+  },
+  "params": {
+    "test1": "1",
+    "test2": "2",
+    "test3": "3"
+  },
+  "nodes": [
+    {
+      "id": "start_0a970b",
+      "type": "start",
+      "name": "开始",
+      "position": {
+        "x": 265,
+        "y": 134
+      },
+      "config": {
+        "auto_run": true,
+        "init_params": {
+          "test1": "1",
+          "test2": "2",
+          "test3": "3"
+        }
+      },
+      "input_mappings": [],
+      "trigger": null,
+      "listener": false
+    },
+    {
+      "id": "display_text_02ed72",
+      "type": "display_text",
+      "name": "文本显示",
+      "position": {
+        "x": 699,
+        "y": 95
+      },
+      "config": {
+        "text": "$param.test1+$param.test2=$param.test3",
+        "mode": "static",
+        "_visible_ports": [
+          "trigger-in"
+        ]
+      },
+      "input_mappings": [],
+      "trigger": {
+        "type": "on_complete",
+        "source_node": "start_0a970b",
+        "keywords": []
+      },
+      "listener": false
+    }
+  ],
+  "connections": [
+    {
+      "id": "conn_c66e8d98",
+      "from_node": "start_0a970b",
+      "from_port": "event-out",
+      "to_node": "display_text_02ed72",
+      "to_port": "trigger-in",
+      "type": "event"
+    }
+  ]
+}

@@ -1,0 +1,107 @@
+{
+  "id": "测试1",
+  "name": "测试-最基础的流程",
+  "group": "测试/开始",
+  "icon": "sports_esports",
+  "enabled": true,
+  "skill_prompt": "",
+  "canvas": {
+    "width": 2000,
+    "height": 1500
+  },
+  "params": {
+    "test": "111111",
+    "test2": "132444444"
+  },
+  "nodes": [
+    {
+      "id": "start_d84aca",
+      "type": "start",
+      "name": "开始",
+      "position": {
+        "x": 229,
+        "y": 152
+      },
+      "config": {
+        "auto_run": true,
+        "init_params": {
+          "test": "111111"
+        },
+        "_visible_ports": [
+          "data-out"
+        ]
+      },
+      "input_mappings": [],
+      "trigger": null,
+      "listener": false
+    },
+    {
+      "id": "flow_var_read_3a8499",
+      "type": "flow_var_read",
+      "name": "读取流程参数",
+      "position": {
+        "x": 610,
+        "y": 131
+      },
+      "config": {
+        "key": "test2",
+        "default_value": "",
+        "_visible_ports": [
+          "trigger-in",
+          "done"
+        ]
+      },
+      "input_mappings": [],
+      "trigger": {
+        "type": "on_complete",
+        "source_node": "start_d84aca",
+        "keywords": []
+      },
+      "listener": false
+    },
+    {
+      "id": "display_text_a5a2fe",
+      "type": "display_text",
+      "name": "文本显示",
+      "position": {
+        "x": 1008,
+        "y": 127
+      },
+      "config": {
+        "text": "",
+        "mode": "passthrough",
+        "_visible_ports": [
+          "text-in"
+        ]
+      },
+      "input_mappings": [
+        {
+          "from_node": "flow_var_read_3a8499",
+          "as_field": "text",
+          "source_field": "value",
+          "required": true
+        }
+      ],
+      "trigger": null,
+      "listener": false
+    }
+  ],
+  "connections": [
+    {
+      "id": "conn_800b095a",
+      "from_node": "start_d84aca",
+      "from_port": "event-out",
+      "to_node": "flow_var_read_3a8499",
+      "to_port": "trigger-in",
+      "type": "event"
+    },
+    {
+      "id": "conn_364b3812",
+      "from_node": "flow_var_read_3a8499",
+      "from_port": "data-out",
+      "to_node": "display_text_a5a2fe",
+      "to_port": "text-in",
+      "type": "data"
+    }
+  ]
+}

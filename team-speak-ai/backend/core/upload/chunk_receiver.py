@@ -23,13 +23,15 @@ MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB
 class UploadSession:
     """单个上传会话"""
     def __init__(self, upload_id: str, msg_id: str, name: str, size: int,
-                 mime_type: str, node_id: Optional[str], filepath: Path):
+                 mime_type: str, node_id: Optional[str], filepath: Path,
+                 flow_id: Optional[str] = None):
         self.upload_id = upload_id
         self.msg_id = msg_id
         self.name = name
         self.size = size
         self.mime_type = mime_type
         self.node_id = node_id
+        self.flow_id = flow_id
         self.filepath = filepath
         self.received = 0
         self.last_chunk_time = datetime.now(timezone.utc)
@@ -50,6 +52,7 @@ class ChunkReceiver:
 
     def start_upload(self, msg_id: str, name: str, size: int,
                      mime_type: str, node_id: Optional[str] = None,
+                     flow_id: Optional[str] = None,
                      received: int = 0) -> dict:
         """发起上传请求，返回 {upload_id}"""
         if size > self.max_file_size:
@@ -66,7 +69,7 @@ class ChunkReceiver:
         session = UploadSession(
             upload_id=upload_id, msg_id=msg_id,
             name=name, size=size, mime_type=mime_type,
-            node_id=node_id, filepath=filepath,
+            node_id=node_id, flow_id=flow_id, filepath=filepath,
         )
 
         # 打开文件（追加模式，支持断点续传）

@@ -74,6 +74,27 @@ const connsBySource = computed(() => {
   return m
 })
 
+// Port ID → data key mapping, mirrors backend _port_output_key
+const PORT_DATA_KEY = {
+  'data-out': 'value',
+  'text-out': 'text',
+  'img-out': 'file',
+  'ocr-out': 'text',
+  'line-count': 'line_count',
+  'provider': 'provider',
+  'llm-out': 'text',
+  'tts-out': 'audio',
+  'trigger-out': null,
+  'done': null,
+}
+
+function portDataKey(portId) {
+  if (portId in PORT_DATA_KEY) return PORT_DATA_KEY[portId]
+  if (portId.endsWith('-out')) return portId.replace(/-out$/, '')
+  if (portId.endsWith('-in')) return portId.replace(/-in$/, '')
+  return portId
+}
+
 function getSourceRuntime(fromNodeId, fromPortId) {
   const rt = execStore.getNodeStatus(fromNodeId)
   if (!rt || !rt.data) return null
@@ -92,11 +113,22 @@ const inputRows = computed(() => {
     const conns = connsByTarget.value[key] || []
     const sourceName = conns.length > 0 ? nodeNameMap.value[conns[0].from_node] || conns[0].from_node : null
 
+    const isEventPort = port.data_type === 'event'
     let displayValue = null
-    if (conns.length > 0) {
+    if (isEventPort) {
+      // Input event port: mirror upstream output event port state
+      const srcId = conns.length > 0 ? conns[0].from_node : null
+      if (srcId) {
+        const srcStatus = execStore.getNodeStatus(srcId)
+        displayValue = srcStatus.status === 'completed' ? 'true' : 'false'
+      } else {
+        displayValue = 'false'
+      }
+    } else if (conns.length > 0) {
       const rt = getSourceRuntime(conns[0].from_node, conns[0].from_port)
       if (rt) {
-        const val = rt[conns[0].from_port] ?? rt.value ?? rt.text ?? rt
+        const dataKey = portDataKey(conns[0].from_port)
+        const val = (dataKey ? rt[dataKey] : null) ?? rt.value ?? rt.text ?? rt
         displayValue = formatValue(val)
       }
     }
@@ -117,12 +149,19 @@ const outputRows = computed(() => {
     const conns = connsBySource.value[key] || []
     const targetNames = conns.map(c => nodeNameMap.value[c.to_node] || c.to_node)
 
-    // Get this node's own runtime data
-    const rt = execStore.getNodeStatus(props.node.id)
+    const isEventPort = port.data_type === 'event'
     let displayValue = null
-    if (rt && rt.data) {
-      const val = rt.data[port.id] ?? rt.data.value ?? rt.data.text ?? rt.data
-      displayValue = formatValue(val)
+    if (isEventPort) {
+      // Output event port: true when node completed
+      const selfStatus = execStore.getNodeStatus(props.node.id)
+      displayValue = selfStatus.status === 'completed' ? 'true' : 'false'
+    } else {
+      const dataKey = portDataKey(port.id)
+      const rt = execStore.getNodeStatus(props.node.id)
+      if (rt && rt.data && dataKey) {
+        const val = rt.data[dataKey] ?? rt.data.value ?? rt.data.text ?? rt.data
+        displayValue = formatValue(val)
+      }
     }
 
     return {
@@ -169,7 +208,8 @@ const hasAnyData = computed(() =>
 .io-entry-value {
   font-size: 10px; color: #e0e2ed; margin-top: 2px;
   padding: 3px 6px; background: rgba(11,14,22,0.6); border-radius: 3px;
-  word-break: break-all; line-height: 1.4; max-height: 80px; overflow-y: auto;
+  word-break: break-all; line-height: 1.4; max-height: 200px; overflow-y: auto;
+  white-space: pre-wrap;
 }
 .io-entry-value.io-pre {
   font-family: 'Space Grotesk', sans-serif; font-size: 9px;

@@ -240,8 +240,36 @@ async def _handle_binary_frame(websocket: WebSocket, data: bytes) -> None:
 
         # 上传完成
         if received >= session.size:
+            filepath = session.filepath
+            flow_id = session.flow_id
+            node_id = session.node_id
             result = cr.complete_upload(msg_id)
             await _send(websocket, "_system", "event", "file.upload_done", result)
+
+            # 自动触发目标节点继续流程
+            if flow_id and node_id:
+                import base64
+                with open(filepath, "rb") as f:
+                    file_bytes = f.read()
+                b64_data = base64.b64encode(file_bytes).decode("ascii")
+                file_payload = {
+                    "data": b64_data,
+                    "filename": result["name"],
+                    "mime_type": result["mime_type"],
+                }
+                from core.pipeline.engine import engine
+                if not engine.is_running(flow_id):
+                    logger.info(f"Upload complete but flow {flow_id} is not running, skip auto-trigger")
+                else:
+                    execution_ids = [
+                        eid for eid, inst in engine._instances.items()
+                        if inst.pipeline_def.id == flow_id
+                    ]
+                    if execution_ids:
+                        await engine.execute_node(
+                            execution_ids[0], node_id,
+                            user_input={"file": file_payload},
+                        )
 
     except ValueError as e:
         logger.warning(f"Binary frame parse error: {e}")
@@ -1049,6 +1077,7 @@ async def handle_file_upload_start(websocket: WebSocket, flow_id: str, msg_id: s
         size=params["size"],
         mime_type=params.get("mime_type", "application/octet-stream"),
         node_id=params.get("node_id"),
+        flow_id=flow_id,
         received=params.get("received", 0),
     )
     await _send_ack(websocket, flow_id, msg_id)

@@ -5,8 +5,11 @@ OCR 节点 — 图片文字识别，支持多方案
 通过 config.settings.ocr_provider 切换引擎:
 - easyocr: 离线中英文识别
 - paddleocr: 百度 PaddleOCR，中文更优
+
+CPU 密集型操作（模型加载、推理）通过线程池执行，避免阻塞事件循环。
 """
 
+import asyncio
 import base64
 import logging
 import io
@@ -25,7 +28,8 @@ logger = logging.getLogger(__name__)
 _ocr_instance = None
 
 
-def _get_ocr():
+def _load_ocr():
+    """在调用线程中加载 OCR 模型（供 run_in_executor 使用）"""
     global _ocr_instance
     if _ocr_instance is None:
         provider = OCRProvider(settings.ocr_provider)
@@ -42,6 +46,12 @@ def _get_ocr():
     return _ocr_instance
 
 
+def _run_ocr(img_array):
+    """在调用线程中执行 OCR 识别（供 run_in_executor 使用）"""
+    ocr = _load_ocr()
+    return ocr.recognize(img_array)
+
+
 @NodeRegistry.register("ocr")
 class OCRNode(BaseNode):
     """图片文字识别节点 — 多方案 OCR"""
@@ -49,7 +59,7 @@ class OCRNode(BaseNode):
     node_type = "ocr"
 
     async def execute(self, context: NodeContext, emit: EventEmitter) -> NodeOutput:
-        file_input = context.inputs.get("file", "")
+        file_input = context.inputs.get("ocr", "")
         filename = context.inputs.get("filename", "unknown.png")
 
         if isinstance(file_input, dict):
@@ -81,18 +91,21 @@ class OCRNode(BaseNode):
 
         try:
             img_array = np.array(img)
-            ocr = _get_ocr()
-            result = ocr.recognize(img_array)
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(None, _run_ocr, img_array)
         except Exception as e:
             logger.exception("OCR recognition failed")
             await emit.emit_node_update(context.node_id, "error", f"OCR 识别失败: {e}")
             return NodeOutput({"text": "", "error": str(e)})
 
-        logger.info("=" * 50)
-        logger.info(f"OCR 识别结果 [{result.provider}] | 文件: {filename}")
-        logger.info(f"行数: {len(result.lines)} | 总字符: {len(result.text)}")
-        logger.info(f"识别文字:\n{result.text}")
-        logger.info("=" * 50)
+        await emit.emit_node_log_entry(
+            context.node_id, "success",
+            f"[{result.provider}] 识别到 {len(result.lines)} 行，{len(result.text)} 字符",
+        )
+        await emit.emit_node_log_entry(
+            context.node_id, "info",
+            f"识别文字:\n{result.text}",
+        )
 
         await emit.emit_node_update(
             context.node_id,

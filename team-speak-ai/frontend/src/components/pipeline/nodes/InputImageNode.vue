@@ -3,13 +3,20 @@
     <!-- Flow Mode + detail tab: upload area or file info -->
     <template v-if="!editMode || activeTab === 'detail'">
       <!-- PENDING: upload prompt -->
-      <div v-if="status === 'pending'" class="upload-zone" @click="triggerUpload">
+      <div v-if="status === 'pending'" class="upload-zone" @click.stop="triggerUpload">
         <span class="material-symbols-outlined upload-icon">upload_file</span>
         <span class="upload-text">点击或拖拽上传</span>
         <span class="upload-hint">PNG / JPG / WebP · 最大 10 MB</span>
       </div>
 
-      <!-- PROCESSING: progress bar (优先显示 files store 实时进度) -->
+      <!-- WAITING: 流程已到达，等待用户上传 -->
+      <div v-else-if="status === 'processing' && !isActivelyUploading" class="upload-zone" @click.stop="triggerUpload">
+        <span class="material-symbols-outlined upload-icon" style="color:#ffb695;">hourglass_top</span>
+        <span class="upload-text">等待上传...</span>
+        <span class="upload-hint">点击此处上传图片以继续流程</span>
+      </div>
+
+      <!-- UPLOADING: progress bar (实时进度) -->
       <div v-else-if="status === 'processing' || (uploadState && uploadState.status === 'uploading')" class="upload-progress">
         <span class="material-symbols-outlined spin-icon">sync</span>
         <span class="progress-label">上传中...</span>
@@ -34,7 +41,7 @@
       </div>
 
       <!-- Default pending state -->
-      <div v-else class="upload-zone" @click="triggerUpload">
+      <div v-else class="upload-zone" @click.stop="triggerUpload">
         <span class="material-symbols-outlined upload-icon">upload_file</span>
         <span class="upload-text">点击或拖拽上传</span>
       </div>
@@ -95,6 +102,9 @@ const filesStore = useFilesStore()
 
 // 从 files store 获取当前节点的上传状态（实时进度）
 const uploadState = computed(() => filesStore.getUploadByNodeId(props.node.id))
+const isActivelyUploading = computed(() =>
+  uploadState.value && uploadState.value.status === 'uploading'
+)
 const uploadPercent = computed(() => {
   const u = uploadState.value
   if (u && u.total > 0) return Math.round((u.received / u.total) * 100)
@@ -102,6 +112,7 @@ const uploadPercent = computed(() => {
 })
 
 const configFields = [
+  { key: 'notify_on_reach', label: '到达时通知上传', type: 'switch' },
   { key: 'accepted_formats', label: '接受格式', type: 'checkbox-group', options: [
     { value: 'png', label: 'PNG' }, { value: 'jpg', label: 'JPG' }, { value: 'webp', label: 'WebP' }
   ]},

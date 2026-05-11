@@ -1,0 +1,149 @@
+{
+  "id": "ocr识别流程",
+  "name": "测试-ocr识别流程",
+  "group": "测试/开始",
+  "icon": "sports_esports",
+  "enabled": true,
+  "skill_prompt": "",
+  "canvas": {
+    "width": 2000,
+    "height": 1500
+  },
+  "params": {},
+  "nodes": [
+    {
+      "id": "input_image_e08c0c",
+      "type": "input_image",
+      "name": "上传图片",
+      "position": {
+        "x": 608,
+        "y": 204
+      },
+      "config": {
+        "accepted_formats": [
+          "png",
+          "jpg",
+          "webp"
+        ],
+        "max_size_mb": 10,
+        "_visible_ports": [
+          "trigger-in"
+        ],
+        "notify_on_reach": false
+      },
+      "input_mappings": [],
+      "trigger": {
+        "type": "on_complete",
+        "source_node": "start_7523a8",
+        "keywords": []
+      },
+      "listener": false
+    },
+    {
+      "id": "start_7523a8",
+      "type": "start",
+      "name": "开始",
+      "position": {
+        "x": 177,
+        "y": 204
+      },
+      "config": {
+        "auto_run": true,
+        "init_params": {},
+        "_port_positions": {
+          "event-out": {
+            "side": "right",
+            "top": 85
+          }
+        }
+      },
+      "input_mappings": [],
+      "trigger": null,
+      "listener": false
+    },
+    {
+      "id": "ocr_685ba3",
+      "type": "ocr",
+      "name": "OCR 识别",
+      "position": {
+        "x": 986,
+        "y": 238
+      },
+      "config": {
+        "engine": "easyocr",
+        "language": [
+          "zh"
+        ],
+        "confidence_threshold": 0.3
+      },
+      "input_mappings": [
+        {
+          "from_node": "input_image_e08c0c",
+          "as_field": "ocr",
+          "source_field": "file",
+          "required": true
+        }
+      ],
+      "trigger": null,
+      "listener": false
+    },
+    {
+      "id": "display_text_598f51",
+      "type": "display_text",
+      "name": "文本显示",
+      "position": {
+        "x": 1402,
+        "y": 185
+      },
+      "config": {
+        "text": "",
+        "mode": "passthrough",
+        "_visible_ports": [
+          "text-in"
+        ],
+        "_port_positions": {
+          "text-in": {
+            "side": "left",
+            "top": 85
+          }
+        }
+      },
+      "input_mappings": [
+        {
+          "from_node": "ocr_685ba3",
+          "as_field": "text",
+          "source_field": "text",
+          "required": true
+        }
+      ],
+      "trigger": null,
+      "listener": false
+    }
+  ],
+  "connections": [
+    {
+      "id": "conn_dcf55c69",
+      "from_node": "input_image_e08c0c",
+      "from_port": "img-out",
+      "to_node": "ocr_685ba3",
+      "to_port": "ocr-in",
+      "type": "data"
+    },
+    {
+      "id": "conn_cdb0ef1d",
+      "from_node": "ocr_685ba3",
+      "from_port": "ocr-out",
+      "to_node": "display_text_598f51",
+      "to_port": "text-in",
+      "type": "data"
+    },
+    {
+      "id": "conn_71b59f3a",
+      "from_node": "start_7523a8",
+      "from_port": "event-out",
+      "to_node": "input_image_e08c0c",
+      "to_port": "trigger-in",
+      "type": "event"
+    }
+  ]
+}
