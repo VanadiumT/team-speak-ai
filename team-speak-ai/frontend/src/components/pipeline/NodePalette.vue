@@ -40,13 +40,13 @@ const ghost = ref(null)
 
 const colorMap = { primary: '#adc7ff', secondary: '#4edea3', tertiary: '#ef6719', outline: '#8b90a0' }
 
-const categoryOrder = ['起点', '输入', '处理', '音频', '输出']
+const categoryOrder = ['起点', '输入', '变量', '处理', '音频', '输出']
 const categoryMap = {
   start: '起点',
-  input_image: '输入', ts_input: '输入',
+  input_image: '输入', text_input: '输入', ts_input: '输入',
+  flow_var_read: '变量', flow_var_write: '变量',
+  sys_var_read: '变量', sys_var_write: '变量',
   ocr: '处理', context_build: '处理', llm: '处理',
-  flow_var_read: '处理', flow_var_write: '处理',
-  sys_var_read: '处理', sys_var_write: '处理',
   display_text: '处理',
   stt_listen: '音频', stt_history: '音频',
   tts: '输出', ts_output: '输出',

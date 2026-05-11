@@ -1059,7 +1059,8 @@ async def handle_node_trigger(websocket: WebSocket, flow_id: str, msg_id: str,
     else:
         execution_id = instances[-1].execution_id
 
-    await engine.execute_node(execution_id, node_id)
+    user_input = params.get("payload", None)
+    await engine.execute_node(execution_id, node_id, user_input=user_input)
     await _send_ack(websocket, flow_id, msg_id)
 
 

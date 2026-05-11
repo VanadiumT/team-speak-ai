@@ -66,6 +66,27 @@ def _build_metadata():
             ),
         ),
         NodeTypeDef(
+            type="text_input", name="文本输入", icon="edit_note", color="secondary",
+            default_config={"text": "", "mode": "static", "notify_on_reach": True},
+            tabs=[
+                TabDef(id="config", label="配置"),
+                TabDef(id="detail", label="详情"),
+                TabDef(id="io-data", label="IO数据"),
+                TabDef(id="io-mgmt", label="IO管理"),
+                TabDef(id="log", label="日志"),
+            ],
+            ports=PortsDef(
+                inputs=[
+                    port("left", 30, "text-in", "文本输入 (String)", "string", _on),
+                    port("left", 68, "trigger-in", "触发", "event", _on),
+                ],
+                outputs=[
+                    port("right", 30, "text-out", "文本输出 (String)", "string"),
+                    port("right", 68, "done", "完成", "event", _on),
+                ],
+            ),
+        ),
+        NodeTypeDef(
             type="ocr", name="OCR 识别", icon="document_scanner", color="secondary",
             default_config={"engine": "easyocr", "language": ["zh"], "confidence_threshold": 0.3},
             tabs=[

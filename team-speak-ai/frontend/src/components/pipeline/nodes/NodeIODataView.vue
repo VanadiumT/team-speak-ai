@@ -80,6 +80,7 @@ const PORT_DATA_KEY = {
   'text-out': 'text',
   'img-out': 'file',
   'ocr-out': 'text',
+  'text-in': 'text',
   'line-count': 'line_count',
   'provider': 'provider',
   'llm-out': 'text',

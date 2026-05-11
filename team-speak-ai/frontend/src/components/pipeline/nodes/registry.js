@@ -15,6 +15,7 @@ import TTSNode from './TTSNode.vue'
 import TSOutputNode from './TSOutputNode.vue'
 import TSInputNode from './TSInputNode.vue'
 import DisplayTextNode from './DisplayTextNode.vue'
+import TextInputNode from './TextInputNode.vue'
 import FlowVarReadNode from './FlowVarReadNode.vue'
 import FlowVarWriteNode from './FlowVarWriteNode.vue'
 import SysVarReadNode from './SysVarReadNode.vue'
@@ -32,6 +33,7 @@ export const nodeComponentRegistry = {
   ts_output: TSOutputNode,
   ts_input: TSInputNode,
   display_text: DisplayTextNode,
+  text_input: TextInputNode,
   flow_var_read: FlowVarReadNode,
   flow_var_write: FlowVarWriteNode,
   sys_var_read: SysVarReadNode,

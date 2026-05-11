@@ -467,4 +467,5 @@ onUnmounted(() => { window.removeEventListener('keydown', onKeydown) })
 <style>
 .flow-view[data-flow="data"] .io-port[data-data-type="event"] { opacity: 0.2; pointer-events: none; }
 .flow-view[data-flow="event"] .io-port:not([data-data-type="event"]) { opacity: 0.2; pointer-events: none; }
+.pipeline-canvas.is-panning .node-card { backdrop-filter: none !important; }
 </style>

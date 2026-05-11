@@ -1,0 +1,99 @@
+{
+  "id": "测试_llm",
+  "name": "测试-LLM",
+  "group": "测试/开始",
+  "icon": "sports_esports",
+  "enabled": true,
+  "skill_prompt": "",
+  "canvas": {
+    "width": 2000,
+    "height": 1500
+  },
+  "params": {},
+  "nodes": [
+    {
+      "id": "text_input_2b3542",
+      "type": "text_input",
+      "name": "文本输入",
+      "position": {
+        "x": 623,
+        "y": 95
+      },
+      "config": {
+        "text": "你好呀~~~~~~~~~",
+        "mode": "static",
+        "notify_on_reach": false,
+        "_visible_ports": [
+          "trigger-in"
+        ]
+      },
+      "input_mappings": [],
+      "trigger": {
+        "type": "on_complete",
+        "source_node": "start_4f4f89",
+        "keywords": []
+      },
+      "listener": false
+    },
+    {
+      "id": "start_4f4f89",
+      "type": "start",
+      "name": "开始",
+      "position": {
+        "x": 189,
+        "y": 137
+      },
+      "config": {
+        "auto_run": true,
+        "init_params": {}
+      },
+      "input_mappings": [],
+      "trigger": null,
+      "listener": false
+    },
+    {
+      "id": "display_text_16192e",
+      "type": "display_text",
+      "name": "文本显示",
+      "position": {
+        "x": 1053,
+        "y": 85
+      },
+      "config": {
+        "text": "",
+        "mode": "passthrough",
+        "_visible_ports": [
+          "text-in"
+        ]
+      },
+      "input_mappings": [
+        {
+          "from_node": "text_input_2b3542",
+          "as_field": "text",
+          "source_field": "text",
+          "required": true
+        }
+      ],
+      "trigger": null,
+      "listener": false
+    }
+  ],
+  "connections": [
+    {
+      "id": "conn_79fe3c5c",
+      "from_node": "start_4f4f89",
+      "from_port": "event-out",
+      "to_node": "text_input_2b3542",
+      "to_port": "trigger-in",
+      "type": "event"
+    },
+    {
+      "id": "conn_db3a54d9",
+      "from_node": "text_input_2b3542",
+      "from_port": "text-out",
+      "to_node": "display_text_16192e",
+      "to_port": "text-in",
+      "type": "data"
+    }
+  ]
+}
