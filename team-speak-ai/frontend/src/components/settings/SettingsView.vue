@@ -15,6 +15,11 @@
         <SysVarsPanelFull />
       </div>
 
+      <!-- 系统快捷键 -->
+      <div v-else-if="settingsPage === 'shortcuts'" class="sv-section">
+        <ShortcutsPanel />
+      </div>
+
       <!-- Provider 设置 -->
       <div v-else-if="settingsPage === 'ocr_settings'" class="sv-section">
         <div class="sv-info-row">
@@ -55,6 +60,7 @@
 <script setup>
 import { computed } from 'vue'
 import SysVarsPanelFull from './SysVarsPanelFull.vue'
+import ShortcutsPanel from './ShortcutsPanel.vue'
 
 const props = defineProps({
   settingsPage: { type: String, default: '' },
@@ -63,6 +69,7 @@ const props = defineProps({
 
 const pageTitle = computed(() => ({
   sys_vars: '系统变量',
+  shortcuts: '系统快捷键',
   ocr_settings: 'OCR 设置',
   llm_settings: 'LLM 设置',
   stt_settings: 'STT 设置',
@@ -71,6 +78,7 @@ const pageTitle = computed(() => ({
 
 const pageIcon = computed(() => ({
   sys_vars: 'data_object',
+  shortcuts: 'keyboard',
   ocr_settings: 'document_scanner',
   llm_settings: 'psychology',
   stt_settings: 'mic',

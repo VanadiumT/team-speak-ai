@@ -270,6 +270,7 @@ import SettingsView from '@/components/settings/SettingsView.vue'
 import BottomStatusBar from '@/components/layout/BottomStatusBar.vue'
 import NotificationBell from '@/components/layout/NotificationBell.vue'
 import SidebarTreeNode from '@/components/layout/SidebarTreeNode.vue'
+import { useKeybindings } from '@/keybindings.js'
 
 const editorStore = useEditorStore()
 const executionStore = useExecutionStore()
@@ -605,10 +606,11 @@ onMounted(() => {
   })
 
   // Keyboard: Delete selected node
+  const keybindings = useKeybindings()
   window.addEventListener('keydown', (e) => {
     if (!editorStore.editMode) return
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
-    if ((e.key === 'Delete' || e.key === 'Backspace') && selectedNode.value) {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return
+    if (keybindings.matchId(e, 'node.delete') && selectedNode.value) {
       e.preventDefault()
       editorStore.deleteNode(selectedNode.value.id)
       selectedNode.value = null

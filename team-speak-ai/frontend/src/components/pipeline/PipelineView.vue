@@ -90,6 +90,7 @@
         @port-drag-start="onPortDragStart"
         @port-click="onPortClick"
         @node-resize="onNodeResize"
+        @contextmenu="onNodeContextMenu"
       />
 
       <div v-if="editorStore.nodes.length === 0" class="empty-hint">
@@ -117,6 +118,19 @@
       :y="portPopover.y"
       @close="portPopover.visible = false"
     />
+
+    <!-- Node context menu -->
+    <div v-if="nodeCtxMenu.visible" class="context-menu-overlay" @click="closeNodeCtxMenu"></div>
+    <div v-if="nodeCtxMenu.visible" class="context-menu" :style="{ left: nodeCtxMenu.x + 'px', top: nodeCtxMenu.y + 'px' }">
+      <button class="ctx-item" @click="onDuplicateNode(); closeNodeCtxMenu()">
+        <span class="material-symbols-outlined ctx-icon">content_copy</span>
+        复制节点
+      </button>
+      <button class="ctx-item danger" @click="onDeleteNode(); closeNodeCtxMenu()">
+        <span class="material-symbols-outlined ctx-icon">delete</span>
+        删除节点
+      </button>
+    </div>
   </div>
 </template>
 
@@ -127,6 +141,7 @@ import CanvasControls from './CanvasControls.vue'
 import PortPopover from './PortPopover.vue'
 import { useEditorStore } from '@/stores/editor.js'
 import { useExecutionStore } from '@/stores/execution.js'
+import { useKeybindings } from '@/keybindings.js'
 
 const props = defineProps({ editMode: { type: Boolean, default: false }, detailPanelOpen: { type: Boolean, default: false } })
 const emit = defineEmits(['select-node'])
@@ -410,15 +425,59 @@ function getStepNumber(nodeId) {
   return idx >= 0 ? String.fromCharCode(0x2460 + idx) : ''
 }
 
-function onNodeSelect(node) { emit('select-node', node.id) }
+function onNodeSelect(node) {
+  editorStore.selectedNodeId = node.id
+  emit('select-node', node.id)
+}
+
+// ── Node context menu ──
+const nodeCtxMenu = ref({ visible: false, x: 0, y: 0, nodeId: null })
+
+function onNodeContextMenu({ node, x, y }) {
+  editorStore.selectedNodeId = node.id
+  nodeCtxMenu.value = { visible: true, x, y, nodeId: node.id }
+}
+
+function closeNodeCtxMenu() {
+  nodeCtxMenu.value = { visible: false, x: 0, y: 0, nodeId: null }
+}
+
+function onDuplicateNode() {
+  if (nodeCtxMenu.value.nodeId) {
+    editorStore.duplicateNode(nodeCtxMenu.value.nodeId)
+  }
+}
+
+function onDeleteNode() {
+  if (nodeCtxMenu.value.nodeId) {
+    editorStore.deleteNode(nodeCtxMenu.value.nodeId)
+  }
+}
 
 // ── Keyboard ──
+const keybindings = useKeybindings()
+
 function onKeydown(e) {
   if (!props.editMode) return
-  if ((e.key === 'Delete' || e.key === 'Backspace') && selectedConnId.value) {
-    e.preventDefault(); editorStore.deleteConnection(selectedConnId.value); selectedConnId.value = null
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return
+
+  if (keybindings.matchId(e, 'node.duplicate')) {
+    e.preventDefault()
+    if (editorStore.selectedNodeId) {
+      editorStore.duplicateNode(editorStore.selectedNodeId)
+    }
+    return
   }
-  if (e.key === 'Escape') selectedConnId.value = null
+  if (keybindings.matchId(e, 'connection.delete') && selectedConnId.value) {
+    e.preventDefault()
+    editorStore.deleteConnection(selectedConnId.value)
+    selectedConnId.value = null
+    return
+  }
+  if (keybindings.matchId(e, 'canvas.deselect')) {
+    selectedConnId.value = null
+    closeNodeCtxMenu()
+  }
 }
 onMounted(() => { window.addEventListener('keydown', onKeydown) })
 onUnmounted(() => { window.removeEventListener('keydown', onKeydown) })
@@ -461,6 +520,27 @@ onUnmounted(() => { window.removeEventListener('keydown', onKeydown) })
 .pipeline-canvas::-webkit-scrollbar-track { background: #10131b; }
 .pipeline-canvas::-webkit-scrollbar-thumb { background: #31353d; border-radius: 3px; }
 .pipeline-canvas::-webkit-scrollbar-thumb:hover { background: #414754; }
+
+/* ── Context Menu ── */
+.context-menu-overlay { position: fixed; inset: 0; z-index: 90; }
+.context-menu {
+  position: fixed; z-index: 100;
+  background: #181c23; border: 1px solid #414754;
+  border-radius: 6px; min-width: 160px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  padding: 4px 0;
+}
+.ctx-item {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 8px 14px;
+  background: none; border: none;
+  color: #c1c6d7; font-size: 11px; cursor: pointer;
+  transition: background 0.1s;
+}
+.ctx-item:hover { background: #272a32; color: #e0e2ed; }
+.ctx-item.danger { color: #ffb4ab; }
+.ctx-item.danger:hover { background: rgba(255, 180, 171, 0.1); }
+.ctx-icon { font-size: 14px; }
 </style>
 
 <!-- Unscoped: port view filter (targets IOPort elements from NodeCard) -->

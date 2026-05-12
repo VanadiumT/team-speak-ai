@@ -11,16 +11,15 @@
 
 `node-system-design.md` 和 `view-mode-and-features-spec.md` 设计了以下逻辑节点，**全部未实现**：
 
-| 节点 | 用途 |
-|---|---|
-| `condition` | 条件分支 (if/else) |
-| `merge` | 合并 (wait_all/wait_any) |
-| `delay` | 延迟 |
-| `break` | 循环中断 |
-| `notify` | 通知 |
-| `loop` | 循环 |
-| `sys_var` | 系统变量 (读/写/更新) |
-| `filter` | 过滤 |
+| 节点 | 用途 | 计划 |
+|---|---|---|
+| `condition` | 条件分支 (if/else) | 未来规划 |
+| `merge` | 合并 (wait_all/wait_any) | 未来规划 |
+| `delay` | 延迟 | 未来规划 |
+| `break` | 循环中断 | 未来规划 |
+| `notify` | 通知 | 未来规划 |
+| `loop` | 循环 | 未来规划 |
+| `filter` | 过滤 | 未来规划 |
 
 来源文档: `node-system-design.md`, `view-mode-and-features-spec.md`
 
@@ -33,34 +32,42 @@
 
 ---
 
-### A2. Flow Parameters (`$param.xxx`)
+### A2. Flow Parameters + Start 节点 + 流程变量读写节点
 
-| | `view-mode-and-features-spec.md` 要求 | 实际实现 |
+| | 文档要求 | 实际实现 |
 |---|---|---|
-| 功能 | 用户自定义 key-value 存储在 Flow JSON `params` 字段，节点配置中通过 `$param.xxx` 引用 | **完全未实现** |
+| 功能 | 流程参数管理 + $param 引用 + 专用读写节点 | 已完成设计，待实现 |
 
-来源文档: `view-mode-and-features-spec.md`
+来源文档: `view-mode-and-features-spec.md`, `flow-variables-and-start-node.md`
 
-- [ ] **A)** 实现此功能
-- [ ] **B)** 标记为未来规划
+- [x] 已完成详细设计 — 2026-05-09
 
-回复:
+设计文档: `docs/flow-variables-and-start-node.md`，包含：
+- Start 节点（auto_run + init_params 写入流程参数）
+- flow_var_read / flow_var_write 节点
+- 流程参数管理面板（前端 UI）
+- $param.xxx 保留机制
+- 4 阶段实施计划
 
 
 ---
 
 ### A3. System Variables (`sys_var` 节点)
 
-| | `view-mode-and-features-spec.md` 要求 | 实际实现 |
+| | 文档要求 | 实际实现 |
 |---|---|---|
-| 功能 | `sys_var` 节点 + `data/system_vars.json` + `sys_var.list/get/set` WS 命令 + 系统设置面板 | **完全未实现** |
+| 功能 | 系统变量读写节点 + 持久化 + WS 命令 + 管理面板 | 已完成设计，待实现 |
 
-来源文档: `view-mode-and-features-spec.md`
+来源文档: `view-mode-and-features-spec.md`, `flow-variables-and-start-node.md`
 
-- [ ] **A)** 实现此功能
-- [ ] **B)** 标记为未来规划
+- [x] 已完成详细设计 — 2026-05-09
 
-回复:
+设计文档: `docs/flow-variables-and-start-node.md`，包含：
+- sys_var_read / sys_var_write 节点
+- SysVarManager（data/system_vars.json 持久化）
+- sys_var.list/get/set/delete WS 命令
+- 系统变量管理面板
+- 阶段 4 实施计划
 
 
 ---

@@ -1,6 +1,6 @@
 {
   "id": "测试_llm",
-  "name": "测试-LLM",
+  "name": "测试-文本输入",
   "group": "测试/开始",
   "icon": "sports_esports",
   "enabled": true,

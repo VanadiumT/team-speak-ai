@@ -1,0 +1,261 @@
+{
+  "id": "测试_llm_2",
+  "name": "测试-llm",
+  "group": "测试/开始",
+  "icon": "sports_esports",
+  "enabled": true,
+  "skill_prompt": "",
+  "canvas": {
+    "width": 2000,
+    "height": 1500
+  },
+  "params": {},
+  "nodes": [
+    {
+      "id": "start_7876a1",
+      "type": "start",
+      "name": "开始",
+      "position": {
+        "x": 164,
+        "y": 177
+      },
+      "config": {
+        "auto_run": true,
+        "init_params": {},
+        "_port_positions": {
+          "event-out": {
+            "side": "right",
+            "top": 141
+          }
+        }
+      },
+      "input_mappings": [],
+      "trigger": null,
+      "listener": false
+    },
+    {
+      "id": "text_input_493b9f",
+      "type": "text_input",
+      "name": "文本输入",
+      "position": {
+        "x": 741,
+        "y": 17
+      },
+      "config": {
+        "text": "我是信息1",
+        "mode": "static",
+        "notify_on_reach": false,
+        "_visible_ports": [
+          "trigger-in"
+        ]
+      },
+      "input_mappings": [],
+      "trigger": {
+        "type": "on_complete",
+        "source_node": "start_7876a1",
+        "keywords": []
+      },
+      "listener": false
+    },
+    {
+      "id": "text_input_fa6723",
+      "type": "text_input",
+      "name": "文本输入 (副本)",
+      "position": {
+        "x": 749,
+        "y": 490
+      },
+      "config": {
+        "text": "我是信息2",
+        "mode": "static",
+        "notify_on_reach": false,
+        "_visible_ports": [
+          "trigger-in"
+        ],
+        "_port_positions": {
+          "trigger-in": {
+            "side": "left",
+            "top": 58
+          },
+          "text-out": {
+            "side": "right",
+            "top": 85
+          }
+        }
+      },
+      "input_mappings": [],
+      "trigger": {
+        "type": "on_complete",
+        "source_node": "start_7876a1",
+        "keywords": []
+      },
+      "listener": false
+    },
+    {
+      "id": "context_build_8c7908",
+      "type": "context_build",
+      "name": "上下文构建器",
+      "position": {
+        "x": 1345,
+        "y": 238
+      },
+      "config": {
+        "max_context_length": 4096,
+        "_repeatable_ports": {
+          "ctx": [
+            "ctx-in1",
+            "ctx-in2"
+          ]
+        },
+        "_port_labels": {
+          "ctx-in1": "信息1",
+          "ctx-in2": "信息2"
+        },
+        "_port_positions": {
+          "ctx-in2": {
+            "side": "left",
+            "top": 85
+          },
+          "req-in": {
+            "side": "left",
+            "top": 98
+          },
+          "ctx-in1": {
+            "side": "left",
+            "top": 78
+          },
+          "trigger-in": {
+            "side": "left",
+            "top": 111
+          }
+        },
+        "_visible_ports": [
+          "trigger-in"
+        ]
+      },
+      "input_mappings": [
+        {
+          "from_node": "text_input_493b9f",
+          "as_field": "ctx-in1",
+          "source_field": "text",
+          "required": true
+        },
+        {
+          "from_node": "text_input_fa6723",
+          "as_field": "ctx-in2",
+          "source_field": "text",
+          "required": true
+        },
+        {
+          "from_node": "text_input_220cdb",
+          "as_field": "req",
+          "source_field": "text",
+          "required": true
+        }
+      ],
+      "trigger": {
+        "type": "on_complete",
+        "source_node": "text_input_220cdb",
+        "keywords": []
+      },
+      "listener": false
+    },
+    {
+      "id": "text_input_220cdb",
+      "type": "text_input",
+      "name": "文本输入 (副本) (副本)",
+      "position": {
+        "x": 742,
+        "y": 858
+      },
+      "config": {
+        "text": "在信息2中有什么内容",
+        "mode": "static",
+        "notify_on_reach": false,
+        "_visible_ports": [
+          "trigger-in",
+          "done"
+        ],
+        "_port_positions": {
+          "trigger-in": {
+            "side": "left",
+            "top": 58
+          },
+          "text-out": {
+            "side": "right",
+            "top": 154
+          },
+          "done": {
+            "side": "right",
+            "top": 78
+          }
+        }
+      },
+      "input_mappings": [],
+      "trigger": {
+        "type": "on_complete",
+        "source_node": "start_7876a1",
+        "keywords": []
+      },
+      "listener": false
+    }
+  ],
+  "connections": [
+    {
+      "id": "conn_162b1662",
+      "from_node": "start_7876a1",
+      "from_port": "event-out",
+      "to_node": "text_input_493b9f",
+      "to_port": "trigger-in",
+      "type": "event"
+    },
+    {
+      "id": "conn_8372deef",
+      "from_node": "start_7876a1",
+      "from_port": "event-out",
+      "to_node": "text_input_fa6723",
+      "to_port": "trigger-in",
+      "type": "event"
+    },
+    {
+      "id": "conn_2b2f0174",
+      "from_node": "text_input_493b9f",
+      "from_port": "text-out",
+      "to_node": "context_build_8c7908",
+      "to_port": "ctx-in1",
+      "type": "data"
+    },
+    {
+      "id": "conn_2e5709fb",
+      "from_node": "text_input_fa6723",
+      "from_port": "text-out",
+      "to_node": "context_build_8c7908",
+      "to_port": "ctx-in2",
+      "type": "data"
+    },
+    {
+      "id": "conn_67182979",
+      "from_node": "start_7876a1",
+      "from_port": "event-out",
+      "to_node": "text_input_220cdb",
+      "to_port": "trigger-in",
+      "type": "event"
+    },
+    {
+      "id": "conn_87f614b0",
+      "from_node": "text_input_220cdb",
+      "from_port": "text-out",
+      "to_node": "context_build_8c7908",
+      "to_port": "req-in",
+      "type": "data"
+    },
+    {
+      "id": "conn_38c20447",
+      "from_node": "text_input_220cdb",
+      "from_port": "done",
+      "to_node": "context_build_8c7908",
+      "to_port": "trigger-in",
+      "type": "event"
+    }
+  ]
+}
