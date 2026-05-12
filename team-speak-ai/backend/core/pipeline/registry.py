@@ -20,9 +20,11 @@ _TYPE_METADATA: dict[str, NodeTypeDef] = {}
 def _build_metadata():
     """构建所有节点类型的元数据。在模块加载时调用一次。"""
 
-    def port(side: str, top: int, id_: str, label: str, data_type: str, visibility: str = "always") -> PortDef:
+    def port(side: str, top: int, id_: str, label: str, data_type: str, visibility: str = "always",
+             repeatable: bool = False, group: str = None, min: int = None, max: int = None) -> PortDef:
         return PortDef(id=id_, label=label, data_type=data_type,
-                       position=PortPosition(side=side, top=top), visibility=visibility)
+                       position=PortPosition(side=side, top=top), visibility=visibility,
+                       repeatable=repeatable, group=group, min=min, max=max)
 
     _on = "on-demand"  # shorthand for on-demand ports
 
@@ -153,8 +155,12 @@ def _build_metadata():
             ),
         ),
         NodeTypeDef(
-            type="context_build", name="ContextBuild", icon="hub", color="primary",
-            default_config={"max_context_length": 4096},
+            type="context_build", name="上下文构建器", icon="account_tree", color="primary",
+            default_config={
+                "max_context_length": 4096,
+                "_repeatable_ports": {"ctx": []},
+                "_port_labels": {},
+            },
             tabs=[
                 TabDef(id="config", label="配置"),
                 TabDef(id="detail", label="详情"),
@@ -164,10 +170,11 @@ def _build_metadata():
             ],
             ports=PortsDef(
                 inputs=[
-                    port("left", 30, "ctx-in1", "skill_prompt (String)", "string"),
-                    port("left", 58, "ctx-in2", "OCR文本 (String)", "string", _on),
-                    port("left", 86, "ctx-in3", "stt_history (String[])", "string_array", _on),
-                    port("left", 114, "ctx-in4", "对话历史 (String[])", "string_array", _on),
+                    port("left", 30, "system-in", "系统提示词 (String)", "string", _on),
+                    port("left", 58, "chat-in", "历史对话 (Messages[])", "messages", _on),
+                    port("left", 86, "req-in", "用户提示词", "string", "always"),
+                    port("left", 114, "ctx-in1", "信息1", "string", _on,
+                         repeatable=True, group="ctx", min=0, max=20),
                     port("left", 142, "trigger-in", "触发", "event", _on),
                 ],
                 outputs=[

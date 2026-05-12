@@ -22,6 +22,7 @@ export const useEditorStore = defineStore('editor', () => {
   const editMode = ref(false)       // 编辑模式（默认流程模式）
   const dirtyFields = ref(new Set()) // 待保存的字段（使用新 Set 替换保证响应式）
   const flowParams = ref({})        // 流程参数 (key-value)
+  const selectedNodeId = ref(null)  // 当前选中的节点 ID
 
   // ── 计算属性 ──
   const BASE_CANVAS = { width: 2000, height: 1500 }
@@ -119,6 +120,44 @@ export const useEditorStore = defineStore('editor', () => {
 
   function onNodeDeleted({ node_id }) {
     nodes.value = nodes.value.filter((n) => n.id !== node_id)
+    if (selectedNodeId.value === node_id) selectedNodeId.value = null
+  }
+
+  async function renameNode(nodeId, name) {
+    const flow = flowId.value
+    if (!flow || isReadOnly.value) return
+    // Optimistic local update
+    const node = nodes.value.find((n) => n.id === nodeId)
+    if (node) node.name = name
+    try {
+      await pipelineSocket.sendCommand(flow, 'node.rename', { node_id: nodeId, name })
+    } catch (_) { /* server will broadcast corrected state */ }
+  }
+
+  function onNodeRenamed({ node_id, name }) {
+    const node = nodes.value.find((n) => n.id === node_id)
+    if (node) node.name = name
+  }
+
+  async function duplicateNode(nodeId) {
+    const flow = flowId.value
+    if (!flow || isReadOnly.value) return
+    const source = nodes.value.find((n) => n.id === nodeId)
+    if (!source) return
+    const offsetPos = {
+      x: (source.position.x || 0) + 40,
+      y: (source.position.y || 0) + 40,
+    }
+    try {
+      await pipelineSocket.sendCommand(flow, 'node.create', {
+        node_type: source.type,
+        position: offsetPos,
+        config: source.config,
+        name: (source.name || source.type) + ' (副本)',
+      })
+    } catch (e) {
+      console.error('[Editor] duplicateNode failed:', e)
+    }
   }
 
   function moveNodeLocal(nodeId, x, y) {
@@ -253,6 +292,96 @@ export const useEditorStore = defineStore('editor', () => {
     node.config._port_positions[port_id] = { side, top: position }
   }
 
+  // ── 动态可重复端口 ──
+  function _ensureRepeatablePorts(node, group) {
+    const tdef = getNodeTypeDef(node.type)
+    if (!tdef) return null
+    const tpl = tdef.ports?.inputs?.find(p => p.repeatable && p.group === group) ||
+                tdef.ports?.outputs?.find(p => p.repeatable && p.group === group)
+    return tpl
+  }
+
+  function addRepeatablePort(nodeId, group) {
+    const node = nodes.value.find(n => n.id === nodeId)
+    if (!node || isReadOnly.value) return
+    const tpl = _ensureRepeatablePorts(node, group)
+    if (!tpl) return
+    if (!node.config) node.config = {}
+    if (!node.config._repeatable_ports) node.config._repeatable_ports = {}
+    let existing = node.config._repeatable_ports[group]
+    if (!existing) {
+      existing = []
+      node.config._repeatable_ports[group] = existing
+    }
+    if (existing.length >= (tpl.max || 20)) return
+    // Generate next id: ctx-in{N}
+    const nums = existing.map(id => { const m = id.match(/\d+$/); return m ? parseInt(m[0]) : 0 })
+    const nextN = (nums.length > 0 ? Math.max(...nums) : 0) + 1
+    const newId = tpl.id.replace(/\d+$/, String(nextN))
+    const updated = [...existing, newId]
+    node.config._repeatable_ports = { ...node.config._repeatable_ports, [group]: updated }
+    if (!node.config._port_labels) node.config._port_labels = {}
+    node.config._port_labels[newId] = `${tpl.label}${nextN}`
+    // Auto-offset position
+    if (!node.config._port_positions) node.config._port_positions = {}
+    const baseTop = tpl.position?.top || 30
+    node.config._port_positions[newId] = { side: tpl.position?.side || 'left', top: baseTop + nextN * 22 }
+    updateConfigImmediate(nodeId, {
+      _repeatable_ports: node.config._repeatable_ports,
+      _port_labels: node.config._port_labels,
+      _port_positions: node.config._port_positions,
+    })
+  }
+
+  function removeRepeatablePort(nodeId, portId) {
+    const node = nodes.value.find(n => n.id === nodeId)
+    if (!node || isReadOnly.value) return
+    // Find which group this port belongs to
+    const groups = node.config?._repeatable_ports || {}
+    let foundGroup = null
+    for (const [group, ids] of Object.entries(groups)) {
+      if (ids.includes(portId)) { foundGroup = group; break }
+    }
+    if (!foundGroup) return
+    const tpl = _ensureRepeatablePorts(node, foundGroup)
+    if (!tpl) return
+    const updated = groups[foundGroup].filter(id => id !== portId)
+    const minInstances = tpl.min != null ? tpl.min : 1
+    if (updated.length < minInstances) return
+    // Capture affected connections before removing
+    const affectedConns = connections.value.filter(c =>
+      (c.from_node === nodeId && c.from_port === portId) ||
+      (c.to_node === nodeId && c.to_port === portId))
+    // Remove connections locally
+    connections.value = connections.value.filter(c => !affectedConns.includes(c))
+    // Send delete for each removed connection
+    for (const conn of affectedConns) {
+      deleteConnection(conn.id)
+    }
+    // Update config
+    const newGroups = { ...groups, [foundGroup]: updated }
+    const newLabels = { ...(node.config._port_labels || {}) }
+    delete newLabels[portId]
+    if (!node.config) node.config = {}
+    node.config._repeatable_ports = newGroups
+    node.config._port_labels = newLabels
+    updateConfigImmediate(nodeId, {
+      _repeatable_ports: newGroups,
+      _port_labels: newLabels,
+    })
+  }
+
+  function renamePortLabel(nodeId, portId, label) {
+    const node = nodes.value.find(n => n.id === nodeId)
+    if (!node || isReadOnly.value) return
+    if (!node.config) node.config = {}
+    if (!node.config._port_labels) node.config._port_labels = {}
+    node.config._port_labels = { ...node.config._port_labels, [portId]: label }
+    updateConfigImmediate(nodeId, {
+      _port_labels: node.config._port_labels,
+    })
+  }
+
   function getNodeTypeDef(nodeType) {
     return nodeTypes.value.find((t) => t.type === nodeType)
   }
@@ -260,6 +389,17 @@ export const useEditorStore = defineStore('editor', () => {
   function getPortDef(node, portId, side) {
     const tdef = getNodeTypeDef(node.type)
     if (!tdef) return null
+    // Check dynamic repeatable ports first
+    if (node.config?._repeatable_ports) {
+      for (const [group, ids] of Object.entries(node.config._repeatable_ports)) {
+        if (ids.includes(portId)) {
+          // Find template port for this group
+          const ports = side === 'input' ? tdef.ports?.inputs : tdef.ports?.outputs
+          const tpl = ports?.find(p => p.repeatable && p.group === group)
+          if (tpl) return { ...tpl, id: portId, label: node.config?._port_labels?.[portId] || tpl.label }
+        }
+      }
+    }
     const ports = side === 'input' ? tdef.ports?.inputs : tdef.ports?.outputs
     return ports?.find((p) => p.id === portId) || null
   }
@@ -342,6 +482,7 @@ export const useEditorStore = defineStore('editor', () => {
     pipelineSocket.on('node.created', onNodeCreated)
     pipelineSocket.on('node.deleted', onNodeDeleted)
     pipelineSocket.on('node.moved', onNodeMoved)
+    pipelineSocket.on('node.renamed', onNodeRenamed)
     pipelineSocket.on('node.config_updated', onNodeConfigUpdated)
     pipelineSocket.on('connection.created', onConnectionCreated)
     pipelineSocket.on('connection.deleted', onConnectionDeleted)
@@ -379,12 +520,13 @@ export const useEditorStore = defineStore('editor', () => {
 
   return {
     flowId, flowMeta, nodes, connections, nodeTypes,
-    canUndo, canRedo, isReadOnly, editMode, dirtyFields, canvasSize, flowParams,
+    canUndo, canRedo, isReadOnly, editMode, dirtyFields, canvasSize, flowParams, selectedNodeId,
     enterEditMode, exitEditMode,
-    loadFlow, createNode, deleteNode, moveNodeLocal, commitMoveNode,
+    loadFlow, createNode, deleteNode, duplicateNode, renameNode, moveNodeLocal, commitMoveNode,
     updateConfigImmediate, updateConfigDebounced,
     createConnection, deleteConnection,
     getNodeTypeDef, getPortDef, arePortsCompatible,
+    addRepeatablePort, removeRepeatablePort, renamePortLabel,
     undo, redo, init, flushPendingUpdates,
     createFlow, onFlowLoaded,
     updateFlowParams, deleteFlowParam, onFlowParamsUpdated,

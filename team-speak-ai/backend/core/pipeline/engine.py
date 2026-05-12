@@ -649,11 +649,16 @@ class PipelineEngine:
 
 
 def _port_input_key(port_id: str) -> str:
+    KNOWN = {"llm-in": "messages"}
+    if port_id in KNOWN:
+        return KNOWN[port_id]
     return port_id.replace("-in", "") if port_id.endswith("-in") else port_id
 
 
 def _port_output_key(port_id: str) -> str:
-    KNOWN = {"data-out": "value", "text-out": "text", "img-out": "file", "ocr-out": "text", "line-count": "line_count", "provider": "provider", "trigger-out": None}
+    KNOWN = {"data-out": "value", "text-out": "text", "img-out": "file", "ocr-out": "text",
+             "line-count": "line_count", "provider": "provider", "trigger-out": None,
+             "ctx-out": "messages"}
     if port_id in KNOWN:
         return KNOWN[port_id]
     return port_id.replace("-out", "") if port_id.endswith("-out") else port_id

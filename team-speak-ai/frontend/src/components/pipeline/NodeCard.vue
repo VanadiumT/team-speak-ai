@@ -37,9 +37,19 @@
       @port-click="(e) => $emit('portClick', { nodeId: node.id, portId: port.id, event: e })"
     />
 
-    <div ref="headerEl" class="node-header">
+    <div ref="headerEl" class="node-header" @dblclick.stop="startRename">
       <span class="material-symbols-outlined node-icon" :style="{ color: iconColor }">{{ nodeIcon }}</span>
-      <span class="node-title">{{ node.name || nodeTypeDef?.name || node.type }}</span>
+      <input
+        v-if="isRenaming"
+        ref="renameInput"
+        v-model="renameValue"
+        class="node-title-input"
+        @keydown.enter="finishRename"
+        @keydown.escape="cancelRename"
+        @blur="finishRename"
+        @click.stop
+      />
+      <span v-else class="node-title">{{ node.name || nodeTypeDef?.name || node.type }}</span>
       <span class="node-status-badge" :class="statusClass">{{ statusLabel }}</span>
       <div v-if="isListening" class="keyword-dot"></div>
     </div>
@@ -64,8 +74,8 @@
         :data="nodeRuntime.data || {}"
         :config="node.config || {}"
         :logs="nodeLogs"
-        :input-ports="inputPorts"
-        :output-ports="outputPorts"
+        :input-ports="expandedInputPorts"
+        :output-ports="expandedOutputPorts"
       />
       <!-- Fallback: default body -->
       <div v-else class="node-default-body">
@@ -98,12 +108,37 @@ const props = defineProps({
   zoom: { type: Number, default: 1.0 },
 })
 
-const emit = defineEmits(['select', 'dragstart', 'dragend', 'portDragStart', 'portClick', 'nodeResize'])
+const emit = defineEmits(['select', 'dragstart', 'dragend', 'portDragStart', 'portClick', 'nodeResize', 'contextmenu'])
 
 const editorStore = useEditorStore()
 const executionStore = useExecutionStore()
 const activeTab = ref('detail')
 const isSelected = ref(false)
+
+// ── Inline rename ──
+const isRenaming = ref(false)
+const renameValue = ref('')
+const renameInput = ref(null)
+
+function startRename() {
+  if (!props.editMode) return
+  isRenaming.value = true
+  renameValue.value = props.node.name || nodeTypeDef.value?.name || props.node.type
+  nextTick(() => { renameInput.value?.select() })
+}
+
+function finishRename() {
+  if (!isRenaming.value) return
+  isRenaming.value = false
+  const trimmed = renameValue.value.trim()
+  if (trimmed && trimmed !== (props.node.name || nodeTypeDef.value?.name || props.node.type)) {
+    editorStore.renameNode(props.node.id, trimmed)
+  }
+}
+
+function cancelRename() {
+  isRenaming.value = false
+}
 
 // ── Dynamic body component ──
 const bodyComponent = computed(() => getNodeComponent(props.node.type))
@@ -170,27 +205,56 @@ const iconColor = computed(() => {
   return c[nodeTypeDef.value?.color] || '#8b90a0'
 })
 
-const inputPorts = computed(() => nodeTypeDef.value?.ports?.inputs || [])
-const outputPorts = computed(() => nodeTypeDef.value?.ports?.outputs || [])
+const _inputPorts = computed(() => nodeTypeDef.value?.ports?.inputs || [])
+const _outputPorts = computed(() => nodeTypeDef.value?.ports?.outputs || [])
+
+// ── Resolve port label: _port_labels override > PortDef.label ──
+function resolvePortLabel(port) {
+  return props.node.config?._port_labels?.[port.id] || port.label
+}
+
+// ── Expand repeatable port templates into instances ──
+function expandPorts(basePorts) {
+  const result = []
+  for (const port of basePorts) {
+    if (port.repeatable && port.group) {
+      const instances = props.node.config?._repeatable_ports?.[port.group]
+      if (instances && instances.length > 0) {
+        for (const instId of instances) {
+          result.push({
+            ...port,
+            id: instId,
+            label: resolvePortLabel({ id: instId, label: `${port.label}` }),
+          })
+        }
+      }
+      // min=0 and no instances: don't render any port dot on card
+    } else {
+      result.push({ ...port, label: resolvePortLabel(port) })
+    }
+  }
+  return result
+}
+
+const expandedInputPorts = computed(() => expandPorts(_inputPorts.value))
+const expandedOutputPorts = computed(() => expandPorts(_outputPorts.value))
 
 // ── On-demand port visibility ──
-// A port is "visible" on the node card if it's always, or is on-demand and either in _visible_ports or has a connection
 function isPortVisible(port) {
   if (port.visibility === 'always' || !port.visibility) return true
   if (port.visibility !== 'on-demand') return true
   const vis = props.node.config?._visible_ports || []
   if (vis.includes(port.id)) return true
-  // Also show if it has a connection
   return editorStore.connections.some((c) =>
     (c.from_node === props.node.id && c.from_port === port.id) ||
     (c.to_node === props.node.id && c.to_port === port.id))
 }
 
-const visibleInputPorts = computed(() => inputPorts.value.filter(isPortVisible))
-const visibleOutputPorts = computed(() => outputPorts.value.filter(isPortVisible))
+const visibleInputPorts = computed(() => expandedInputPorts.value.filter(isPortVisible))
+const visibleOutputPorts = computed(() => expandedOutputPorts.value.filter(isPortVisible))
 
 function computePortTop(portId, side) {
-  const ports = side === 'input' ? inputPorts.value : outputPorts.value
+  const ports = side === 'input' ? expandedInputPorts.value : expandedOutputPorts.value
   const total = ports.length
   if (total === 0) return 30
 
@@ -302,6 +366,8 @@ function onDragStart(e) {
 }
 
 function onClick() {
+  // Skip click if renaming
+  if (isRenaming.value) return
   // Skip click if we just finished a drag
   if (nodeDragMoved) {
     nodeDragMoved = false
@@ -324,8 +390,9 @@ function onDoubleClick() {
   emit('select', props.node)
 }
 
-function onContextMenu() {
+function onContextMenu(e) {
   if (!props.editMode) return
+  emit('contextmenu', { node: props.node, x: e.clientX, y: e.clientY })
 }
 </script>
 
@@ -352,6 +419,12 @@ function onContextMenu() {
 .node-header { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-bottom: 1px solid rgba(65,71,84,0.5); }
 .node-icon { font-size: 14px; }
 .node-title { font-size: 13px; font-weight: 600; color: #e0e2ed; flex: 1; }
+.node-title-input {
+  flex: 1; font-size: 13px; font-weight: 600; color: #e0e2ed;
+  background: rgba(255, 255, 255, 0.06); border: 1px solid #4a8eff;
+  border-radius: 4px; padding: 2px 6px; font-family: inherit; outline: none;
+  min-width: 0;
+}
 .node-status-badge { font-size: 10px; font-family: 'Space Grotesk',sans-serif; font-weight: 500; letter-spacing: 0.05em; }
 .status-pending { color: #8b90a0; } .status-processing { color: #adc7ff; } .status-completed { color: #4edea3; }
 .status-error { color: #ffb4ab; } .status-listening { color: #adc7ff; }

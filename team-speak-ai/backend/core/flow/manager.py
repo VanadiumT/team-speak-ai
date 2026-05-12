@@ -434,9 +434,20 @@ class FlowManager:
         except ValueError as e:
             return str(e)
 
-        # 检查端口存在性
+        # 检查端口存在性（含动态可重复端口）
         from_ports = {p.id for p in from_type.ports.outputs}
         to_ports = {p.id for p in to_type.ports.inputs}
+
+        # 扩展可重复端口实例
+        def _expand_repeatable(node, side):
+            rp = node.config.get("_repeatable_ports", {})
+            for group_ids in rp.values():
+                for pid in group_ids:
+                    yield pid
+
+        from_ports.update(_expand_repeatable(from_n, "output"))
+        to_ports.update(_expand_repeatable(to_n, "input"))
+
         if from_port not in from_ports:
             return f"Port '{from_port}' not found on node type '{from_n.type}'"
         if to_port not in to_ports:
@@ -445,6 +456,21 @@ class FlowManager:
         # 检查类型兼容性
         from_type_def = next((p for p in from_type.ports.outputs if p.id == from_port), None)
         to_type_def = next((p for p in to_type.ports.inputs if p.id == to_port), None)
+        # 如果通过 id 没找到，检查可重复端口模板
+        if not from_type_def:
+            for p in from_type.ports.outputs:
+                if p.repeatable and p.group:
+                    rp = from_n.config.get("_repeatable_ports", {}).get(p.group, [])
+                    if from_port in rp:
+                        from_type_def = p
+                        break
+        if not to_type_def:
+            for p in to_type.ports.inputs:
+                if p.repeatable and p.group:
+                    rp = to_n.config.get("_repeatable_ports", {}).get(p.group, [])
+                    if to_port in rp:
+                        to_type_def = p
+                        break
         if from_type_def and to_type_def:
             if not self._types_compatible(from_type_def.data_type, to_type_def.data_type):
                 return f"Type mismatch: {from_type_def.data_type} → {to_type_def.data_type}"
@@ -531,6 +557,7 @@ class FlowManager:
                 id="system_settings", name="系统设置", icon="settings", type="section",
                 children=[
                     SidebarNode(id="action:sys_vars", name="系统变量", icon="data_object", type="action"),
+                    SidebarNode(id="action:shortcuts", name="系统快捷键", icon="keyboard", type="action"),
                     SidebarNode(
                         id="node_settings_group", name="节点设置", icon="tune", type="group",
                         children=[

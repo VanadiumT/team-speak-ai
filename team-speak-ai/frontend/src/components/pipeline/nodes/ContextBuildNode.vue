@@ -17,13 +17,20 @@
         <div class="total-tokens" v-if="totalTokens">总计: {{ totalTokens }} / {{ config?.max_context_length || 4096 }} tokens</div>
       </div>
 
-      <div v-if="status === 'completed'" class="done-info">
-        <div class="done-row">
+      <div v-if="status === 'completed'" class="result-info">
+        <div class="result-summary">
           <span class="material-symbols-outlined done-icon">check_circle</span>
-          <span>{{ data?.message_count ?? 0 }} 条消息</span>
+          <span>{{ data?.fragment_count ?? 0 }} 个片段, {{ data?.total_chars ?? 0 }} 字符, {{ data?.message_count ?? 0 }} 条消息</span>
         </div>
-        <div class="done-tokens">{{ totalTokens }} tokens</div>
-        <div class="trigger-hint">→ 触发 LLM</div>
+        <div v-if="data?.user_message" class="result-content">
+          <pre class="result-pre">{{ data.user_message }}</pre>
+        </div>
+        <div v-if="data?.messages" class="result-messages">
+          <div v-for="(msg, i) in data.messages" :key="i" class="msg-block">
+            <span class="msg-role">{{ msg.role }}</span>
+            <pre class="msg-content">{{ msg.content }}</pre>
+          </div>
+        </div>
       </div>
 
       <div v-if="status === 'error'" class="error-text">{{ summary || '构建失败' }}</div>
@@ -36,7 +43,8 @@
       <NodeIODataView :node="node" :input-ports="inputPorts" :output-ports="outputPorts" />
     </template>
     <template v-if="activeTab === 'io-mgmt' && editMode">
-      <NodeIOMgmt :node="node" :edit-mode="editMode" :input-ports="inputPorts" :output-ports="outputPorts" @toggle-port="onTogglePort" />
+      <NodeIOMgmt :node="node" :edit-mode="editMode" :input-ports="inputPorts" :output-ports="outputPorts"
+        @toggle-port="onTogglePort" @add-port="onAddPort" @remove-port="onRemovePort" />
     </template>
     <template v-if="activeTab === 'log'">
       <NodeLogView :logs="logs" />
@@ -77,12 +85,16 @@ const configFields = [
   { key: 'max_context_length', label: '最大上下文 (tokens)', type: 'number', min: 512, max: 128000, placeholder: '4096' }
 ]
 
-const inputSources = computed(() => [
-  { key: 'skill', label: 'Skill Prompt', ready: !!(props.data?.has_skill_prompt || props.node.config?.skill_prompt), tokens: props.data?.skill_tokens },
-  { key: 'ocr', label: 'OCR 文本', ready: !!(props.data?.has_ocr), tokens: props.data?.ocr_tokens },
-  { key: 'stt', label: 'STT 历史', ready: !!(props.data?.has_stt), tokens: props.data?.stt_tokens },
-  { key: 'history', label: '对话历史', ready: !!(props.data?.has_history), tokens: props.data?.history_tokens }
-])
+const inputSources = computed(() => {
+  const portIds = props.node.config?._repeatable_ports?.ctx || ['ctx-in1']
+  const labels = props.node.config?._port_labels || {}
+  return portIds.map((id, i) => ({
+    key: id,
+    label: labels[id] || `信息${i + 1}`,
+    ready: !!(props.data?.[id]),
+    tokens: props.data?.[`${id}_tokens`],
+  }))
+})
 
 const totalTokens = computed(() => props.data?.total_tokens)
 
@@ -95,6 +107,14 @@ function onTogglePort(portId, show) {
   const vis = new Set(props.node.config?._visible_ports || [])
   if (show) vis.add(portId); else vis.delete(portId)
   editorStore.updateConfigImmediate(props.node.id, { _visible_ports: [...vis] })
+}
+
+function onAddPort(group) {
+  editorStore.addRepeatablePort(props.node.id, group)
+}
+
+function onRemovePort(portId) {
+  editorStore.removeRepeatablePort(props.node.id, portId)
 }
 </script>
 
@@ -117,11 +137,27 @@ function onTogglePort(portId, show) {
 .src-tokens { font-size: 9px; color: #64748b; font-family: 'Space Grotesk', sans-serif; }
 .total-tokens { font-size: 9px; color: #adc7ff; font-family: 'Space Grotesk', sans-serif; text-align: right; margin-top: 2px; }
 
-.done-info { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 0; }
-.done-row { display: flex; align-items: center; gap: 4px; font-size: 11px; color: #4edea3; }
-.done-icon { font-size: 18px; }
-.done-tokens { font-size: 9px; color: #64748b; font-family: 'Space Grotesk', sans-serif; }
-.trigger-hint { font-size: 9px; color: #4a8eff; }
+.result-info { display: flex; flex-direction: column; gap: 6px; }
+.result-summary { display: flex; align-items: center; gap: 4px; font-size: 10px; color: #4edea3; }
+.done-icon { font-size: 16px; flex-shrink: 0; }
+.result-content { }
+.result-pre {
+  font-size: 9px; color: #c1c6d7; white-space: pre-wrap; word-break: break-all;
+  background: rgba(11,14,22,0.6); border-radius: 4px; padding: 6px 8px;
+  max-height: 240px; overflow-y: auto; line-height: 1.5;
+  font-family: 'Space Grotesk', sans-serif;
+}
+.result-messages { display: flex; flex-direction: column; gap: 4px; max-height: 300px; overflow-y: auto; }
+.msg-block { background: rgba(11,14,22,0.6); border-radius: 4px; padding: 4px 6px; }
+.msg-role {
+  font-size: 8px; color: #ffb695; text-transform: uppercase;
+  font-family: 'Space Grotesk', sans-serif; letter-spacing: 0.05em; margin-bottom: 2px; display: block;
+}
+.msg-content {
+  font-size: 9px; color: #8b90a0; white-space: pre-wrap; word-break: break-all;
+  margin: 0; line-height: 1.4; max-height: 120px; overflow-y: auto;
+  font-family: 'Space Grotesk', sans-serif;
+}
 
 .hint-text { font-size: 10px; color: #64748b; text-align: center; padding: 8px 0; }
 .error-text { font-size: 10px; color: #ffb4ab; text-align: center; padding: 8px 0; }

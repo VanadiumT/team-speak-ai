@@ -135,12 +135,20 @@ async def ws_main(websocket: WebSocket):
                     "inputs": [
                         {"id": p.id, "label": p.label, "data_type": p.data_type,
                          "visibility": getattr(p, 'visibility', 'always') or 'always',
+                         "repeatable": getattr(p, 'repeatable', False) or False,
+                         "group": getattr(p, 'group', None) or None,
+                         "min": getattr(p, 'min', None) or None,
+                         "max": getattr(p, 'max', None) or None,
                          "position": {"side": p.position.side, "top": p.position.top}}
                         for p in t.ports.inputs
                     ],
                     "outputs": [
                         {"id": p.id, "label": p.label, "data_type": p.data_type,
                          "visibility": getattr(p, 'visibility', 'always') or 'always',
+                         "repeatable": getattr(p, 'repeatable', False) or False,
+                         "group": getattr(p, 'group', None) or None,
+                         "min": getattr(p, 'min', None) or None,
+                         "max": getattr(p, 'max', None) or None,
                          "position": {"side": p.position.side, "top": p.position.top}}
                         for p in t.ports.outputs
                     ],
@@ -590,9 +598,9 @@ async def handle_node_create(websocket: WebSocket, flow_id: str, msg_id: str,
     node = NodeDefinition(
         id=node_id,
         type=node_type,
-        name=type_def.name,
+        name=params.get("name") or type_def.name,
         position=position,
-        config=dict(type_def.default_config),
+        config=dict(params.get("config") or type_def.default_config),
     )
     await fm.add_node(flow_id, node)
 
