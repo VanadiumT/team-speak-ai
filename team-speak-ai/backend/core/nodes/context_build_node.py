@@ -21,7 +21,11 @@ class ContextBuildNode(BaseNode):
 
     @staticmethod
     def _input_key(port_id: str) -> str:
-        return port_id.replace("-in", "") if port_id.endswith("-in") else port_id
+        # 复用 _port_input_key 的对应逻辑：剥离 -in 后缀
+        # 但引擎的 input_mapping.as_field 存的是完整 port_id，不带 -in 后缀
+        # 所以直接返回 port_id 本身，避免双重剥离
+        # ctx-in1 → 存为 "ctx-in1"，读为 "ctx-in1"
+        return port_id
 
     async def execute(self, context: NodeContext, emit: EventEmitter) -> NodeOutput:
         # 1. System prompt: 仅当 system-in 有输入时才添加

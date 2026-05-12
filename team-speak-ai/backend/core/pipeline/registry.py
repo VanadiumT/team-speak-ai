@@ -185,7 +185,7 @@ def _build_metadata():
         ),
         NodeTypeDef(
             type="llm", name="LLM 生成", icon="smart_toy", color="primary",
-            default_config={"model": "gpt-4-turbo", "temperature": 0.7, "max_tokens": 2048},
+            default_config={"platform_id": "", "model_id": "", "overrides": {}},
             tabs=[
                 TabDef(id="config", label="配置"),
                 TabDef(id="detail", label="详情"),
@@ -197,13 +197,21 @@ def _build_metadata():
                 inputs=[
                     port("left", 30, "llm-in", "组合上下文 (Messages[])", "messages"),
                     port("left", 68, "trigger-in", "触发", "event", _on),
+                    port("left", 106, "image-in", "图片输入 (Image[])", "image", _on),
                 ],
                 outputs=[
-                    port("right", 30, "llm-out", "流式文本 (String)", "string"),
-                    port("right", 68, "done", "完成", "event", _on),
-                    port("right", 106, "meta-token-count", "Token 消耗", "number", _on),
-                    port("right", 144, "meta-reasoning", "思考过程", "string", _on),
-                    port("right", 182, "meta-model", "模型名", "string", _on),
+                    # 流式输出
+                    port("right", 30, "stream-text-out", "流式-纯文本(拆分) (String)", "string"),
+                    port("right", 56, "stream-think-out", "流式-思考过程(拆分) (String)", "string", _on),
+                    port("right", 82, "stream-raw-out", "流式-完整输出(含思考) (String)", "string", _on),
+                    # 非流式输出
+                    port("right", 108, "batch-text-out", "非流式-纯文本(拆分) (String)", "string"),
+                    port("right", 134, "batch-think-out", "非流式-思考过程(拆分) (String)", "string", _on),
+                    port("right", 160, "batch-raw-out", "非流式-完整输出(含思考) (String)", "string", _on),
+                    # 元数据
+                    port("right", 186, "done", "完成", "event", _on),
+                    port("right", 212, "meta-token-count", "Token 消耗", "number", _on),
+                    port("right", 238, "meta-model", "模型名", "string", _on),
                 ],
             ),
         ),

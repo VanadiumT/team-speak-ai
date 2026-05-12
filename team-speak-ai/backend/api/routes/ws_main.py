@@ -83,7 +83,7 @@ def _port_input_key(port_id: str) -> str:
 
 def _port_output_key(port_id: str) -> str:
     """从输出端口 ID 推导 source_field（优先用 value 等通用字段）"""
-    KNOWN = {"data-out": "value", "text-out": "text", "trigger-out": None}
+    KNOWN = {"data-out": "value", "text-out": "text", "trigger-out": None, "ctx-out": "messages"}
     if port_id in KNOWN:
         return KNOWN[port_id]
     return port_id.replace("-out", "") if port_id.endswith("-out") else port_id
@@ -119,6 +119,9 @@ async def ws_main(websocket: WebSocket):
     try:
         # 下发初始元数据
         flow_id = "_system"  # 系统级消息使用特殊 flow_id
+
+        # 0. 订阅全局广播通道（接收 presets / sys_var 等全局更新）
+        await _subscribe_flow(websocket, "__all__")
 
         # 1. 节点类型列表
         types = NodeRegistry.list_type_defs()
@@ -156,16 +159,21 @@ async def ws_main(websocket: WebSocket):
             })
         await _send(websocket, flow_id, "event", "node_types", {"types": types_data})
 
-        # 2. 侧栏树
+        # 2. LLM 预设广播
+        from core.config.defaults import get_preset_manager
+        pm = get_preset_manager()
+        await _send(websocket, flow_id, "event", "presets.list", pm.list_all())
+
+        # 3. 侧栏树
         fm = get_flow_manager()
         tree = fm.build_sidebar_tree()
         tree_data = [_sidebar_node_to_dict(n) for n in tree]
         await _send(websocket, flow_id, "event", "sidebar.tree", {"groups": tree_data})
 
-        # 3. 服务连接状态
+        # 4. 服务连接状态
         await _broadcast_connection_status(websocket, flow_id)
 
-        # 4. 通知未读计数
+        # 5. 通知未读计数
         nm = get_notification_manager()
         tree = fm.build_sidebar_tree()
         for fid in _collect_flow_ids(tree):
@@ -1183,6 +1191,79 @@ async def handle_sys_var_delete(websocket: WebSocket, flow_id: str, msg_id: str,
     await _broadcast_to_flow("__all__", "sys_var.deleted", {"key": key})
 
 
+# ── LLM 预设 ───────────────────────────────────────────────────
+
+async def handle_preset_list(websocket: WebSocket, flow_id: str, msg_id: str,
+                             params: dict) -> None:
+    from core.config.defaults import get_preset_manager
+    pm = get_preset_manager()
+    await _send_ack(websocket, flow_id, msg_id)
+    await _send(websocket, "_system", "event", "presets.list", pm.list_all())
+
+
+async def handle_preset_save_platform(websocket: WebSocket, flow_id: str, msg_id: str,
+                                       params: dict) -> None:
+    from core.config.defaults import get_preset_manager
+    pm = get_preset_manager()
+    platform = params.get("platform", {})
+    data = pm.save_platform(platform)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow("__all__", "presets.list", data)
+
+
+async def handle_preset_delete_platform(websocket: WebSocket, flow_id: str, msg_id: str,
+                                         params: dict) -> None:
+    from core.config.defaults import get_preset_manager
+    pm = get_preset_manager()
+    platform_id = params["platform_id"]
+    data = pm.delete_platform(platform_id)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow("__all__", "presets.list", data)
+
+
+async def handle_preset_duplicate_platform(websocket: WebSocket, flow_id: str, msg_id: str,
+                                            params: dict) -> None:
+    from core.config.defaults import get_preset_manager
+    pm = get_preset_manager()
+    platform_id = params["platform_id"]
+    data = pm.duplicate_platform(platform_id)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow("__all__", "presets.list", data)
+
+
+async def handle_preset_save_model(websocket: WebSocket, flow_id: str, msg_id: str,
+                                    params: dict) -> None:
+    from core.config.defaults import get_preset_manager
+    pm = get_preset_manager()
+    platform_id = params["platform_id"]
+    model = params.get("model", {})
+    data = pm.save_model(platform_id, model)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow("__all__", "presets.list", data)
+
+
+async def handle_preset_delete_model(websocket: WebSocket, flow_id: str, msg_id: str,
+                                      params: dict) -> None:
+    from core.config.defaults import get_preset_manager
+    pm = get_preset_manager()
+    platform_id = params["platform_id"]
+    model_id = params["model_id"]
+    data = pm.delete_model(platform_id, model_id)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow("__all__", "presets.list", data)
+
+
+async def handle_preset_duplicate_model(websocket: WebSocket, flow_id: str, msg_id: str,
+                                         params: dict) -> None:
+    from core.config.defaults import get_preset_manager
+    pm = get_preset_manager()
+    platform_id = params["platform_id"]
+    model_id = params["model_id"]
+    data = pm.duplicate_model(platform_id, model_id)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow("__all__", "presets.list", data)
+
+
 # ── 命令路由表 ─────────────────────────────────────────────────
 
 _COMMAND_HANDLERS = {
@@ -1235,6 +1316,14 @@ _COMMAND_HANDLERS = {
     "sys_var.get": handle_sys_var_get,
     "sys_var.set": handle_sys_var_set,
     "sys_var.delete": handle_sys_var_delete,
+    # LLM 预设
+    "preset.list": handle_preset_list,
+    "preset.save_platform": handle_preset_save_platform,
+    "preset.delete_platform": handle_preset_delete_platform,
+    "preset.duplicate_platform": handle_preset_duplicate_platform,
+    "preset.save_model": handle_preset_save_model,
+    "preset.delete_model": handle_preset_delete_model,
+    "preset.duplicate_model": handle_preset_duplicate_model,
 }
 
 

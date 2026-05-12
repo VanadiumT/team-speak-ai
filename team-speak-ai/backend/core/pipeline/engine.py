@@ -417,6 +417,13 @@ class PipelineEngine:
             if source_rt and source_rt.output:
                 source_key = mapping.source_field or mapping.as_field
                 val = source_rt.output.data.get(source_key)
+                # fallback: 用任意匹配的 key（适配 source_field 与输出 data key 不匹配的情况）
+                if val is None and source_rt.output.data:
+                    # 先尝试取第一个不为 None 的值
+                    for k, v in source_rt.output.data.items():
+                        if v is not None:
+                            val = v
+                            break
                 if val is not None:
                     inputs[mapping.as_field] = val
                 elif mapping.required:
@@ -564,20 +571,37 @@ class PipelineEngine:
                 break
 
     async def _trigger_downstream(self, instance: PipelineInstance, completed_node_id: str):
-        """节点完成后，自动触发符合条件的下游节点（trigger 配置 + data 连线）"""
+        """节点完成后，自动触发下游。
+
+        规则:
+        - 有 trigger → 以 trigger 为准，不等 data
+        - 无 trigger → 等所有 data 上游完成才触发一次
+        """
         pd = instance.pipeline_def
         triggered = set()
+
+        def _all_data_ready(nd: NodeDefinition) -> bool:
+            for m in nd.input_mappings:
+                src_rt = instance.get_runtime(m.from_node)
+                if not src_rt or src_rt.status != NodeState.COMPLETED:
+                    return False
+            return True
+
         for node_def in pd.nodes:
             if node_def.listener:
                 continue
-            # 通过 trigger 配置触发
-            if node_def.trigger and node_def.trigger.source_node == completed_node_id:
-                triggered.add(node_def.id)
-            # 通过 data 连线自动触发（有 input_mapping 从该节点来）
-            for m in node_def.input_mappings:
-                if m.from_node == completed_node_id:
+
+            if node_def.trigger:
+                # 有 trigger：只看 trigger 信号
+                if node_def.trigger.source_node == completed_node_id:
                     triggered.add(node_def.id)
-                    break
+            else:
+                # 无 trigger：等全部 data 上游都完成才触发
+                if node_def.input_mappings and _all_data_ready(node_def):
+                    is_source = any(m.from_node == completed_node_id for m in node_def.input_mappings)
+                    if is_source:
+                        triggered.add(node_def.id)
+
         for nid in triggered:
             await self.execute_node(instance.execution_id, nid)
 
@@ -658,7 +682,15 @@ def _port_input_key(port_id: str) -> str:
 def _port_output_key(port_id: str) -> str:
     KNOWN = {"data-out": "value", "text-out": "text", "img-out": "file", "ocr-out": "text",
              "line-count": "line_count", "provider": "provider", "trigger-out": None,
-             "ctx-out": "messages"}
+             "ctx-out": "messages",
+             # LLM 流式输出
+             "stream-text-out": "response", "stream-think-out": "reasoning",
+             "stream-raw-out": "raw",
+             # LLM 非流式输出
+             "batch-text-out": "response", "batch-think-out": "reasoning",
+             "batch-raw-out": "raw",
+             # LLM 元数据
+             "meta-token-count": "token_count", "meta-model": "model"}
     if port_id in KNOWN:
         return KNOWN[port_id]
     return port_id.replace("-out", "") if port_id.endswith("-out") else port_id

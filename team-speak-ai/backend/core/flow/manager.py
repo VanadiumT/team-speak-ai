@@ -640,6 +640,7 @@ class FlowManager:
                 type=t.get("type", "on_complete"),
                 source_node=t.get("source_node", ""),
                 keywords=t.get("keywords", []),
+                wait_all_data=t.get("wait_all_data", False),
             )
         return NodeDefinition(
             id=data["id"], type=data["type"],
@@ -679,6 +680,7 @@ class FlowManager:
                         "type": n.trigger.type,
                         "source_node": n.trigger.source_node,
                         "keywords": n.trigger.keywords,
+                        "wait_all_data": n.trigger.wait_all_data,
                     } if n.trigger else None,
                     "listener": n.listener,
                 }
@@ -719,6 +721,7 @@ class FlowManager:
                     type=t.get("type", "on_complete"),
                     source_node=t.get("source_node", ""),
                     keywords=t.get("keywords", []),
+                    wait_all_data=t.get("wait_all_data", False),
                 )
             nodes.append(NodeDefinition(
                 id=nd["id"],
