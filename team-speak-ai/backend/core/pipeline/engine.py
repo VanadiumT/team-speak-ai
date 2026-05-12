@@ -673,7 +673,9 @@ class PipelineEngine:
 
 
 def _port_input_key(port_id: str) -> str:
-    KNOWN = {"llm-in": "messages"}
+    KNOWN = {"llm-in": "messages",
+             "tts-stream-in": "tts-stream", "tts-batch-in": "tts-batch",
+             "stt-stream-in": "stt-stream", "stt-batch-in": "stt-batch"}
     if port_id in KNOWN:
         return KNOWN[port_id]
     return port_id.replace("-in", "") if port_id.endswith("-in") else port_id
@@ -690,7 +692,14 @@ def _port_output_key(port_id: str) -> str:
              "batch-text-out": "response", "batch-think-out": "reasoning",
              "batch-raw-out": "raw",
              # LLM 元数据
-             "meta-token-count": "token_count", "meta-model": "model"}
+             "meta-token-count": "token_count", "meta-model": "model",
+             # STT 输出
+             "stt-stream-text-out": "text", "stt-batch-text-out": "text",
+             "stt-meta-keyword": "trigger_keyword",
+             "stt-meta-confidence": "confidence",
+             # TTS 输出
+             "stream-audio-out": "stream-audio-out",
+             "batch-audio-out": "batch-audio-out"}
     if port_id in KNOWN:
         return KNOWN[port_id]
     return port_id.replace("-out", "") if port_id.endswith("-out") else port_id

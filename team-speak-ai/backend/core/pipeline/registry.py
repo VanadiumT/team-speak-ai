@@ -113,22 +113,24 @@ def _build_metadata():
         ),
         NodeTypeDef(
             type="stt_listen", name="STT 持续监听", icon="mic_external_on", color="primary",
-            default_config={"engine": "sensevoice", "keywords": ["求助", "集合", "撤退"], "sample_rate": 16000},
+            default_config={"platform_id": "", "model_id": "", "overrides": {}},
             tabs=[
                 TabDef(id="config", label="配置"),
                 TabDef(id="detail", label="详情"),
                 TabDef(id="io-data", label="IO数据"),
                 TabDef(id="io-mgmt", label="IO管理"),
                 TabDef(id="log", label="日志"),
-                TabDef(id="fulltext", label="全文"),
             ],
             ports=PortsDef(
-                inputs=[port("left", 30, "stt-in", "音频帧 (PCM 16bit)", "audio")],
+                inputs=[
+                    port("left", 30, "stt-stream-in", "流式音频 (Audio)", "audio"),
+                    port("left", 56, "stt-batch-in", "非流式音频 (Audio)", "audio"),
+                    port("left", 82, "trigger-in", "触发", "event", _on),
+                ],
                 outputs=[
-                    port("right", 30, "stt-out", "识别文本 (String)", "string"),
-                    port("right", 68, "meta-keyword", "触发关键词", "string", _on),
-                    port("right", 106, "meta-confidence", "STT 置信度", "number", _on),
-                    port("right", 144, "meta-history-count", "累积历史数", "number", _on),
+                    port("right", 30, "stt-stream-text-out", "流式-识别文本 (String)", "string"),
+                    port("right", 56, "stt-batch-text-out", "非流式-完整文本 (String)", "string"),
+                    port("right", 82, "done", "完成", "event", _on),
                 ],
             ),
         ),
@@ -216,8 +218,8 @@ def _build_metadata():
             ),
         ),
         NodeTypeDef(
-            type="tts", name="TTS 合成", icon="record_voice_over", color="outline",
-            default_config={"engine": "edge", "voice": "zh-CN-YunxiNeural", "speed": 1.0},
+            type="tts", name="TTS 合成", icon="record_voice_over", color="primary",
+            default_config={"platform_id": "", "model_id": "", "overrides": {}},
             tabs=[
                 TabDef(id="config", label="配置"),
                 TabDef(id="detail", label="详情"),
@@ -227,12 +229,14 @@ def _build_metadata():
             ],
             ports=PortsDef(
                 inputs=[
-                    port("left", 30, "tts-in", "文本 (String)", "string"),
-                    port("left", 68, "trigger-in", "触发", "event", _on),
+                    port("left", 30, "tts-stream-in", "流式-文本(拆分) (String)", "string"),
+                    port("left", 56, "tts-batch-in", "非流式-文本 (String)", "string"),
+                    port("left", 82, "trigger-in", "触发", "event", _on),
                 ],
                 outputs=[
-                    port("right", 30, "tts-out", "合成音频 (WAV)", "audio"),
-                    port("right", 68, "done", "完成", "event", _on),
+                    port("right", 30, "stream-audio-out", "流式-音频(拆分) (Audio)", "audio"),
+                    port("right", 56, "batch-audio-out", "非流式-完整音频 (Audio)", "audio"),
+                    port("right", 82, "done", "完成", "event", _on),
                 ],
             ),
         ),

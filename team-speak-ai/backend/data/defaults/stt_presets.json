@@ -1,0 +1,22 @@
+{
+  "platforms": [
+    {
+      "id": "sensevoice_local",
+      "name": "本地 SenseVoice",
+      "provider": "sensevoice",
+      "api_key": "",
+      "api_url": "",
+      "model_dir": "iic/SenseVoiceSmall",
+      "device": "cpu",
+      "models": [
+        {
+          "id": "sensevoice_default",
+          "name": "SenseVoiceSmall",
+          "is_default": true,
+          "language": "auto",
+          "sample_rate": 16000
+        }
+      ]
+    }
+  ]
+}

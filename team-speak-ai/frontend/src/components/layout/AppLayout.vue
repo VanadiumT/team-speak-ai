@@ -262,6 +262,8 @@ import { useNotificationsStore } from '@/stores/notifications.js'
 import { useConnectionStore } from '@/stores/connection.js'
 import { useSidebarStore } from '@/stores/sidebar.js'
 import { useFilesStore } from '@/stores/files.js'
+import { usePresetsStore } from '@/stores/presets.js'
+import { useSttPresetsStore } from '@/stores/sttPresets.js'
 import PipelineView from '@/components/pipeline/PipelineView.vue'
 import DynamicPanel from '@/components/panels/DynamicPanel.vue'
 import NodePalette from '@/components/pipeline/NodePalette.vue'
@@ -278,6 +280,8 @@ const notificationsStore = useNotificationsStore()
 const connectionStore = useConnectionStore()
 const sidebarStore = useSidebarStore()
 const filesStore = useFilesStore()
+const presetsStore = usePresetsStore()
+const sttPresetsStore = useSttPresetsStore()
 
 const { sidebarTree, expandedSections, activeFlowId, recentFlows, availableGroups } = storeToRefs(sidebarStore)
 
@@ -566,6 +570,18 @@ onMounted(() => {
   connectionStore.init()
   sidebarStore.init()
   filesStore.init()
+  presetsStore.init()
+  presetsStore.initTts()
+  presetsStore.initTs()
+  presetsStore.initOcr()
+  sttPresetsStore.init()
+
+  // 主动拉取所有预设数据，避免 WS 初始广播时序竞争导致数据丢失
+  pipelineSocket.sendCommand('_system', 'preset.list', {}).catch(() => {})
+  pipelineSocket.sendCommand('_system', 'tts_preset.list', {}).catch(() => {})
+  pipelineSocket.sendCommand('_system', 'stt_preset.list', {}).catch(() => {})
+  pipelineSocket.sendCommand('_system', 'ts_preset.list', {}).catch(() => {})
+  pipelineSocket.sendCommand('_system', 'ocr_preset.list', {}).catch(() => {})
 
   // 以下 handler 只在 onMounted 注册一次，不会被重复添加
   pipelineSocket.on('flow.loaded', ({ flow }) => {

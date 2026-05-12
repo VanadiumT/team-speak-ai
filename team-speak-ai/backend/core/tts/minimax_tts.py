@@ -20,10 +20,12 @@ class MiniMaxTTS(BaseTTS):
         speed: float = 1.0,
         vol: float = 1.0,
         pitch: float = 0,
+        emotion: str = "",
         sample_rate: int = 32000,
         bitrate: int = 128000,
         file_format: str = "mp3",
         channel: int = 1,
+        language_boost: str = None,
     ):
         self.api_key = api_key or os.getenv("MINIMAX_API_KEY", "")
         self.model = model
@@ -31,10 +33,12 @@ class MiniMaxTTS(BaseTTS):
         self.speed = speed
         self.vol = vol
         self.pitch = pitch
+        self.emotion = emotion
         self.sample_rate = sample_rate
         self.bitrate = bitrate
         self.file_format = file_format
         self.channel = channel
+        self.language_boost = language_boost
         self._ws = None
 
     async def _connect(self):
@@ -54,16 +58,20 @@ class MiniMaxTTS(BaseTTS):
 
     async def _start_task(self, ws):
         """Send task start request"""
+        voice_setting = {
+            "voice_id": self.voice_id,
+            "speed": self.speed,
+            "vol": self.vol,
+            "pitch": self.pitch,
+            "english_normalization": False,
+        }
+        if self.emotion:
+            voice_setting["emotion"] = self.emotion
+
         start_msg = {
             "event": "task_start",
             "model": self.model,
-            "voice_setting": {
-                "voice_id": self.voice_id,
-                "speed": self.speed,
-                "vol": self.vol,
-                "pitch": self.pitch,
-                "english_normalization": False,
-            },
+            "voice_setting": voice_setting,
             "audio_setting": {
                 "sample_rate": self.sample_rate,
                 "bitrate": self.bitrate,
@@ -71,6 +79,9 @@ class MiniMaxTTS(BaseTTS):
                 "channel": self.channel,
             },
         }
+        if self.language_boost:
+            start_msg["language_boost"] = self.language_boost
+
         await ws.send(json.dumps(start_msg))
         response = json.loads(await ws.recv())
         if response.get("event") == "task_started":

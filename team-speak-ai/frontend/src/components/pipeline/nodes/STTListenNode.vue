@@ -1,50 +1,64 @@
 <template>
-  <div class="stt-listen-body">
-    <!-- Flow Mode + detail tab -->
+  <div class="stt-body">
     <template v-if="!editMode || activeTab === 'detail'">
       <div class="status-row">
         <span class="status-dot" :class="status" />
         <span class="status-text">{{ statusLabel }}</span>
-        <span class="keyword-dot" v-if="status === 'listening'" />
+        <span class="model-tag">{{ displayModelName }}</span>
       </div>
 
-      <!-- Config summary (always visible in flow mode) -->
-      <div class="config-chips">
-        <span class="config-chip" v-for="kw in (config?.keywords || [])" :key="kw">{{ kw }}</span>
-        <span class="config-chip engine">{{ config?.engine || 'sensevoice' }}</span>
-      </div>
+      <div v-if="status === 'pending'" class="hint-text">等待触发信号...</div>
 
-      <!-- PROCESSING: temporary recognition state -->
       <div v-if="status === 'processing'" class="recog-preview">
         <span class="material-symbols-outlined recog-icon">graphic_eq</span>
-        <span class="recog-text">{{ (data?.text || summary || '识别中...').slice(0, 60) }}</span>
+        <span class="recog-text">{{ (data?.text || summary || '转写中...').slice(0, 80) }}</span>
         <div class="mini-bar"><div class="mini-bar-fill" :style="{ width: (progress ?? 0) * 100 + '%' }" /></div>
       </div>
 
-      <!-- COMPLETED/LISTENING: recent outputs -->
-      <div class="recent-outputs" v-if="(status === 'listening' || status === 'completed') && recentOutputs.length">
-        <div class="recent-label">最近识别</div>
-        <div v-for="(item, i) in recentOutputs" :key="i" class="recent-line" :class="{ triggered: item.keyword }">
-          <span class="recent-ts">{{ item.ts }}</span>
-          <span class="recent-text">{{ item.text }}</span>
-          <span v-if="item.keyword" class="recent-kw">★{{ item.keyword }}</span>
-        </div>
+      <div v-if="status === 'completed'" class="result-text">
+        <span class="material-symbols-outlined done-icon">check_circle</span>
+        <span>{{ (data?.text || '').slice(0, 120) }}{{ (data?.text || '').length > 120 ? '...' : '' }}</span>
       </div>
 
-      <!-- Stats -->
-      <div class="stats-row" v-if="status === 'listening' || status === 'completed'">
-        <span>累积 {{ data?.history_count || 0 }} 条</span>
-        <span class="stats-sep">|</span>
-        <span>触发 {{ data?.trigger_count || 0 }} 次</span>
-      </div>
-
-      <div v-if="status === 'pending'" class="hint-text">等待音频流...</div>
-      <div v-if="status === 'error'" class="error-text">{{ summary || 'STT 错误' }}</div>
+      <div v-if="status === 'error'" class="error-text">{{ summary || 'STT 转写失败' }}</div>
     </template>
 
-    <!-- Edit Mode: config tab -->
     <template v-if="editMode && activeTab === 'config'">
-      <NodeConfigForm :config="node.config || {}" :fields="configFields" :readonly="false" @update="onUpdate" />
+      <div class="stt-config">
+        <div class="cfg-field">
+          <label class="cfg-label">STT 模型</label>
+          <select class="cfg-select" :value="selectedModelKey" @change="onModelChange">
+            <option v-if="!selectedModelKey" value="" disabled>选择模型...</option>
+            <option v-for="m in sttPresetsStore.allModels"
+                    :key="m.platformId + '/' + m.modelId"
+                    :value="m.platformId + '/' + m.modelId">
+              {{ m.label }}
+            </option>
+          </select>
+        </div>
+
+        <details class="cfg-overrides">
+          <summary class="cfg-summary">覆盖预设值 (可选)</summary>
+          <div class="cfg-field">
+            <label class="cfg-label">语言</label>
+            <select class="cfg-select" :value="overrideVal('language')" @change="onOverride('language', $event.target.value)">
+              <option value="">预设: {{ currentModelInfo?.language || 'auto' }}</option>
+              <option value="auto">auto</option>
+              <option value="zh">zh</option>
+              <option value="en">en</option>
+            </select>
+          </div>
+          <div class="cfg-field">
+            <label class="cfg-label">采样率 (Hz)</label>
+            <select class="cfg-select" :value="overrideVal('sample_rate')" @change="onOverride('sample_rate', $event.target.value)">
+              <option value="">预设: {{ currentModelInfo?.sampleRate || 16000 }}</option>
+              <option :value="8000">8000</option>
+              <option :value="16000">16000</option>
+              <option :value="48000">48000</option>
+            </select>
+          </div>
+        </details>
+      </div>
     </template>
 
     <template v-if="activeTab === 'io-data'">
@@ -56,25 +70,13 @@
     <template v-if="activeTab === 'log'">
       <NodeLogView :logs="logs" />
     </template>
-    <template v-if="activeTab === 'fulltext'">
-      <div class="fulltext-panel">
-        <div v-if="!fulltextLines.length" class="hint-text">暂无全文数据</div>
-        <div v-else class="fulltext-lines">
-          <div v-for="(line, i) in fulltextLines" :key="i" class="ft-line" :class="{ triggered: line.keyword }">
-            <span class="ft-ts">{{ line.ts }}</span>
-            <span class="ft-text">{{ line.text }}</span>
-            <span v-if="line.keyword" class="ft-kw">★ {{ line.keyword }}</span>
-          </div>
-        </div>
-      </div>
-    </template>
   </div>
 </template>
 
 <script setup>
 import { computed } from 'vue'
 import { useEditorStore } from '@/stores/editor'
-import NodeConfigForm from './NodeConfigForm.vue'
+import { useSttPresetsStore } from '@/stores/sttPresets.js'
 import NodeIODataView from './NodeIODataView.vue'
 import NodeIOMgmt from './NodeIOMgmt.vue'
 import NodeLogView from './NodeLogView.vue'
@@ -94,46 +96,59 @@ const props = defineProps({
 })
 
 const editorStore = useEditorStore()
+const sttPresetsStore = useSttPresetsStore()
 
 const statusLabel = computed(() => {
-  const map = { pending: '等待中', listening: '监听中', processing: '识别中', completed: '已触发', error: '错误' }
+  const map = { pending: '等待中', processing: '转写中', completed: '已完成', error: '错误' }
   return map[props.status] || props.status
 })
 
-const configFields = [
-  { key: 'engine', label: '识别引擎', type: 'chip-toggle', options: [
-    { value: 'sensevoice', label: 'SenseVoice' }, { value: 'whisper', label: 'Whisper' }, { value: 'minimax', label: 'MiniMax' }
-  ]},
-  { key: 'keywords', label: '关键词列表', type: 'tags', placeholder: '+ 添加关键词' },
-  { key: 'sample_rate', label: '采样率 (Hz)', type: 'number', min: 8000, max: 48000, placeholder: '16000' }
-]
-
-// Show last 3 outputs from logs
-const recentOutputs = computed(() => {
-  return (props.logs || [])
-    .filter(l => l.level === 'info' && l.message?.startsWith('识别:'))
-    .slice(-3)
-    .map(l => {
-      const match = l.message?.match(/识别:\s*"(.+?)"/)
-      const kwMatch = l.message?.match(/关键词:\s*"(.+?)"/)
-      return { ts: l.timestamp, text: match?.[1] || l.message, keyword: kwMatch?.[1] || null }
-    })
-    .reverse()
+// ── 预设选择 ──
+const selectedModelKey = computed(() => {
+  const cfg = props.config || props.node?.config || {}
+  if (cfg.platform_id && cfg.model_id) return `${cfg.platform_id}/${cfg.model_id}`
+  return ''
 })
 
-const fulltextLines = computed(() => {
-  return (props.logs || [])
-    .filter(l => l.level === 'info' && l.message?.startsWith('识别:'))
-    .map(l => {
-      const match = l.message?.match(/识别:\s*"(.+?)"/)
-      const kwMatch = l.message?.match(/关键词:\s*"(.+?)"/)
-      return { ts: l.timestamp, text: match?.[1] || l.message, keyword: kwMatch?.[1] || null }
-    })
+const currentModelInfo = computed(() => {
+  const cfg = props.config || props.node?.config || {}
+  if (cfg.platform_id && cfg.model_id) return sttPresetsStore.getModelInfo(cfg.platform_id, cfg.model_id)
+  return null
 })
 
+const displayModelName = computed(() => {
+  const cfg = props.config || props.node?.config || {}
+  if (cfg.platform_id && cfg.model_id) return sttPresetsStore.getLabel(cfg.platform_id, cfg.model_id)
+  return cfg.engine || 'sensevoice'
+})
 
-function onUpdate({ key, value }) {
-  editorStore.updateConfigImmediate(props.node.id, { [key]: value })
+function overrideVal(key) {
+  const cfg = props.config || props.node?.config || {}
+  const ov = cfg.overrides || {}
+  return ov[key] != null ? ov[key] : ''
+}
+
+function onOverride(key, rawVal) {
+  const cfg = props.config || props.node?.config || {}
+  const overrides = { ...(cfg.overrides || {}) }
+  if (rawVal === '' || rawVal === undefined) {
+    delete overrides[key]
+  } else if (key === 'sample_rate') {
+    overrides[key] = parseInt(rawVal)
+  } else {
+    overrides[key] = rawVal
+  }
+  editorStore.updateConfigImmediate(props.node.id, { ...cfg, overrides })
+}
+
+function onModelChange(e) {
+  const [platformId, modelId] = e.target.value.split('/')
+  const cfg = props.config || props.node?.config || {}
+  editorStore.updateConfigImmediate(props.node.id, {
+    ...cfg,
+    platform_id: platformId,
+    model_id: modelId,
+  })
 }
 
 function onTogglePort(portId, show) {
@@ -144,32 +159,20 @@ function onTogglePort(portId, show) {
 </script>
 
 <style scoped>
-.stt-listen-body { padding: 2px 0; }
-.status-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.stt-body { padding: 2px 0; }
+.status-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
 .status-dot { width: 6px; height: 6px; border-radius: 50%; }
 .status-dot.pending { background: #8b90a0; }
-.status-dot.listening { background: #4a8eff; animation: pulse 1.5s infinite; }
 .status-dot.processing { background: #4a8eff; animation: pulse 0.8s infinite; }
 .status-dot.completed { background: #4edea3; box-shadow: 0 0 6px rgba(78,222,163,0.5); }
 .status-dot.error { background: #ffb4ab; }
 .status-text { font-size: 11px; color: #c1c6d7; }
-.keyword-dot {
-  width: 8px; height: 8px; border-radius: 50%;
-  background: #ef6719; box-shadow: 0 0 8px rgba(239,103,25,0.6);
-  animation: keywordPulse 1.5s ease-in-out infinite;
+.model-tag {
+  font-size: 8px; font-family: 'Space Grotesk', sans-serif;
+  color: #adc7ff; background: rgba(173,199,255,0.08); padding: 1px 5px; border-radius: 9999px;
+  margin-left: auto;
 }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
-@keyframes keywordPulse { 0%,100% { opacity: 0.4; transform: scale(1); } 50% { opacity: 1; transform: scale(1.3); } }
-
-.config-chips { display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 6px; }
-.config-chip {
-  padding: 1px 6px; border-radius: 9999px;
-  font-size: 8px; font-family: 'Space Grotesk', sans-serif; font-weight: 500;
-  background: rgba(255,182,149,0.1); border: 1px solid rgba(239,103,25,0.3); color: #ffb695;
-}
-.config-chip.engine {
-  background: rgba(173,199,255,0.1); border-color: rgba(173,199,255,0.3); color: #adc7ff;
-}
 
 .recog-preview { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; flex-wrap: wrap; }
 .recog-icon { font-size: 14px; color: #4a8eff; }
@@ -177,25 +180,28 @@ function onTogglePort(portId, show) {
 .mini-bar { width: 100%; height: 2px; background: #31353d; border-radius: 1px; overflow: hidden; }
 .mini-bar-fill { height: 100%; background: #4a8eff; border-radius: 1px; transition: width 0.3s; }
 
-.recent-outputs { margin-bottom: 4px; }
-.recent-label { font-size: 8px; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 2px; }
-.recent-line { display: flex; align-items: baseline; gap: 4px; padding: 1px 0; font-size: 9px; }
-.recent-line.triggered { background: rgba(239,103,25,0.08); border-radius: 2px; }
-.recent-ts { color: #64748b; font-family: 'Space Grotesk', sans-serif; flex-shrink: 0; }
-.recent-text { color: #c1c6d7; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.recent-kw { color: #ef6719; font-weight: 600; flex-shrink: 0; }
-
-.stats-row { display: flex; gap: 4px; font-size: 9px; color: #8b90a0; }
-.stats-sep { color: #414754; }
-
-.fulltext-panel { max-height: 200px; overflow-y: auto; }
-.fulltext-lines { display: flex; flex-direction: column; gap: 2px; }
-.ft-line { display: flex; align-items: baseline; gap: 4px; font-size: 9px; padding: 1px 2px; }
-.ft-line.triggered { background: rgba(239,103,25,0.1); border-radius: 2px; }
-.ft-ts { color: #64748b; font-family: 'Space Grotesk', sans-serif; flex-shrink: 0; }
-.ft-text { color: #c1c6d7; }
-.ft-kw { color: #ef6719; font-weight: 600; flex-shrink: 0; }
+.result-text {
+  display: flex; align-items: flex-start; gap: 4px;
+  font-size: 10px; color: #c1c6d7; padding: 4px 0;
+}
+.done-icon { font-size: 14px; color: #4edea3; flex-shrink: 0; }
 
 .hint-text { font-size: 10px; color: #64748b; text-align: center; padding: 8px 0; }
 .error-text { font-size: 10px; color: #ffb4ab; text-align: center; padding: 8px 0; }
+
+/* ── Config Tab ── */
+.stt-config { padding: 4px 0; }
+.stt-config .cfg-field { margin-bottom: 8px; }
+.stt-config .cfg-label { display: block; font-size: 10px; color: #8b90a0; margin-bottom: 3px; }
+.stt-config .cfg-select {
+  width: 100%; padding: 5px 8px; font-size: 11px;
+  background: #10131b; border: 1px solid #31353d; border-radius: 4px;
+  color: #e0e2ed; font-family: inherit; outline: none;
+}
+.stt-config .cfg-select:focus { border-color: #4a8eff; }
+.stt-config .cfg-overrides { margin-top: 10px; }
+.stt-config .cfg-summary {
+  font-size: 10px; color: #adc7ff; cursor: pointer; padding: 4px 0;
+  border-bottom: 1px solid rgba(65,71,84,0.2); margin-bottom: 8px;
+}
 </style>

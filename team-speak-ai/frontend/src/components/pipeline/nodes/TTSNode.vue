@@ -4,28 +4,52 @@
       <div class="status-row">
         <span class="status-dot" :class="status" />
         <span class="status-text">{{ statusLabel }}</span>
+        <span class="mode-badge">{{ streaming ? '流式' : '非流式' }}</span>
+        <span class="model-tag">{{ displayModelName }}</span>
       </div>
 
       <div v-if="status === 'pending'" class="hint-text">等待文本...</div>
 
       <div v-if="status === 'processing'" class="synth-info">
-        <span class="material-symbols-outlined synth-icon">record_voice_over</span>
-        <span>合成中</span>
         <div class="mini-bar"><div class="mini-bar-fill" :style="{ width: (progress ?? 0) * 100 + '%' }" /></div>
-        <div class="seg-count">句 {{ data?.current_segment ?? 0 }}/{{ data?.total_segments ?? '-' }}</div>
+        <div class="seg-count">{{ data?.current_segment ?? 0 }}/{{ data?.total_segments ?? 0 }} 句</div>
       </div>
 
       <div v-if="status === 'completed'" class="done-info">
         <span class="material-symbols-outlined done-icon">check_circle</span>
-        <span>{{ data?.total_segments ?? 0 }} 句 · {{ formatDuration(data?.total_duration) }}</span>
-        <div class="engine-tag">{{ config?.engine || 'edge' }} · {{ config?.voice || 'YunxiNeural' }}</div>
+        <span>{{ data?.total_segments ?? 0 }} 句</span>
       </div>
 
       <div v-if="status === 'error'" class="error-text">{{ summary || '合成失败' }}</div>
     </template>
 
     <template v-if="editMode && activeTab === 'config'">
-      <NodeConfigForm :config="node.config || {}" :fields="configFields" :readonly="false" @update="onUpdate" />
+      <div class="tts-config">
+        <div class="cfg-field">
+          <label class="cfg-label">模型</label>
+          <select class="cfg-select" :value="selectedModelKey" @change="onModelChange">
+            <option v-if="!selectedModelKey" value="" disabled>选择模型...</option>
+            <option v-for="m in presetsStore.ttsAllModels" :key="m.platformId + '/' + m.modelId"
+                    :value="m.platformId + '/' + m.modelId">
+              {{ m.label }}
+            </option>
+          </select>
+        </div>
+
+        <details class="cfg-overrides">
+          <summary class="cfg-summary">覆盖预设值 (可选)</summary>
+          <div class="cfg-field">
+            <label class="cfg-label">语速 <span class="cfg-hint">(预设: {{ currentModelInfo?.speed ?? '-' }})</span></label>
+            <input class="cfg-input" type="number" :value="overrideVal('speed')" @change="onOverride('speed', $event.target.value)"
+                   min="0.5" max="2" step="0.1" :placeholder="String(currentModelInfo?.speed ?? '')" />
+          </div>
+          <div class="cfg-field">
+            <label class="cfg-label">音色 <span class="cfg-hint">(预设: {{ currentModelInfo?.voiceId ?? '-' }})</span></label>
+            <input class="cfg-input" type="text" :value="overrideVal('voice_id')" @change="onOverride('voice_id', $event.target.value)"
+                   :placeholder="currentModelInfo?.voiceId || ''" />
+          </div>
+        </details>
+      </div>
     </template>
     <template v-if="activeTab === 'io-data'">
       <NodeIODataView :node="node" :input-ports="inputPorts" :output-ports="outputPorts" />
@@ -42,7 +66,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useEditorStore } from '@/stores/editor'
-import NodeConfigForm from './NodeConfigForm.vue'
+import { usePresetsStore } from '@/stores/presets'
 import NodeIODataView from './NodeIODataView.vue'
 import NodeIOMgmt from './NodeIOMgmt.vue'
 import NodeLogView from './NodeLogView.vue'
@@ -62,27 +86,76 @@ const props = defineProps({
 })
 
 const editorStore = useEditorStore()
+const presetsStore = usePresetsStore()
 
 const statusLabel = computed(() => {
   const map = { pending: '等待文本', processing: '合成中', completed: '已完成', error: '错误' }
   return map[props.status] || props.status
 })
 
-const configFields = [
-  { key: 'engine', label: '合成引擎', type: 'chip-toggle', options: [
-    { value: 'edge', label: 'Edge' }, { value: 'minimax', label: 'MiniMax' }
-  ]},
-  { key: 'voice', label: '音色', type: 'select', options: [
-    { value: 'zh-CN-YunxiNeural', label: 'Yunxi (男)' },
-    { value: 'zh-CN-XiaoxiaoNeural', label: 'Xiaoxiao (女)' },
-    { value: 'zh-CN-YunyangNeural', label: 'Yunyang (男)' }
-  ]},
-  { key: 'speed', label: '语速', type: 'range', min: 0.5, max: 2.0, step: 0.1 }
-]
+// ── 模型配置 ──
+const displayModelName = computed(() => {
+  const cfg = props.config || props.node?.config || {}
+  if (cfg.platform_id && cfg.model_id) return presetsStore.getTtsLabel(cfg.platform_id, cfg.model_id)
+  if (cfg.engine) return `${cfg.engine} · ${cfg.voice || ''}`
+  return '未选择模型'
+})
 
+const selectedModelKey = computed(() => {
+  const cfg = props.config || props.node?.config || {}
+  if (cfg.platform_id && cfg.model_id) return `${cfg.platform_id}/${cfg.model_id}`
+  return ''
+})
 
-function onUpdate({ key, value }) {
-  editorStore.updateConfigImmediate(props.node.id, { [key]: value })
+const currentModelInfo = computed(() => {
+  const cfg = props.config || props.node?.config || {}
+  if (cfg.platform_id && cfg.model_id) {
+    return presetsStore.ttsAllModels.find(m => m.platformId === cfg.platform_id && m.modelId === cfg.model_id) || null
+  }
+  return null
+})
+
+const streaming = computed(() => {
+  const cfg = props.config || props.node?.config || {}
+  const ov = cfg.overrides || {}
+  if ('streaming' in ov) return !!ov.streaming
+  return currentModelInfo.value?.streaming !== false
+})
+
+// ── Override helpers ──
+function overrideVal(key) {
+  const cfg = props.config || props.node?.config || {}
+  const ov = cfg.overrides || {}
+  return ov[key] != null ? ov[key] : ''
+}
+
+function onOverride(key, rawVal) {
+  const cfg = props.config || props.node?.config || {}
+  const overrides = { ...(cfg.overrides || {}) }
+  let val
+  if (rawVal === '' || rawVal === undefined) {
+    val = undefined
+  } else if (key === 'voice_id') {
+    val = rawVal
+  } else {
+    val = parseFloat(rawVal)
+  }
+  if (val === undefined || (typeof val === 'number' && isNaN(val))) {
+    delete overrides[key]
+  } else {
+    overrides[key] = val
+  }
+  editorStore.updateConfigImmediate(props.node.id, { ...cfg, overrides })
+}
+
+function onModelChange(e) {
+  const [platformId, modelId] = e.target.value.split('/')
+  const cfg = props.config || props.node?.config || {}
+  editorStore.updateConfigImmediate(props.node.id, {
+    platform_id: platformId,
+    model_id: modelId,
+    overrides: cfg.overrides || {},
+  })
 }
 
 function onTogglePort(portId, show) {
@@ -91,12 +164,6 @@ function onTogglePort(portId, show) {
   editorStore.updateConfigImmediate(props.node.id, { _visible_ports: [...vis] })
 }
 
-function formatDuration(sec) {
-  if (!sec) return '0s'
-  const m = Math.floor(sec / 60)
-  const s = Math.round(sec % 60)
-  return m ? `${m}m${s}s` : `${s}s`
-}
 </script>
 
 <style scoped>
@@ -108,6 +175,15 @@ function formatDuration(sec) {
 .status-dot.completed { background: #4edea3; box-shadow: 0 0 6px rgba(78,222,163,0.5); }
 .status-dot.error { background: #ffb4ab; }
 .status-text { font-size: 11px; color: #c1c6d7; }
+.model-tag {
+  font-size: 8px; font-family: 'Space Grotesk', sans-serif;
+  color: #adc7ff; background: rgba(173,199,255,0.08); padding: 1px 5px; border-radius: 9999px;
+  max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mode-badge {
+  font-size: 8px; padding: 1px 5px; border-radius: 9999px; margin-left: auto;
+  background: rgba(78,222,163,0.1); color: #4edea3;
+}
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
 
 .synth-info { display: flex; align-items: center; gap: 4px; font-size: 10px; color: #adc7ff; flex-wrap: wrap; }
@@ -125,4 +201,21 @@ function formatDuration(sec) {
 
 .hint-text { font-size: 10px; color: #64748b; text-align: center; padding: 8px 0; }
 .error-text { font-size: 10px; color: #ffb4ab; text-align: center; padding: 8px 0; }
+
+/* ── Config Tab ── */
+.tts-config { padding: 4px 0; }
+.cfg-field { margin-bottom: 8px; }
+.cfg-label { display: block; font-size: 10px; color: #8b90a0; margin-bottom: 3px; }
+.cfg-hint { font-size: 8px; color: #64748b; }
+.cfg-select, .cfg-input {
+  width: 100%; padding: 5px 8px; font-size: 11px;
+  background: #10131b; border: 1px solid #31353d; border-radius: 4px;
+  color: #e0e2ed; font-family: inherit; outline: none;
+}
+.cfg-select:focus, .cfg-input:focus { border-color: #4a8eff; }
+.cfg-overrides { margin-top: 10px; }
+.cfg-summary {
+  font-size: 10px; color: #adc7ff; cursor: pointer; padding: 4px 0;
+  border-bottom: 1px solid rgba(65,71,84,0.2); margin-bottom: 8px;
+}
 </style>

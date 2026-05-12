@@ -47,6 +47,7 @@ class SenseVoiceSTT(BaseSTT):
         self.model = AutoModel(
             model=model_dir,
             trust_remote_code=True,
+            disable_update=True,
             device=device,
             vad_model="fsmn-vad" if not disable_vad else None,
             vad_kwargs={"max_single_segment_time": 30000},

@@ -159,10 +159,18 @@ async def ws_main(websocket: WebSocket):
             })
         await _send(websocket, flow_id, "event", "node_types", {"types": types_data})
 
-        # 2. LLM 预设广播
-        from core.config.defaults import get_preset_manager
+        # 2. 预设广播
+        from core.config.defaults import get_preset_manager, get_stt_preset_manager, get_tts_preset_manager, get_ocr_preset_manager, get_ts_preset_manager
         pm = get_preset_manager()
         await _send(websocket, flow_id, "event", "presets.list", pm.list_all())
+        stt_pm = get_stt_preset_manager()
+        await _send(websocket, flow_id, "event", "stt_presets.list", stt_pm.list_all())
+        tts_pm = get_tts_preset_manager()
+        await _send(websocket, flow_id, "event", "tts_presets.list", tts_pm.list_all())
+        ocr_pm = get_ocr_preset_manager()
+        await _send(websocket, flow_id, "event", "ocr_presets.list", ocr_pm.list_all())
+        ts_pm = get_ts_preset_manager()
+        await _send(websocket, flow_id, "event", "ts_presets.list", ts_pm.list_all())
 
         # 3. 侧栏树
         fm = get_flow_manager()
@@ -1264,6 +1272,481 @@ async def handle_preset_duplicate_model(websocket: WebSocket, flow_id: str, msg_
     await _broadcast_to_flow("__all__", "presets.list", data)
 
 
+# ── TTS 预设 ───────────────────────────────────────────────────
+
+async def handle_tts_preset_list(websocket: WebSocket, flow_id: str, msg_id: str,
+                                 params: dict) -> None:
+    from core.config.defaults import get_tts_preset_manager
+    pm = get_tts_preset_manager()
+    await _send_ack(websocket, flow_id, msg_id)
+    await _send(websocket, "_system", "event", "tts_presets.list", pm.list_all())
+
+
+async def handle_tts_preset_save_platform(websocket: WebSocket, flow_id: str, msg_id: str,
+                                          params: dict) -> None:
+    from core.config.defaults import get_tts_preset_manager
+    pm = get_tts_preset_manager()
+    platform = params.get("platform", {})
+    data = pm.save_platform(platform)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow("__all__", "tts_presets.list", data)
+
+
+async def handle_tts_preset_delete_platform(websocket: WebSocket, flow_id: str, msg_id: str,
+                                            params: dict) -> None:
+    from core.config.defaults import get_tts_preset_manager
+    pm = get_tts_preset_manager()
+    platform_id = params["platform_id"]
+    data = pm.delete_platform(platform_id)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow("__all__", "tts_presets.list", data)
+
+
+async def handle_tts_preset_duplicate_platform(websocket: WebSocket, flow_id: str, msg_id: str,
+                                               params: dict) -> None:
+    from core.config.defaults import get_tts_preset_manager
+    pm = get_tts_preset_manager()
+    platform_id = params["platform_id"]
+    data = pm.duplicate_platform(platform_id)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow("__all__", "tts_presets.list", data)
+
+
+async def handle_tts_preset_save_model(websocket: WebSocket, flow_id: str, msg_id: str,
+                                       params: dict) -> None:
+    from core.config.defaults import get_tts_preset_manager
+    pm = get_tts_preset_manager()
+    platform_id = params["platform_id"]
+    model = params.get("model", {})
+    data = pm.save_model(platform_id, model)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow("__all__", "tts_presets.list", data)
+
+
+async def handle_tts_preset_delete_model(websocket: WebSocket, flow_id: str, msg_id: str,
+                                         params: dict) -> None:
+    from core.config.defaults import get_tts_preset_manager
+    pm = get_tts_preset_manager()
+    platform_id = params["platform_id"]
+    model_id = params["model_id"]
+    data = pm.delete_model(platform_id, model_id)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow("__all__", "tts_presets.list", data)
+
+
+async def handle_tts_preset_duplicate_model(websocket: WebSocket, flow_id: str, msg_id: str,
+                                            params: dict) -> None:
+    from core.config.defaults import get_tts_preset_manager
+    pm = get_tts_preset_manager()
+    platform_id = params["platform_id"]
+    model_id = params["model_id"]
+    data = pm.duplicate_model(platform_id, model_id)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow("__all__", "tts_presets.list", data)
+
+
+# ── STT 预设 ───────────────────────────────────────────────────
+
+async def handle_stt_preset_list(websocket: WebSocket, flow_id: str, msg_id: str,
+                                  params: dict) -> None:
+    from core.config.defaults import get_stt_preset_manager
+    pm = get_stt_preset_manager()
+    await _send_ack(websocket, flow_id, msg_id)
+    await _send(websocket, "_system", "event", "stt_presets.list", pm.list_all())
+
+
+async def handle_stt_preset_save_platform(websocket: WebSocket, flow_id: str, msg_id: str,
+                                           params: dict) -> None:
+    from core.config.defaults import get_stt_preset_manager
+    pm = get_stt_preset_manager()
+    platform = params.get("platform", {})
+    data = pm.save_platform(platform)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow("__all__", "stt_presets.list", data)
+
+
+async def handle_stt_preset_delete_platform(websocket: WebSocket, flow_id: str, msg_id: str,
+                                             params: dict) -> None:
+    from core.config.defaults import get_stt_preset_manager
+    pm = get_stt_preset_manager()
+    platform_id = params["platform_id"]
+    data = pm.delete_platform(platform_id)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow("__all__", "stt_presets.list", data)
+
+
+async def handle_stt_preset_duplicate_platform(websocket: WebSocket, flow_id: str, msg_id: str,
+                                                params: dict) -> None:
+    from core.config.defaults import get_stt_preset_manager
+    pm = get_stt_preset_manager()
+    platform_id = params["platform_id"]
+    data = pm.duplicate_platform(platform_id)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow("__all__", "stt_presets.list", data)
+
+
+async def handle_stt_preset_save_model(websocket: WebSocket, flow_id: str, msg_id: str,
+                                        params: dict) -> None:
+    from core.config.defaults import get_stt_preset_manager
+    pm = get_stt_preset_manager()
+    platform_id = params["platform_id"]
+    model = params.get("model", {})
+    data = pm.save_model(platform_id, model)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow("__all__", "stt_presets.list", data)
+
+
+async def handle_stt_preset_delete_model(websocket: WebSocket, flow_id: str, msg_id: str,
+                                          params: dict) -> None:
+    from core.config.defaults import get_stt_preset_manager
+    pm = get_stt_preset_manager()
+    platform_id = params["platform_id"]
+    model_id = params["model_id"]
+    data = pm.delete_model(platform_id, model_id)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow("__all__", "stt_presets.list", data)
+
+
+async def handle_stt_preset_duplicate_model(websocket: WebSocket, flow_id: str, msg_id: str,
+                                             params: dict) -> None:
+    from core.config.defaults import get_stt_preset_manager
+    pm = get_stt_preset_manager()
+    platform_id = params["platform_id"]
+    model_id = params["model_id"]
+    data = pm.duplicate_model(platform_id, model_id)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow("__all__", "stt_presets.list", data)
+
+
+# ── 预设连通性测试 ──────────────────────────────────────────────
+
+async def handle_preset_test_llm(websocket: WebSocket, flow_id: str, msg_id: str,
+                                  params: dict) -> None:
+    """测试 LLM 平台+模型的连通性"""
+    from core.config.defaults import get_preset_manager
+    pm = get_preset_manager()
+    platform_id = params["platform_id"]
+    model_id = params["model_id"]
+    result = {}
+    try:
+        config = pm.get_effective_config(platform_id, model_id)
+        from core.llm.openai_llm import OpenAILLM
+        llm = OpenAILLM(
+            api_key=config["api_key"], base_url=config["base_url"],
+            model=config["model"], temperature=config.get("temperature"),
+            max_tokens=min(config.get("max_tokens") or 128, 128),
+            top_p=config.get("top_p"),
+        )
+        resp = await llm.chat([{"role": "user", "content": "Say just 'OK'."}])
+        result = {"type": "llm", "platform_id": platform_id, "model_id": model_id,
+                  "success": True, "message": "连接成功", "detail": resp.content[:300]}
+    except Exception as e:
+        logger.warning(f"LLM test failed: {e}")
+        result = {"type": "llm", "platform_id": platform_id, "model_id": model_id,
+                  "success": False, "message": f"测试失败: {str(e)[:300]}", "detail": ""}
+    await _send(websocket, flow_id, "ack", "ack", {"ok": True, "test_result": result}, msg_id)
+
+
+async def handle_tts_preset_test(websocket: WebSocket, flow_id: str, msg_id: str,
+                                  params: dict) -> None:
+    """测试 TTS 平台+模型的连通性"""
+    from core.config.defaults import get_tts_preset_manager
+    pm = get_tts_preset_manager()
+    platform_id = params["platform_id"]
+    model_id = params["model_id"]
+    result = {}
+    try:
+        config = pm.get_effective_config(platform_id, model_id)
+        from core.tts.factory import create_tts, TTSProvider
+        provider = TTSProvider(config["provider"])
+        if provider == TTSProvider.EDGE:
+            tts_params = {"voice": config.get("voice_id", "zh-CN-XiaoxiaoNeural")}
+        else:
+            tts_params = {
+                "api_key": config["api_key"], "model": config["model"],
+                "voice_id": config["voice_id"], "speed": config["speed"],
+                "vol": config["vol"], "pitch": config["pitch"],
+                "sample_rate": config.get("sample_rate", 32000),
+                "bitrate": config.get("bitrate", 128000),
+                "file_format": config.get("format", "mp3"),
+                "channel": config.get("channel", 1),
+            }
+            if config.get("emotion"):
+                tts_params["emotion"] = config["emotion"]
+            if config.get("language_boost"):
+                tts_params["language_boost"] = config["language_boost"]
+        tts = create_tts(provider, tts_params)
+        audio = await tts.synthesize("测试语音")
+        result = {"type": "tts", "platform_id": platform_id, "model_id": model_id,
+                  "success": True, "message": "合成成功",
+                  "detail": f"生成 {len(audio)} 字节音频"}
+    except Exception as e:
+        logger.warning(f"TTS test failed: {e}")
+        result = {"type": "tts", "platform_id": platform_id, "model_id": model_id,
+                  "success": False, "message": f"测试失败: {str(e)[:300]}", "detail": ""}
+    await _send(websocket, flow_id, "ack", "ack", {"ok": True, "test_result": result}, msg_id)
+
+
+async def handle_stt_preset_test(websocket: WebSocket, flow_id: str, msg_id: str,
+                                  params: dict) -> None:
+    """测试 STT 平台+模型的连通性"""
+    from core.config.defaults import get_stt_preset_manager
+    pm = get_stt_preset_manager()
+    platform_id = params["platform_id"]
+    model_id = params["model_id"]
+    result = {}
+    try:
+        config = pm.get_effective_config(platform_id, model_id)
+        from core.stt.factory import create_stt, STTProvider
+        provider = STTProvider(config["provider"])
+        if provider == STTProvider.SENSEVOICE:
+            stt_params = {"model_dir": config["model_dir"],
+                           "device": config.get("device", "cpu")}
+        elif provider == STTProvider.WHISPER:
+            stt_params = {"model_name": config.get("model_name", "base"),
+                           "device": config.get("device", "cuda")}
+        else:
+            stt_params = {"api_key": config["api_key"],
+                           "api_url": config.get("api_url") or "https://api.minimax.chat/v1"}
+        stt = create_stt(provider, stt_params)
+        result = {"type": "stt", "platform_id": platform_id, "model_id": model_id,
+                  "success": True, "message": "配置有效，实例创建成功",
+                  "detail": f"Provider: {config['provider']}"}
+    except Exception as e:
+        logger.warning(f"STT test failed: {e}")
+        result = {"type": "stt", "platform_id": platform_id, "model_id": model_id,
+                  "success": False, "message": f"测试失败: {str(e)[:300]}", "detail": ""}
+    await _send(websocket, flow_id, "ack", "ack", {"ok": True, "test_result": result}, msg_id)
+
+
+async def handle_ocr_preset_test(websocket: WebSocket, flow_id: str, msg_id: str,
+                                  params: dict) -> None:
+    """测试 OCR 平台+模型的连通性"""
+    from core.config.defaults import get_ocr_preset_manager
+    pm = get_ocr_preset_manager()
+    platform_id = params["platform_id"]
+    model_id = params["model_id"]
+    result = {}
+    try:
+        config = pm.get_effective_config(platform_id, model_id)
+        from core.ocr.factory import create_ocr, OCRProvider
+        provider = OCRProvider(config["provider"])
+        ocr_params = {}
+        if provider == OCRProvider.EASYOCR:
+            ocr_params = {"lang_list": config.get("lang_list", ["ch_sim", "en"]),
+                           "gpu": config.get("gpu", False)}
+        elif provider == OCRProvider.PADDLEOCR:
+            ocr_params = {"lang": config.get("lang", "ch"),
+                           "use_angle_cls": config.get("use_angle_cls", True),
+                           "use_gpu": config.get("gpu", False),
+                           "det_model_dir": config.get("det_model_dir") or None,
+                           "rec_model_dir": config.get("rec_model_dir") or None}
+        ocr = create_ocr(provider, ocr_params)
+        result = {"type": "ocr", "platform_id": platform_id, "model_id": model_id,
+                  "success": True, "message": "引擎初始化成功",
+                  "detail": f"Provider: {config['provider']}"}
+    except Exception as e:
+        logger.warning(f"OCR test failed: {e}")
+        result = {"type": "ocr", "platform_id": platform_id, "model_id": model_id,
+                  "success": False, "message": f"测试失败: {str(e)[:300]}", "detail": ""}
+    await _send(websocket, flow_id, "ack", "ack", {"ok": True, "test_result": result}, msg_id)
+
+
+async def handle_ts_preset_test(websocket: WebSocket, flow_id: str, msg_id: str,
+                                 params: dict) -> None:
+    """测试 Java Bridge WebSocket 连通性"""
+    import asyncio as _asyncio
+    from core.config.defaults import get_ts_preset_manager
+    pm = get_ts_preset_manager()
+    platform_id = params["platform_id"]
+    result = {}
+    try:
+        platform = pm.get_platform(platform_id)
+        if not platform:
+            result = {"type": "ts", "platform_id": platform_id,
+                      "success": False, "message": "桥接实例不存在"}
+            await _send(websocket, flow_id, "ack", "ack", {"ok": True, "test_result": result}, msg_id)
+            return
+        ws_url = platform.get("ws_url", "")
+        if not ws_url:
+            result = {"type": "ts", "platform_id": platform_id,
+                      "success": False, "message": "未配置 ws_url"}
+            await _send(websocket, flow_id, "ack", "ack", {"ok": True, "test_result": result}, msg_id)
+            return
+        import re
+        import socket
+        m = re.match(r'ws://([^:/]+)(?::(\d+))?(/.*)?$', ws_url)
+        if not m:
+            result = {"type": "ts", "platform_id": platform_id,
+                      "success": False, "message": f"无法解析 ws_url: {ws_url}"}
+            await _send(websocket, flow_id, "ack", "ack", {"ok": True, "test_result": result}, msg_id)
+            return
+        host = m.group(1)
+        port = int(m.group(2)) if m.group(2) else 8080
+        loop = _asyncio.get_running_loop()
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(5.0)
+        ret = await loop.run_in_executor(None, lambda: sock.connect_ex((host, port)))
+        sock.close()
+        if ret == 0:
+            result = {"type": "ts", "platform_id": platform_id,
+                      "success": True, "message": f"Bridge {host}:{port} 可达"}
+        else:
+            result = {"type": "ts", "platform_id": platform_id,
+                      "success": False, "message": f"无法连接 Bridge {host}:{port} (errno={ret})"}
+    except Exception as e:
+        logger.warning(f"TS bridge test failed: {e}")
+        result = {"type": "ts", "platform_id": platform_id,
+                  "success": False, "message": f"测试失败: {str(e)[:300]}"}
+    await _send(websocket, flow_id, "ack", "ack", {"ok": True, "test_result": result}, msg_id)
+
+
+# ── TeamSpeak 连接预设 ──────────────────────────────────────────
+
+async def handle_ts_preset_list(websocket: WebSocket, flow_id: str, msg_id: str,
+                                params: dict) -> None:
+    from core.config.defaults import get_ts_preset_manager
+    pm = get_ts_preset_manager()
+    await _send_ack(websocket, flow_id, msg_id)
+    await _send(websocket, "_system", "event", "ts_presets.list", pm.list_all())
+
+
+async def handle_ts_preset_save_platform(websocket: WebSocket, flow_id: str, msg_id: str,
+                                          params: dict) -> None:
+    from core.config.defaults import get_ts_preset_manager
+    pm = get_ts_preset_manager()
+    platform = params.get("platform", {})
+    data = pm.save_platform(platform)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow("__all__", "ts_presets.list", data)
+
+
+async def handle_ts_preset_delete_platform(websocket: WebSocket, flow_id: str, msg_id: str,
+                                            params: dict) -> None:
+    from core.config.defaults import get_ts_preset_manager
+    pm = get_ts_preset_manager()
+    platform_id = params["platform_id"]
+    data = pm.delete_platform(platform_id)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow("__all__", "ts_presets.list", data)
+
+
+async def handle_ts_preset_duplicate_platform(websocket: WebSocket, flow_id: str, msg_id: str,
+                                               params: dict) -> None:
+    from core.config.defaults import get_ts_preset_manager
+    pm = get_ts_preset_manager()
+    platform_id = params["platform_id"]
+    data = pm.duplicate_platform(platform_id)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow("__all__", "ts_presets.list", data)
+
+
+async def handle_ts_preset_save_model(websocket: WebSocket, flow_id: str, msg_id: str,
+                                       params: dict) -> None:
+    from core.config.defaults import get_ts_preset_manager
+    pm = get_ts_preset_manager()
+    platform_id = params["platform_id"]
+    model = params.get("model", {})
+    data = pm.save_model(platform_id, model)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow("__all__", "ts_presets.list", data)
+
+
+async def handle_ts_preset_delete_model(websocket: WebSocket, flow_id: str, msg_id: str,
+                                         params: dict) -> None:
+    from core.config.defaults import get_ts_preset_manager
+    pm = get_ts_preset_manager()
+    platform_id = params["platform_id"]
+    model_id = params["model_id"]
+    data = pm.delete_model(platform_id, model_id)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow("__all__", "ts_presets.list", data)
+
+
+async def handle_ts_preset_duplicate_model(websocket: WebSocket, flow_id: str, msg_id: str,
+                                            params: dict) -> None:
+    from core.config.defaults import get_ts_preset_manager
+    pm = get_ts_preset_manager()
+    platform_id = params["platform_id"]
+    model_id = params["model_id"]
+    data = pm.duplicate_model(platform_id, model_id)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow("__all__", "ts_presets.list", data)
+
+
+# ═══ OCR 预设处理 ═══════════════════════════════════════════
+
+async def handle_ocr_preset_list(websocket: WebSocket, flow_id: str, msg_id: str,
+                                   params: dict) -> None:
+    from core.config.defaults import get_ocr_preset_manager
+    pm = get_ocr_preset_manager()
+    data = pm.list_all()
+    await _send(websocket, "_system", "event", "ocr_presets.list", data)
+
+
+async def handle_ocr_preset_save_platform(websocket: WebSocket, flow_id: str, msg_id: str,
+                                            params: dict) -> None:
+    from core.config.defaults import get_ocr_preset_manager
+    pm = get_ocr_preset_manager()
+    platform = params.get("platform", {})
+    data = pm.save_platform(platform)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow("__all__", "ocr_presets.list", data)
+
+
+async def handle_ocr_preset_delete_platform(websocket: WebSocket, flow_id: str, msg_id: str,
+                                              params: dict) -> None:
+    from core.config.defaults import get_ocr_preset_manager
+    pm = get_ocr_preset_manager()
+    platform_id = params["platform_id"]
+    data = pm.delete_platform(platform_id)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow("__all__", "ocr_presets.list", data)
+
+
+async def handle_ocr_preset_duplicate_platform(websocket: WebSocket, flow_id: str, msg_id: str,
+                                                 params: dict) -> None:
+    from core.config.defaults import get_ocr_preset_manager
+    pm = get_ocr_preset_manager()
+    platform_id = params["platform_id"]
+    data = pm.duplicate_platform(platform_id)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow("__all__", "ocr_presets.list", data)
+
+
+async def handle_ocr_preset_save_model(websocket: WebSocket, flow_id: str, msg_id: str,
+                                         params: dict) -> None:
+    from core.config.defaults import get_ocr_preset_manager
+    pm = get_ocr_preset_manager()
+    platform_id = params["platform_id"]
+    model = params.get("model", {})
+    data = pm.save_model(platform_id, model)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow("__all__", "ocr_presets.list", data)
+
+
+async def handle_ocr_preset_delete_model(websocket: WebSocket, flow_id: str, msg_id: str,
+                                           params: dict) -> None:
+    from core.config.defaults import get_ocr_preset_manager
+    pm = get_ocr_preset_manager()
+    platform_id = params["platform_id"]
+    model_id = params["model_id"]
+    data = pm.delete_model(platform_id, model_id)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow("__all__", "ocr_presets.list", data)
+
+
+async def handle_ocr_preset_duplicate_model(websocket: WebSocket, flow_id: str, msg_id: str,
+                                              params: dict) -> None:
+    from core.config.defaults import get_ocr_preset_manager
+    pm = get_ocr_preset_manager()
+    platform_id = params["platform_id"]
+    model_id = params["model_id"]
+    data = pm.duplicate_model(platform_id, model_id)
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow("__all__", "ocr_presets.list", data)
+
+
 # ── 命令路由表 ─────────────────────────────────────────────────
 
 _COMMAND_HANDLERS = {
@@ -1324,6 +1807,42 @@ _COMMAND_HANDLERS = {
     "preset.save_model": handle_preset_save_model,
     "preset.delete_model": handle_preset_delete_model,
     "preset.duplicate_model": handle_preset_duplicate_model,
+    "preset.test_llm": handle_preset_test_llm,
+    "tts_preset.list": handle_tts_preset_list,
+    "tts_preset.test": handle_tts_preset_test,
+    "tts_preset.save_platform": handle_tts_preset_save_platform,
+    "tts_preset.delete_platform": handle_tts_preset_delete_platform,
+    "tts_preset.duplicate_platform": handle_tts_preset_duplicate_platform,
+    "tts_preset.save_model": handle_tts_preset_save_model,
+    "tts_preset.delete_model": handle_tts_preset_delete_model,
+    "tts_preset.duplicate_model": handle_tts_preset_duplicate_model,
+    # STT 预设
+    "stt_preset.list": handle_stt_preset_list,
+    "stt_preset.save_platform": handle_stt_preset_save_platform,
+    "stt_preset.delete_platform": handle_stt_preset_delete_platform,
+    "stt_preset.duplicate_platform": handle_stt_preset_duplicate_platform,
+    "stt_preset.save_model": handle_stt_preset_save_model,
+    "stt_preset.delete_model": handle_stt_preset_delete_model,
+    "stt_preset.duplicate_model": handle_stt_preset_duplicate_model,
+    "stt_preset.test": handle_stt_preset_test,
+    # TeamSpeak 连接预设
+    "ts_preset.list": handle_ts_preset_list,
+    "ts_preset.save_platform": handle_ts_preset_save_platform,
+    "ts_preset.delete_platform": handle_ts_preset_delete_platform,
+    "ts_preset.duplicate_platform": handle_ts_preset_duplicate_platform,
+    "ts_preset.save_model": handle_ts_preset_save_model,
+    "ts_preset.delete_model": handle_ts_preset_delete_model,
+    "ts_preset.duplicate_model": handle_ts_preset_duplicate_model,
+    "ts_preset.test": handle_ts_preset_test,
+    # OCR 预设
+    "ocr_preset.list": handle_ocr_preset_list,
+    "ocr_preset.save_platform": handle_ocr_preset_save_platform,
+    "ocr_preset.delete_platform": handle_ocr_preset_delete_platform,
+    "ocr_preset.duplicate_platform": handle_ocr_preset_duplicate_platform,
+    "ocr_preset.save_model": handle_ocr_preset_save_model,
+    "ocr_preset.delete_model": handle_ocr_preset_delete_model,
+    "ocr_preset.duplicate_model": handle_ocr_preset_duplicate_model,
+    "ocr_preset.test": handle_ocr_preset_test,
 }
 
 

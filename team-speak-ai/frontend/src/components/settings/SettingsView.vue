@@ -20,33 +20,27 @@
         <ShortcutsPanel />
       </div>
 
-      <!-- Provider 设置 -->
-      <div v-else-if="settingsPage === 'ocr_settings'" class="sv-section">
-        <div class="sv-info-row">
-          <span class="sv-label">当前 Provider</span>
-          <span class="sv-value">{{ providerStatus.ocr || 'easyocr' }}</span>
-        </div>
+      <!-- LLM 预设管理 -->
+      <div v-else-if="settingsPage === 'llm_settings'" class="sv-section">
+        <LlmPresetsPanel />
       </div>
 
-      <div v-else-if="settingsPage === 'llm_settings'" class="sv-section">
-        <div class="sv-info-row">
-          <span class="sv-label">当前 Provider</span>
-          <span class="sv-value">{{ providerStatus.llm || 'openai' }}</span>
-        </div>
+      <!-- OCR 预设管理 -->
+      <div v-else-if="settingsPage === 'ocr_settings'" class="sv-section">
+        <OcrPresetsPanel />
       </div>
 
       <div v-else-if="settingsPage === 'stt_settings'" class="sv-section">
-        <div class="sv-info-row">
-          <span class="sv-label">当前 Provider</span>
-          <span class="sv-value">{{ providerStatus.stt || 'sensevoice' }}</span>
-        </div>
+        <SttPresetsPanel />
       </div>
 
       <div v-else-if="settingsPage === 'tts_settings'" class="sv-section">
-        <div class="sv-info-row">
-          <span class="sv-label">当前 Provider</span>
-          <span class="sv-value">{{ providerStatus.tts || 'edge' }}</span>
-        </div>
+        <TtsPresetsPanel />
+      </div>
+
+      <!-- TeamSpeak 连接预设 -->
+      <div v-else-if="settingsPage === 'ts_settings'" class="sv-section">
+        <TeamSpeakPresetsPanel />
       </div>
 
       <div v-else class="sv-section sv-placeholder">
@@ -61,6 +55,11 @@
 import { computed } from 'vue'
 import SysVarsPanelFull from './SysVarsPanelFull.vue'
 import ShortcutsPanel from './ShortcutsPanel.vue'
+import LlmPresetsPanel from './LlmPresetsPanel.vue'
+import TtsPresetsPanel from './TtsPresetsPanel.vue'
+import SttPresetsPanel from './SttPresetsPanel.vue'
+import TeamSpeakPresetsPanel from './TeamSpeakPresetsPanel.vue'
+import OcrPresetsPanel from './OcrPresetsPanel.vue'
 
 const props = defineProps({
   settingsPage: { type: String, default: '' },
@@ -74,6 +73,7 @@ const pageTitle = computed(() => ({
   llm_settings: 'LLM 设置',
   stt_settings: 'STT 设置',
   tts_settings: 'TTS 设置',
+  ts_settings: 'TeamSpeak 连接',
 }[props.settingsPage] || '系统设置'))
 
 const pageIcon = computed(() => ({
@@ -83,6 +83,7 @@ const pageIcon = computed(() => ({
   llm_settings: 'psychology',
   stt_settings: 'mic',
   tts_settings: 'record_voice_over',
+  ts_settings: 'headset_mic',
 }[props.settingsPage] || 'settings'))
 </script>
 
