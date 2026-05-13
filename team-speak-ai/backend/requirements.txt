@@ -23,6 +23,9 @@ paddleocr>=2.7.0
 # OpenAI SDK (LLM, MiniMax compatible)
 openai>=1.0.0
 
+# WebRTC VAD (voice activity detection)
+webrtcvad>=2.0.10
+
 # Common dependencies
 numpy>=1.24.0
 Pillow>=10.0.0

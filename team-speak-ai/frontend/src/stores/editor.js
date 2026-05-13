@@ -26,7 +26,7 @@ export const useEditorStore = defineStore('editor', () => {
 
   // ── 计算属性 ──
   const BASE_CANVAS = { width: 2000, height: 1500 }
-  const NODE_W = { input_image: 220, ocr: 220, tts: 220, ts_output: 220, ts_input: 220, context_build: 250, llm: 250, stt_history: 280, stt_listen: 320, start: 220, flow_var_read: 220, flow_var_write: 240, sys_var_read: 220, sys_var_write: 240, display_text: 240 }
+  const NODE_W = { input_image: 220, ocr: 220, tts: 250, ts_output: 220, ts_input: 220, vad: 220, context_build: 250, llm: 250, stt_history: 280, stt_listen: 280, start: 220, flow_var_read: 220, flow_var_write: 240, sys_var_read: 220, sys_var_write: 240, display_text: 240 }
   const CANVAS_PAD = 400  // 节点超出后额外留白
 
   const canvasSize = computed(() => {

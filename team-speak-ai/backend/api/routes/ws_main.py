@@ -160,7 +160,7 @@ async def ws_main(websocket: WebSocket):
         await _send(websocket, flow_id, "event", "node_types", {"types": types_data})
 
         # 2. 预设广播
-        from core.config.defaults import get_preset_manager, get_stt_preset_manager, get_tts_preset_manager, get_ocr_preset_manager, get_ts_preset_manager
+        from core.config.defaults import get_preset_manager, get_stt_preset_manager, get_tts_preset_manager, get_ocr_preset_manager, get_ts_preset_manager, get_vad_preset_manager
         pm = get_preset_manager()
         await _send(websocket, flow_id, "event", "presets.list", pm.list_all())
         stt_pm = get_stt_preset_manager()
@@ -171,6 +171,8 @@ async def ws_main(websocket: WebSocket):
         await _send(websocket, flow_id, "event", "ocr_presets.list", ocr_pm.list_all())
         ts_pm = get_ts_preset_manager()
         await _send(websocket, flow_id, "event", "ts_presets.list", ts_pm.list_all())
+        vad_pm = get_vad_preset_manager()
+        await _send(websocket, flow_id, "event", "vad_presets.list", vad_pm.list_all())
 
         # 3. 侧栏树
         fm = get_flow_manager()
@@ -1674,6 +1676,85 @@ async def handle_ts_preset_duplicate_model(websocket: WebSocket, flow_id: str, m
     await _broadcast_to_flow("__all__", "ts_presets.list", data)
 
 
+# ═══ VAD 预设处理 ═══════════════════════════════════════════
+
+async def handle_vad_preset_list(websocket: WebSocket, flow_id: str, msg_id: str,
+                                  params: dict) -> None:
+    from core.config.defaults import get_vad_preset_manager
+    pm = get_vad_preset_manager()
+    data = pm.list_all()
+    await _send(websocket, "_system", "event", "vad_presets.list", data)
+
+
+async def handle_vad_preset_save_platform(websocket: WebSocket, flow_id: str, msg_id: str,
+                                           params: dict) -> None:
+    from core.config.defaults import get_vad_preset_manager
+    pm = get_vad_preset_manager()
+    platform = params.get("platform", {})
+    pm.save_platform(platform)
+    data = pm.list_all()
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow("__all__", "vad_presets.list", data)
+
+
+async def handle_vad_preset_delete_platform(websocket: WebSocket, flow_id: str, msg_id: str,
+                                             params: dict) -> None:
+    from core.config.defaults import get_vad_preset_manager
+    pm = get_vad_preset_manager()
+    platform_id = params["platform_id"]
+    pm.delete_platform(platform_id)
+    data = pm.list_all()
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow("__all__", "vad_presets.list", data)
+
+
+async def handle_vad_preset_duplicate_platform(websocket: WebSocket, flow_id: str, msg_id: str,
+                                                params: dict) -> None:
+    from core.config.defaults import get_vad_preset_manager
+    pm = get_vad_preset_manager()
+    platform_id = params["platform_id"]
+    pm.duplicate_platform(platform_id)
+    data = pm.list_all()
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow("__all__", "vad_presets.list", data)
+
+
+async def handle_vad_preset_save_model(websocket: WebSocket, flow_id: str, msg_id: str,
+                                        params: dict) -> None:
+    from core.config.defaults import get_vad_preset_manager
+    pm = get_vad_preset_manager()
+    platform_id = params["platform_id"]
+    model = params.get("model", {})
+    pm.save_model(platform_id, model)
+    data = pm.list_all()
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow("__all__", "vad_presets.list", data)
+
+
+async def handle_vad_preset_delete_model(websocket: WebSocket, flow_id: str, msg_id: str,
+                                          params: dict) -> None:
+    from core.config.defaults import get_vad_preset_manager
+    pm = get_vad_preset_manager()
+    platform_id = params["platform_id"]
+    model_id = params["model_id"]
+    pm.delete_model(platform_id, model_id)
+    data = pm.list_all()
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow("__all__", "vad_presets.list", data)
+
+
+async def handle_vad_preset_duplicate_model(websocket: WebSocket, flow_id: str, msg_id: str,
+                                             params: dict) -> None:
+    from core.config.defaults import get_vad_preset_manager
+    pm = get_vad_preset_manager()
+    platform_id = params["platform_id"]
+    model_id = params["model_id"]
+    pm.duplicate_model(platform_id, model_id)
+    data = pm.list_all()
+    await _send_ack(websocket, flow_id, msg_id)
+    await _broadcast_to_flow("__all__", "vad_presets.list", data)
+
+
 # ═══ OCR 预设处理 ═══════════════════════════════════════════
 
 async def handle_ocr_preset_list(websocket: WebSocket, flow_id: str, msg_id: str,
@@ -1843,6 +1924,14 @@ _COMMAND_HANDLERS = {
     "ocr_preset.delete_model": handle_ocr_preset_delete_model,
     "ocr_preset.duplicate_model": handle_ocr_preset_duplicate_model,
     "ocr_preset.test": handle_ocr_preset_test,
+    # VAD 预设
+    "vad_preset.list": handle_vad_preset_list,
+    "vad_preset.save_platform": handle_vad_preset_save_platform,
+    "vad_preset.delete_platform": handle_vad_preset_delete_platform,
+    "vad_preset.duplicate_platform": handle_vad_preset_duplicate_platform,
+    "vad_preset.save_model": handle_vad_preset_save_model,
+    "vad_preset.delete_model": handle_vad_preset_delete_model,
+    "vad_preset.duplicate_model": handle_vad_preset_duplicate_model,
 }
 
 

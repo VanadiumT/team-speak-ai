@@ -185,11 +185,19 @@ public class TeamSpeakVoiceBridge implements TS3Listener {
         try {
             VoiceMessage msg;
             while ((msg = sendQueue.poll()) != null) {
+                if (!session.isOpen()) {
+                    sendQueue.clear();
+                    break;
+                }
                 try {
                     String json = objectMapper.writeValueAsString(msg);
                     session.getBasicRemote().sendText(json);
                 } catch (Exception e) {
                     log.error("发送 WebSocket 消息失败: {}", msg, e);
+                    if (!session.isOpen()) {
+                        sendQueue.clear();
+                        break;
+                    }
                 }
             }
         } finally {

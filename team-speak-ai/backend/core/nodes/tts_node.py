@@ -8,7 +8,7 @@ import re
 import base64
 import logging
 from core.nodes.base import BaseNode
-from core.pipeline.context import NodeContext, NodeOutput
+from core.pipeline.context import NodeContext, NodeOutput, _STREAM_END
 from core.pipeline.emitter import EventEmitter
 from core.pipeline.registry import NodeRegistry
 from core.tts.factory import TTSProvider, create_tts
@@ -68,8 +68,96 @@ class TTSNode(BaseNode):
             return NodeOutput({"stream-audio-out": "", "batch-audio-out": "", "segments": [], "text": ""},
                               trigger_next=False)
 
-    # ═══════════════════════════════════════════════════════
-    # Config resolution
+    async def execute_stream(self, context: NodeContext, emit: EventEmitter):
+        """逐块接收 LLM 文本（从 context._stream_input），缓冲到句子边界后合成语音，逐段 yield"""
+        cfg = context.node_config
+
+        if cfg.get("platform_id") and cfg.get("model_id"):
+            effective = self._resolve_preset_config(cfg)
+        else:
+            effective = self._resolve_legacy_config(cfg)
+
+        tts = self._build_tts(effective)
+        chunk_queue = context.stream_input
+        model_name = effective.get("model", "")
+        SENTENCE_RE = re.compile(r'[。！？.!?\n]')
+
+        buffer = ""
+        all_audio = b""
+        segments = []
+        seg_idx = 0
+
+        await emit.emit_node_update(
+            context.node_id, "processing",
+            f"语音合成中 (0)",
+            data={"mode": "synthesizing", "total": 0, "model": model_name},
+        )
+
+        try:
+            while True:
+                chunk = await chunk_queue.get()
+                if chunk is _STREAM_END:
+                    if buffer.strip():
+                        audio_bytes = await tts.synthesize(buffer.strip())
+                        all_audio += audio_bytes
+                        audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
+                        segments.append({"text": buffer.strip(), "audio_b64": audio_b64, "index": seg_idx})
+                        await emit.emit_node_update(
+                            context.node_id, "processing",
+                            f"语音合成中 ({seg_idx + 1})",
+                            data={"segment_index": seg_idx, "segment_text": buffer.strip(),
+                                  "audio_b64": audio_b64},
+                        )
+                        yield NodeOutput({"segment_index": seg_idx, "segment_text": buffer.strip(),
+                                          "audio_b64": audio_b64, "progress": 1.0}, final=False)
+                        seg_idx += 1
+                    break
+
+                if chunk.data.get("content_chunk"):
+                    buffer += chunk.data["content_chunk"]
+
+                # 提取完整句子
+                while True:
+                    m = SENTENCE_RE.search(buffer)
+                    if not m:
+                        break
+                    sentence = buffer[:m.end()].strip()
+                    buffer = buffer[m.end():]
+                    if sentence:
+                        audio_bytes = await tts.synthesize(sentence)
+                        all_audio += audio_bytes
+                        audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
+                        segments.append({"text": sentence, "audio_b64": audio_b64, "index": seg_idx})
+                        await emit.emit_node_update(
+                            context.node_id, "processing",
+                            f"语音合成中 ({seg_idx + 1})",
+                            progress=(seg_idx + 1) / max(seg_idx + 2, 1),
+                            data={"segment_index": seg_idx, "segment_text": sentence,
+                                  "audio_b64": audio_b64},
+                        )
+                        yield NodeOutput({"segment_index": seg_idx, "segment_text": sentence,
+                                          "audio_b64": audio_b64}, final=False)
+                        seg_idx += 1
+
+        except Exception:
+            logger.exception("TTS streaming error")
+            raise
+
+        # 最终输出
+        full_audio_b64 = base64.b64encode(all_audio).decode("ascii") if all_audio else ""
+        total = seg_idx
+        await emit.emit_node_complete(
+            context.node_id,
+            {"audio_b64": full_audio_b64, "segments": segments, "model": model_name},
+        )
+        yield NodeOutput({
+            "stream-audio-out": full_audio_b64,
+            "batch-audio-out": full_audio_b64,
+            "segments": segments,
+            "text": "".join(s["text"] for s in segments),
+            "total_segments": total,
+        }, final=True)
+
     # ═══════════════════════════════════════════════════════
 
     @staticmethod

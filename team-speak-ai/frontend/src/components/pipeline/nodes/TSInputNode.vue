@@ -1,38 +1,74 @@
 <template>
   <div class="ts-input-body">
-    <!-- Flow Mode + detail tab -->
     <template v-if="!editMode || activeTab === 'detail'">
       <div class="status-row">
         <span class="status-dot" :class="status === 'listening' ? 'listening' : status" />
         <span class="status-text">{{ statusLabel }}</span>
+        <span class="model-tag">{{ displayPresetName }}</span>
       </div>
 
-      <div class="audio-info">
-        <div class="info-row">
-          <span class="info-key">缓冲</span>
-          <span class="info-val">{{ data?.buffer_mb ? data.buffer_mb.toFixed(1) + ' MB' : '—' }}</span>
-        </div>
-        <div class="info-row">
-          <span class="info-key">采样率</span>
-          <span class="info-val">{{ config?.sample_rate || 16000 }} Hz</span>
-        </div>
-        <div class="info-row">
-          <span class="info-key">通道</span>
-          <span class="info-val">{{ (config?.channels || 1) === 1 ? '单声道' : config?.channels + 'ch' }}</span>
-        </div>
-        <div class="info-row">
-          <span class="info-key">最大缓冲</span>
-          <span class="info-val">{{ formatBytes(config?.max_buffer_bytes || 10485760) }}</span>
-        </div>
+      <div v-if="status === 'pending'" class="hint-text">等待触发信号...</div>
+
+      <div v-if="status === 'processing'" class="proc-info">
+        <span class="material-symbols-outlined proc-icon">graphic_eq</span>
+        <span>{{ summary || '接收中...' }}</span>
       </div>
 
-      <div class="bus-hint">→ AudioBus → stt_listen</div>
+      <div v-if="status === 'completed'" class="done-info">
+        <span class="material-symbols-outlined done-icon">check_circle</span>
+        <span>{{ (data?.total_bytes ? (data.total_bytes / 1024).toFixed(1) + ' KB' : '') }} · {{ data?.frames ?? 0 }} 帧</span>
+      </div>
+
       <div v-if="status === 'error'" class="error-text">{{ summary || '音频采集异常' }}</div>
     </template>
 
-    <!-- Edit Mode: config tab -->
     <template v-if="editMode && activeTab === 'config'">
-      <NodeConfigForm :config="node.config || {}" :fields="configFields" :readonly="false" @update="onUpdate" />
+      <div class="ts-config">
+        <div class="cfg-field">
+          <label class="cfg-label">桥接连接</label>
+          <select class="cfg-select" :value="selectedModelKey" @change="onModelChange">
+            <option v-if="!selectedModelKey" value="" disabled>选择桥接配置...</option>
+            <option v-for="m in presetsStore.tsAllModels"
+                    :key="m.platformId + '/' + m.modelId"
+                    :value="m.platformId + '/' + m.modelId">
+              {{ m.label }}
+            </option>
+          </select>
+        </div>
+
+        <details class="cfg-overrides">
+          <summary class="cfg-summary">覆盖音频参数 (可选)</summary>
+          <div class="cfg-field">
+            <label class="cfg-label">最大缓冲</label>
+            <select class="cfg-select" :value="overrideVal('max_buffer_bytes')" @change="onOverride('max_buffer_bytes', $event.target.value)">
+              <option value="">默认: 10 MB</option>
+              <option :value="5242880">5 MB</option>
+              <option :value="10485760">10 MB</option>
+              <option :value="20971520">20 MB</option>
+              <option :value="52428800">50 MB</option>
+            </select>
+          </div>
+          <div class="cfg-field">
+            <label class="cfg-label">采样率 (Hz)</label>
+            <select class="cfg-select" :value="overrideVal('sample_rate')" @change="onOverride('sample_rate', $event.target.value)">
+              <option value="">默认: 16000</option>
+              <option :value="8000">8000</option>
+              <option :value="16000">16000</option>
+              <option :value="22050">22050</option>
+              <option :value="44100">44100</option>
+              <option :value="48000">48000</option>
+            </select>
+          </div>
+          <div class="cfg-field">
+            <label class="cfg-label">声道</label>
+            <select class="cfg-select" :value="overrideVal('channels')" @change="onOverride('channels', $event.target.value)">
+              <option value="">默认: 单声道</option>
+              <option :value="1">单声道</option>
+              <option :value="2">立体声</option>
+            </select>
+          </div>
+        </details>
+      </div>
     </template>
 
     <template v-if="activeTab === 'io-data'">
@@ -50,7 +86,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useEditorStore } from '@/stores/editor'
-import NodeConfigForm from './NodeConfigForm.vue'
+import { usePresetsStore } from '@/stores/presets'
 import NodeIODataView from './NodeIODataView.vue'
 import NodeIOMgmt from './NodeIOMgmt.vue'
 import NodeLogView from './NodeLogView.vue'
@@ -70,35 +106,55 @@ const props = defineProps({
 })
 
 const editorStore = useEditorStore()
+const presetsStore = usePresetsStore()
+presetsStore.initTs()
 
 const statusLabel = computed(() => {
   const map = { pending: '等待中', listening: '收集中', processing: '处理中', error: '异常' }
   return map[props.status] || props.status
 })
 
-const configFields = [
-  { key: 'max_buffer_bytes', label: '最大缓冲', type: 'select', options: [
-    { value: 5242880, label: '5 MB' },
-    { value: 10485760, label: '10 MB' },
-    { value: 20971520, label: '20 MB' },
-    { value: 52428800, label: '50 MB' },
-  ]},
-  { key: 'sample_rate', label: '采样率 (Hz)', type: 'select', options: [
-    { value: 8000, label: '8000' },
-    { value: 16000, label: '16000' },
-    { value: 22050, label: '22050' },
-    { value: 44100, label: '44100' },
-    { value: 48000, label: '48000' },
-  ]},
-  { key: 'channels', label: '声道', type: 'chip-toggle', options: [
-    { value: 1, label: '单声道' },
-    { value: 2, label: '立体声' },
-  ]},
-]
+// ── 预设选择 ──
+const selectedModelKey = computed(() => {
+  const cfg = props.config || props.node?.config || {}
+  if (cfg.platform_id && cfg.model_id) return `${cfg.platform_id}/${cfg.model_id}`
+  return ''
+})
 
+const displayPresetName = computed(() => {
+  const cfg = props.config || props.node?.config || {}
+  if (cfg.platform_id && cfg.model_id) return presetsStore.getTsLabel(cfg.platform_id, cfg.model_id)
+  return '未选择桥接'
+})
 
-function onUpdate({ key, value }) {
-  editorStore.updateConfigImmediate(props.node.id, { [key]: value })
+// ── Override helpers ──
+function overrideVal(key) {
+  const cfg = props.config || props.node?.config || {}
+  const ov = cfg.overrides || {}
+  return ov[key] != null ? ov[key] : ''
+}
+
+function onOverride(key, rawVal) {
+  const cfg = props.config || props.node?.config || {}
+  const overrides = { ...(cfg.overrides || {}) }
+  if (rawVal === '' || rawVal === undefined) {
+    delete overrides[key]
+  } else if (key === 'sample_rate' || key === 'max_buffer_bytes' || key === 'channels') {
+    overrides[key] = parseInt(rawVal)
+  } else {
+    overrides[key] = rawVal
+  }
+  editorStore.updateConfigImmediate(props.node.id, { ...cfg, overrides })
+}
+
+function onModelChange(e) {
+  const [platformId, modelId] = e.target.value.split('/')
+  const cfg = props.config || props.node?.config || {}
+  editorStore.updateConfigImmediate(props.node.id, {
+    ...cfg,
+    platform_id: platformId,
+    model_id: modelId,
+  })
 }
 
 function onTogglePort(portId, show) {
@@ -107,11 +163,6 @@ function onTogglePort(portId, show) {
   editorStore.updateConfigImmediate(props.node.id, { _visible_ports: [...vis] })
 }
 
-function formatBytes(bytes) {
-  if (!bytes) return '10 MB'
-  if (bytes < 1048576) return (bytes / 1024).toFixed(0) + ' KB'
-  return (bytes / 1048576).toFixed(0) + ' MB'
-}
 </script>
 
 <style scoped>
@@ -123,18 +174,35 @@ function formatBytes(bytes) {
 .status-dot.processing { background: #4a8eff; animation: pulse 1.5s infinite; }
 .status-dot.error { background: #ffb4ab; }
 .status-text { font-size: 11px; color: #c1c6d7; }
+.model-tag {
+  font-size: 8px; font-family: 'Space Grotesk', sans-serif;
+  color: #adc7ff; background: rgba(173,199,255,0.08); padding: 1px 5px; border-radius: 9999px;
+  margin-left: auto; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
 
-.audio-info { margin-bottom: 4px; }
-.info-row { display: flex; justify-content: space-between; padding: 2px 0; }
-.info-key { font-size: 9px; color: #64748b; }
-.info-val { font-size: 10px; color: #c1c6d7; font-family: 'Space Grotesk', sans-serif; }
-
-.bus-hint {
-  font-size: 9px; color: #4a8eff; text-align: center;
-  padding: 4px 0; border-top: 1px solid rgba(65,71,84,0.3);
-  margin-top: 4px;
-}
-
+.hint-text { font-size: 10px; color: #64748b; text-align: center; padding: 8px 0; }
 .error-text { font-size: 10px; color: #ffb4ab; text-align: center; padding: 8px 0; }
+
+.proc-info { display: flex; align-items: center; gap: 4px; font-size: 10px; color: #adc7ff; padding: 4px 0; }
+.proc-icon { font-size: 14px; color: #4a8eff; }
+
+.done-info { display: flex; align-items: center; gap: 4px; font-size: 10px; color: #c1c6d7; padding: 4px 0; }
+.done-icon { font-size: 14px; color: #4edea3; }
+
+/* ── Config Tab ── */
+.ts-config { padding: 4px 0; }
+.ts-config .cfg-field { margin-bottom: 8px; }
+.ts-config .cfg-label { display: block; font-size: 10px; color: #8b90a0; margin-bottom: 3px; }
+.ts-config .cfg-select {
+  width: 100%; padding: 5px 8px; font-size: 11px;
+  background: #10131b; border: 1px solid #31353d; border-radius: 4px;
+  color: #e0e2ed; font-family: inherit; outline: none;
+}
+.ts-config .cfg-select:focus { border-color: #4a8eff; }
+.ts-config .cfg-overrides { margin-top: 10px; }
+.ts-config .cfg-summary {
+  font-size: 10px; color: #adc7ff; cursor: pointer; padding: 4px 0;
+  border-bottom: 1px solid rgba(65,71,84,0.2); margin-bottom: 8px;
+}
 </style>

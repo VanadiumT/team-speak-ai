@@ -22,19 +22,17 @@ echo Java build OK
 
 echo.
 echo [2/3] Starting Java service (port 8080)...
-start /b java -jar target\teamspeak-voice-bridge-1.0.0-SNAPSHOT.jar
+start "Java Bridge" cmd /k "cd /d "%PROJECT_ROOT%\team-speak-bot" && java -jar target\teamspeak-voice-bridge-1.0.0-SNAPSHOT.jar"
 echo Java service started
 
 echo.
 echo [3/3] Starting Python backend (port 8000)...
-cd /d "%PROJECT_ROOT%\team-speak-ai\backend"
-start "Python Backend" venv\Scripts\python -m uvicorn main:app --host 0.0.0.0 --port 8000
+start "Python Backend" cmd /k "cd /d "%PROJECT_ROOT%\team-speak-ai\backend" && venv\Scripts\python -m uvicorn main:app --host 0.0.0.0 --port 8000"
 echo Python backend started
 
 echo.
 echo [Bonus] Starting frontend (port 5173)...
-cd /d "%PROJECT_ROOT%\team-speak-ai\frontend"
-start "Vue Frontend" npm run dev
+start "Vue Frontend" cmd /k "cd /d "%PROJECT_ROOT%\team-speak-ai\frontend" && npm run dev"
 echo Frontend started
 
 echo.

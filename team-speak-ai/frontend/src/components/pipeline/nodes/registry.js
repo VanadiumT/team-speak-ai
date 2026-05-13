@@ -20,6 +20,8 @@ import FlowVarReadNode from './FlowVarReadNode.vue'
 import FlowVarWriteNode from './FlowVarWriteNode.vue'
 import SysVarReadNode from './SysVarReadNode.vue'
 import SysVarWriteNode from './SysVarWriteNode.vue'
+import AudioPlayerNode from './AudioPlayerNode.vue'
+import VadNode from './VadNode.vue'
 
 export const nodeComponentRegistry = {
   start: StartNode,
@@ -38,6 +40,8 @@ export const nodeComponentRegistry = {
   flow_var_write: FlowVarWriteNode,
   sys_var_read: SysVarReadNode,
   sys_var_write: SysVarWriteNode,
+  audio_player: AudioPlayerNode,
+  vad: VadNode,
 }
 
 /**

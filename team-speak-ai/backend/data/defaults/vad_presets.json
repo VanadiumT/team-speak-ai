@@ -1,0 +1,41 @@
+{
+  "platforms": [
+    {
+      "name": "默认 WebRTC VAD",
+      "provider": "webrtcvad",
+      "id": "a8c7e1d24f3b",
+      "models": [
+        {
+          "name": "默认 (Mode 3 · 最激进)",
+          "is_default": true,
+          "vad_mode": 3,
+          "frame_duration_ms": 20,
+          "hangover_ms": 600,
+          "sample_rate": 16000,
+          "min_speech_ms": 300,
+          "id": "b2d4f6a8e0c1"
+        },
+        {
+          "name": "平衡 (Mode 2)",
+          "is_default": false,
+          "vad_mode": 2,
+          "frame_duration_ms": 20,
+          "hangover_ms": 500,
+          "sample_rate": 16000,
+          "min_speech_ms": 250,
+          "id": "c3e5a7b9d1f2"
+        },
+        {
+          "name": "宽松 (Mode 0)",
+          "is_default": false,
+          "vad_mode": 0,
+          "frame_duration_ms": 30,
+          "hangover_ms": 800,
+          "sample_rate": 16000,
+          "min_speech_ms": 500,
+          "id": "d4f6b8c0a2e3"
+        }
+      ]
+    }
+  ]
+}

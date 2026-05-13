@@ -1,0 +1,46 @@
+{
+  "platforms": [
+    {
+      "id": "bdfd278fa622",
+      "name": "本地 EasyOCR",
+      "provider": "easyocr",
+      "models": [
+        {
+          "lang_list": [
+            "ch_sim",
+            "en"
+          ],
+          "lang": "ch",
+          "gpu": false,
+          "use_angle_cls": true,
+          "confidence_threshold": 0.3,
+          "id": "29f81fc2d8e9",
+          "name": "中英混合 (CPU)",
+          "is_default": true
+        }
+      ]
+    },
+    {
+      "id": "1cf60c84a09e",
+      "name": "本地 PaddleOCR",
+      "provider": "paddleocr",
+      "det_model_dir": "ch",
+      "rec_model_dir": "ch",
+      "models": [
+        {
+          "lang_list": [
+            "ch_sim",
+            "en"
+          ],
+          "lang": "ch",
+          "gpu": false,
+          "use_angle_cls": true,
+          "confidence_threshold": 0.3,
+          "id": "8408d47147e2",
+          "name": "中文高精度",
+          "is_default": true
+        }
+      ]
+    }
+  ]
+}

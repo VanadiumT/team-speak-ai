@@ -49,7 +49,20 @@
       "Bash(taskkill //F //PID 32528)",
       "Bash(taskkill //F //PID 8820)",
       "mcp__playwright__browser_navigate",
-      "mcp__playwright__browser_tabs"
+      "mcp__playwright__browser_tabs",
+      "PowerShell($content = Get-Content \"E:\\\\programmetemp\\\\project\\\\team_speak_ai\\\\team-speak-ai\\\\frontend\\\\src\\\\api\\\\pipeline.js\" -Raw; $lines = $content -split '\\\\r?\\\\n'; for \\($i = 48; $i -le 56; $i++\\) { $line = $lines[$i]; Write-Host \"Line $\\($i+1\\): [$line]\" })",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(powershell *)",
+      "Bash(Get-ChildItem -Path \"E:\\\\programmetemp\\\\project\\\\team_speak_ai\\\\team-speak-ai\\\\frontend\\\\src\" -Recurse -Name)",
+      "Bash(Select-Object -First 300)",
+      "Bash(node -e \"const m = require\\('mermaid'\\); console.log\\(typeof m.default?.initialize ?? typeof m.initialize\\)\")",
+      "Bash(python -c \"from core.config.defaults import TtsPresetManager, init_tts_preset_manager, get_tts_preset_manager; print\\('TtsPresetManager OK'\\)\")",
+      "Bash(python -c \"from core.nodes.tts_node import TTSNode; print\\('TTSNode OK'\\)\")",
+      "Bash(python -c \"from core.pipeline.registry import NodeRegistry; td = NodeRegistry.get_type_def\\('tts'\\); print\\('Ports:', len\\(td.ports.inputs\\), 'in,', len\\(td.ports.outputs\\), 'out'\\); print\\('Default config:', td.default_config\\)\")",
+      "Bash(python *)",
+      "Bash(Remove-Item *)",
+      "Bash(npx vite *)"
     ]
   }
 }

@@ -21,13 +21,7 @@
       },
       "config": {
         "auto_run": true,
-        "init_params": {},
-        "_port_positions": {
-          "event-out": {
-            "side": "right",
-            "top": 141
-          }
-        }
+        "init_params": {}
       },
       "input_mappings": [],
       "trigger": null,
@@ -53,7 +47,8 @@
       "trigger": {
         "type": "on_complete",
         "source_node": "start_7876a1",
-        "keywords": []
+        "keywords": [],
+        "wait_all_data": false
       },
       "listener": false
     },
@@ -71,23 +66,14 @@
         "notify_on_reach": false,
         "_visible_ports": [
           "trigger-in"
-        ],
-        "_port_positions": {
-          "trigger-in": {
-            "side": "left",
-            "top": 58
-          },
-          "text-out": {
-            "side": "right",
-            "top": 85
-          }
-        }
+        ]
       },
       "input_mappings": [],
       "trigger": {
         "type": "on_complete",
         "source_node": "start_7876a1",
-        "keywords": []
+        "keywords": [],
+        "wait_all_data": false
       },
       "listener": false
     },
@@ -96,8 +82,8 @@
       "type": "context_build",
       "name": "上下文构建器",
       "position": {
-        "x": 1345,
-        "y": 238
+        "x": 1341,
+        "y": 244
       },
       "config": {
         "max_context_length": 4096,
@@ -111,27 +97,13 @@
           "ctx-in1": "信息1",
           "ctx-in2": "信息2"
         },
+        "_visible_ports": [],
         "_port_positions": {
           "ctx-in2": {
             "side": "left",
-            "top": 85
-          },
-          "req-in": {
-            "side": "left",
-            "top": 98
-          },
-          "ctx-in1": {
-            "side": "left",
-            "top": 78
-          },
-          "trigger-in": {
-            "side": "left",
-            "top": 111
+            "top": 138
           }
-        },
-        "_visible_ports": [
-          "trigger-in"
-        ]
+        }
       },
       "input_mappings": [
         {
@@ -153,11 +125,7 @@
           "required": true
         }
       ],
-      "trigger": {
-        "type": "on_complete",
-        "source_node": "text_input_220cdb",
-        "keywords": []
-      },
+      "trigger": null,
       "listener": false
     },
     {
@@ -173,30 +141,83 @@
         "mode": "static",
         "notify_on_reach": false,
         "_visible_ports": [
-          "trigger-in",
-          "done"
-        ],
-        "_port_positions": {
-          "trigger-in": {
-            "side": "left",
-            "top": 58
-          },
-          "text-out": {
-            "side": "right",
-            "top": 154
-          },
-          "done": {
-            "side": "right",
-            "top": 78
-          }
-        }
+          "trigger-in"
+        ]
       },
       "input_mappings": [],
       "trigger": {
         "type": "on_complete",
         "source_node": "start_7876a1",
-        "keywords": []
+        "keywords": [],
+        "wait_all_data": false
       },
+      "listener": false
+    },
+    {
+      "id": "llm_76403d",
+      "type": "llm",
+      "name": "LLM 生成",
+      "position": {
+        "x": 1822,
+        "y": 208
+      },
+      "config": {
+        "platform_id": "bb879ad553dc",
+        "model_id": "595c359f2bb8",
+        "overrides": {},
+        "_visible_ports": [],
+        "_port_positions": {
+          "stream-text-out": {
+            "side": "right",
+            "top": 132
+          },
+          "batch-text-out": {
+            "side": "right",
+            "top": 94
+          }
+        }
+      },
+      "input_mappings": [
+        {
+          "from_node": "context_build_8c7908",
+          "as_field": "llm",
+          "source_field": "messages",
+          "required": true
+        }
+      ],
+      "trigger": null,
+      "listener": false
+    },
+    {
+      "id": "display_text_06db6a",
+      "type": "display_text",
+      "name": "文本显示",
+      "position": {
+        "x": 2256,
+        "y": 211
+      },
+      "config": {
+        "text": "",
+        "mode": "passthrough",
+        "_visible_ports": [
+          "text-in"
+        ],
+        "_port_positions": {
+          "text-in": {
+            "side": "left",
+            "top": 85
+          }
+        }
+      },
+      "input_mappings": [
+        {
+          "from_node": "llm_76403d",
+          "as_field": "text",
+          "source_field": "batch-text",
+          "required": true
+        }
+      ],
+      "trigger": null,
       "listener": false
     }
   ],
@@ -250,12 +271,20 @@
       "type": "data"
     },
     {
-      "id": "conn_38c20447",
-      "from_node": "text_input_220cdb",
-      "from_port": "done",
-      "to_node": "context_build_8c7908",
-      "to_port": "trigger-in",
-      "type": "event"
+      "id": "conn_d12be54e",
+      "from_node": "context_build_8c7908",
+      "from_port": "ctx-out",
+      "to_node": "llm_76403d",
+      "to_port": "llm-in",
+      "type": "data"
+    },
+    {
+      "id": "conn_20cfa86b",
+      "from_node": "llm_76403d",
+      "from_port": "stream-text-out",
+      "to_node": "display_text_06db6a",
+      "to_port": "text-in",
+      "type": "data"
     }
   ]
 }

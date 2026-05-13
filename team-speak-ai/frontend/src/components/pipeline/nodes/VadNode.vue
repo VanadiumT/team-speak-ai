@@ -1,5 +1,5 @@
 <template>
-  <div class="ts-output-body">
+  <div class="vad-body">
     <template v-if="!editMode || activeTab === 'detail'">
       <div class="status-row">
         <span class="status-dot" :class="status" />
@@ -9,29 +9,26 @@
 
       <div v-if="status === 'pending'" class="hint-text">等待音频...</div>
 
-      <div v-if="status === 'processing'" class="play-info">
-        <span class="material-symbols-outlined play-icon">volume_up</span>
-        <span>播放中</span>
-        <div class="mini-bar"><div class="mini-bar-fill" :style="{ width: (progress ?? 0) * 100 + '%' }" /></div>
-        <span class="seg-info">{{ data?.segment_index != null ? (data.segment_index + 1) : '-' }}</span>
+      <div v-if="status === 'processing'" class="proc-info">
+        <span class="material-symbols-outlined proc-icon">voice_selection</span>
+        <span>{{ summary || '分句中...' }}</span>
       </div>
 
       <div v-if="status === 'completed'" class="done-info">
         <span class="material-symbols-outlined done-icon">check_circle</span>
-        <span>播放完成 · {{ data?.segment_count ?? 0 }} 段</span>
-        <span class="loop-hint">→ 回到监听</span>
+        <span>{{ data?.total_chunks ?? 0 }} 句</span>
       </div>
 
-      <div v-if="status === 'error'" class="error-text">{{ summary || '播放失败' }}</div>
+      <div v-if="status === 'error'" class="error-text">{{ summary || 'VAD 分句失败' }}</div>
     </template>
 
     <template v-if="editMode && activeTab === 'config'">
-      <div class="ts-config">
+      <div class="vad-config">
         <div class="cfg-field">
-          <label class="cfg-label">桥接连接</label>
+          <label class="cfg-label">VAD 预设</label>
           <select class="cfg-select" :value="selectedModelKey" @change="onModelChange">
-            <option v-if="!selectedModelKey" value="" disabled>选择桥接配置...</option>
-            <option v-for="m in presetsStore.tsAllModels"
+            <option v-if="!selectedModelKey" value="" disabled>选择预设...</option>
+            <option v-for="m in presetsStore.vadAllModels"
                     :key="m.platformId + '/' + m.modelId"
                     :value="m.platformId + '/' + m.modelId">
               {{ m.label }}
@@ -40,25 +37,26 @@
         </div>
 
         <details class="cfg-overrides">
-          <summary class="cfg-summary">覆盖音频参数 (可选)</summary>
+          <summary class="cfg-summary">覆盖参数 (可选)</summary>
           <div class="cfg-field">
-            <label class="cfg-label">采样率 (Hz)</label>
-            <select class="cfg-select" :value="overrideVal('sample_rate')" @change="onOverride('sample_rate', $event.target.value)">
-              <option value="">默认: 16000</option>
-              <option :value="8000">8000</option>
-              <option :value="16000">16000</option>
-              <option :value="22050">22050</option>
-              <option :value="44100">44100</option>
-              <option :value="48000">48000</option>
+            <label class="cfg-label">VAD 模式 <span class="cfg-hint">(预设: {{ currentModelInfo?.vadMode ?? 3 }})</span></label>
+            <select class="cfg-select" :value="overrideVal('vad_mode')" @change="onOverride('vad_mode', $event.target.value)">
+              <option value="">预设</option>
+              <option :value="0">0 — 宽松</option>
+              <option :value="1">1 — 中等</option>
+              <option :value="2">2 — 激进</option>
+              <option :value="3">3 — 最激进</option>
             </select>
           </div>
           <div class="cfg-field">
-            <label class="cfg-label">声道</label>
-            <select class="cfg-select" :value="overrideVal('channels')" @change="onOverride('channels', $event.target.value)">
-              <option value="">默认: 单声道</option>
-              <option :value="1">单声道</option>
-              <option :value="2">立体声</option>
-            </select>
+            <label class="cfg-label">Hangover 静音超时 (ms) <span class="cfg-hint">(预设: {{ currentModelInfo?.hangoverMs ?? 600 }})</span></label>
+            <input class="cfg-input" type="number" :value="overrideVal('hangover_ms')" @change="onOverride('hangover_ms', $event.target.value)"
+                   min="100" max="3000" step="50" :placeholder="String(currentModelInfo?.hangoverMs ?? 600)" />
+          </div>
+          <div class="cfg-field">
+            <label class="cfg-label">最短语音 (ms) <span class="cfg-hint">(预设: {{ currentModelInfo?.minSpeechMs ?? 300 }})</span></label>
+            <input class="cfg-input" type="number" :value="overrideVal('min_speech_ms')" @change="onOverride('min_speech_ms', $event.target.value)"
+                   min="50" max="2000" step="50" :placeholder="String(currentModelInfo?.minSpeechMs ?? 300)" />
           </div>
         </details>
       </div>
@@ -100,10 +98,10 @@ const props = defineProps({
 
 const editorStore = useEditorStore()
 const presetsStore = usePresetsStore()
-presetsStore.initTs()
+presetsStore.initVad()
 
 const statusLabel = computed(() => {
-  const map = { pending: '等待音频', processing: '播放中', completed: '播放完成', error: '错误' }
+  const map = { pending: '等待音频', processing: '分句中', completed: '已完成', error: '错误' }
   return map[props.status] || props.status
 })
 
@@ -116,8 +114,16 @@ const selectedModelKey = computed(() => {
 
 const displayPresetName = computed(() => {
   const cfg = props.config || props.node?.config || {}
-  if (cfg.platform_id && cfg.model_id) return presetsStore.getTsLabel(cfg.platform_id, cfg.model_id)
-  return '未选择桥接'
+  if (cfg.platform_id && cfg.model_id) return presetsStore.getVadLabel(cfg.platform_id, cfg.model_id)
+  return '未选择预设'
+})
+
+const currentModelInfo = computed(() => {
+  const cfg = props.config || props.node?.config || {}
+  if (cfg.platform_id && cfg.model_id) {
+    return presetsStore.vadAllModels.find(m => m.platformId === cfg.platform_id && m.modelId === cfg.model_id) || null
+  }
+  return null
 })
 
 // ── Override helpers ──
@@ -132,10 +138,8 @@ function onOverride(key, rawVal) {
   const overrides = { ...(cfg.overrides || {}) }
   if (rawVal === '' || rawVal === undefined) {
     delete overrides[key]
-  } else if (key === 'sample_rate' || key === 'channels') {
-    overrides[key] = parseInt(rawVal)
   } else {
-    overrides[key] = rawVal
+    overrides[key] = parseInt(rawVal)
   }
   editorStore.updateConfigImmediate(props.node.id, { ...cfg, overrides })
 }
@@ -144,9 +148,9 @@ function onModelChange(e) {
   const [platformId, modelId] = e.target.value.split('/')
   const cfg = props.config || props.node?.config || {}
   editorStore.updateConfigImmediate(props.node.id, {
-    ...cfg,
     platform_id: platformId,
     model_id: modelId,
+    overrides: cfg.overrides || {},
   })
 }
 
@@ -158,7 +162,7 @@ function onTogglePort(portId, show) {
 </script>
 
 <style scoped>
-.ts-output-body { padding: 2px 0; }
+.vad-body { padding: 2px 0; }
 .status-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
 .status-dot { width: 6px; height: 6px; border-radius: 50%; }
 .status-dot.pending { background: #8b90a0; }
@@ -173,31 +177,28 @@ function onTogglePort(portId, show) {
 }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
 
-.play-info { display: flex; align-items: center; gap: 4px; font-size: 10px; color: #adc7ff; flex-wrap: wrap; }
-.play-icon { font-size: 16px; }
-.mini-bar { flex: 1; height: 3px; background: #31353d; border-radius: 2px; overflow: hidden; min-width: 40px; }
-.mini-bar-fill { height: 100%; background: #adc7ff; border-radius: 2px; transition: width 0.3s; }
-.seg-info { font-size: 9px; color: #8b90a0; }
-
-.done-info { display: flex; align-items: center; gap: 4px; font-size: 10px; color: #4edea3; flex-wrap: wrap; }
-.done-icon { font-size: 16px; }
-.loop-hint { font-size: 9px; color: #8b90a0; }
-
 .hint-text { font-size: 10px; color: #64748b; text-align: center; padding: 8px 0; }
 .error-text { font-size: 10px; color: #ffb4ab; text-align: center; padding: 8px 0; }
 
+.proc-info { display: flex; align-items: center; gap: 4px; font-size: 10px; color: #adc7ff; padding: 4px 0; }
+.proc-icon { font-size: 14px; color: #4a8eff; }
+
+.done-info { display: flex; align-items: center; gap: 4px; font-size: 10px; color: #c1c6d7; padding: 4px 0; }
+.done-icon { font-size: 14px; color: #4edea3; }
+
 /* ── Config Tab ── */
-.ts-config { padding: 4px 0; }
-.ts-config .cfg-field { margin-bottom: 8px; }
-.ts-config .cfg-label { display: block; font-size: 10px; color: #8b90a0; margin-bottom: 3px; }
-.ts-config .cfg-select {
+.vad-config { padding: 4px 0; }
+.vad-config .cfg-field { margin-bottom: 8px; }
+.vad-config .cfg-label { display: block; font-size: 10px; color: #8b90a0; margin-bottom: 3px; }
+.vad-config .cfg-hint { font-size: 8px; color: #64748b; }
+.vad-config .cfg-select, .vad-config .cfg-input {
   width: 100%; padding: 5px 8px; font-size: 11px;
   background: #10131b; border: 1px solid #31353d; border-radius: 4px;
   color: #e0e2ed; font-family: inherit; outline: none;
 }
-.ts-config .cfg-select:focus { border-color: #4a8eff; }
-.ts-config .cfg-overrides { margin-top: 10px; }
-.ts-config .cfg-summary {
+.vad-config .cfg-select:focus, .vad-config .cfg-input:focus { border-color: #4a8eff; }
+.vad-config .cfg-overrides { margin-top: 10px; }
+.vad-config .cfg-summary {
   font-size: 10px; color: #adc7ff; cursor: pointer; padding: 4px 0;
   border-bottom: 1px solid rgba(65,71,84,0.2); margin-bottom: 8px;
 }

@@ -1,15 +1,16 @@
 """
-TS Output 节点 — 逐段发送音频到 TeamSpeak
+TS Output 节点 — 流式 / 非流式音频发送到 TeamSpeak
 
-接收 TTS 节点输出的 segments 数组，逐段通过 ts_client 发送到 TeamSpeak，
-每段之间间隔 0.2s 防止拥塞。
+支持 execute_stream（流式）和 execute（非流式）两条路径，
+通过 ts_client 逐段或一次性将音频发送到 TeamSpeak。
 """
 
 import asyncio
 import logging
+from typing import AsyncGenerator
 
 from core.nodes.base import BaseNode
-from core.pipeline.context import NodeContext, NodeOutput
+from core.pipeline.context import NodeContext, NodeOutput, _STREAM_END
 from core.pipeline.emitter import EventEmitter
 from core.pipeline.registry import NodeRegistry
 
@@ -18,49 +19,104 @@ logger = logging.getLogger(__name__)
 
 @NodeRegistry.register("ts_output")
 class TSOutputNode(BaseNode):
-    """TeamSpeak 音频输出节点（逐段播放）"""
+    """TeamSpeak 音频输出节点（流式 / 非流式）"""
 
     node_type = "ts_output"
 
-    async def execute(self, context: NodeContext, emit: EventEmitter) -> NodeOutput:
-        segments = context.inputs.get("segments", [])
-        if not segments:
-            await emit.emit_node_update(context.node_id, "completed", "无音频数据")
-            return NodeOutput({"sent": False, "reason": "no_segments"})
+    # ── 非流式路径 ──
 
-        # 通过 ws_teamspeak 发送到 TeamSpeak
+    async def execute(self, context: NodeContext, emit: EventEmitter) -> NodeOutput:
         from api.routes.ws_teamspeak import ts_client
+
         if not ts_client or not ts_client.connected:
-            logger.warning("TeamSpeak not connected, cannot send audio")
             await emit.emit_node_update(context.node_id, "error", "TeamSpeak 未连接")
             return NodeOutput({"sent": False, "reason": "not_connected"}, trigger_next=False)
 
-        await emit.emit_node_update(
-            context.node_id, "processing",
-            f"TS 播放中 (0/{len(segments)})",
-        )
+        audio_b64 = _extract_b64_from_inputs(context.inputs)
+        if not audio_b64:
+            await emit.emit_node_update(context.node_id, "completed", "无音频数据")
+            return NodeOutput({"sent": False, "reason": "no_audio"})
 
-        sent_count = 0
-        for seg in segments:
-            audio_b64 = seg.get("audio_b64", "")
-            if not audio_b64:
+        await emit.emit_node_update(context.node_id, "processing", "TS 播放中 (1/1)")
+
+        try:
+            await ts_client.send_voice_message(audio_b64)
+        except Exception as e:
+            logger.exception("TS output error")
+            await emit.emit_node_error(context.node_id, str(e))
+            return NodeOutput({"sent": False, "reason": str(e)}, trigger_next=False)
+
+        await emit.emit_node_update(context.node_id, "completed", "已发送 1 段到 TeamSpeak")
+        return NodeOutput({"sent": True, "segment_count": 1})
+
+    # ── 流式路径 ──
+
+    async def execute_stream(self, context: NodeContext, emit: EventEmitter) -> AsyncGenerator[NodeOutput, None]:
+        if context.stream_input is None:
+            output = await self.execute(context, emit)
+            yield output
+            return
+
+        from api.routes.ws_teamspeak import ts_client
+
+        if not ts_client or not ts_client.connected:
+            await emit.emit_node_update(context.node_id, "error", "TeamSpeak 未连接")
+            yield NodeOutput({"sent": False, "reason": "not_connected"}, final=True)
+            return
+
+        index = 0
+        while True:
+            chunk = await context.stream_input.get()
+            if chunk is _STREAM_END:
+                break
+            if chunk is None:
                 continue
 
-            try:
-                await ts_client.send_voice_message(audio_b64)
-                sent_count += 1
+            audio_b64 = ""
+            seg_text = ""
+            if isinstance(chunk, NodeOutput) and chunk.data:
+                audio_b64 = chunk.data.get("audio_b64", "")
+                seg_text = chunk.data.get("text", "")
 
-                await emit.emit_node_update(
-                    context.node_id, "processing",
-                    f"TS 播放中 ({sent_count}/{len(segments)})",
-                    data={"sent_index": seg.get("index"), "segment_text": seg.get("text", "")},
-                )
+            if audio_b64:
+                try:
+                    await ts_client.send_voice_message(audio_b64)
+                except Exception as e:
+                    logger.exception("TS output streaming error")
+                    await emit.emit_node_error(context.node_id, str(e))
+                    yield NodeOutput({"sent": False, "reason": str(e), "segment_count": index}, final=True)
+                    return
 
-                await asyncio.sleep(0.2)  # 句间间隔
-            except Exception as e:
-                logger.exception(f"TS output error")
-                await emit.emit_node_error(context.node_id, str(e))
-                return NodeOutput({"sent": False, "reason": str(e), "sent_count": sent_count}, trigger_next=False)
+            await emit.emit_node_update(
+                context.node_id, "processing",
+                f"TS 播放中 ({index + 1})",
+                data={"segment_index": index, "segment_text": seg_text},
+            )
 
-        await emit.emit_node_update(context.node_id, "completed", f"已发送 {sent_count} 段到 TeamSpeak")
-        return NodeOutput({"sent": True, "segment_count": sent_count})
+            yield NodeOutput(
+                data={"sent_index": index, "segment_text": seg_text},
+                final=False,
+            )
+
+            await asyncio.sleep(0.2)
+            index += 1
+
+        await emit.emit_node_update(context.node_id, "completed", f"已发送 {index} 段到 TeamSpeak")
+        yield NodeOutput({"sent": True, "segment_count": index}, final=True)
+
+
+def _extract_b64_from_inputs(inputs: dict) -> str:
+    """从 inputs 提取音频 base64，优先 batch 再 stream 完整列表"""
+    batch = inputs.get("batch-audio", None)
+    if isinstance(batch, dict):
+        return batch.get("audio_b64", "")
+    if isinstance(batch, str):
+        return batch
+
+    segments = inputs.get("stream-audio", []) or []
+    if isinstance(segments, list) and segments:
+        return "".join(
+            s.get("audio_b64", "") if isinstance(s, dict) else ""
+            for s in segments
+        )
+    return ""

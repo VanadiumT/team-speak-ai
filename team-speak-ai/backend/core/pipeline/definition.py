@@ -91,6 +91,7 @@ class TriggerConfig:
     type: str = "on_complete"             # "on_complete" | "on_keyword"
     source_node: str = ""                 # 监听哪个节点
     keywords: list = field(default_factory=list)   # 关键词列表
+    wait_all_data: bool = False           # 是否等待所有 data 连线输入就绪后才执行
 
 
 @dataclass

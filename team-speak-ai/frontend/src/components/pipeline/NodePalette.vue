@@ -48,7 +48,7 @@ const categoryMap = {
   sys_var_read: '变量', sys_var_write: '变量',
   ocr: '处理', context_build: '处理', llm: '处理',
   display_text: '处理',
-  stt_listen: '音频', stt_history: '音频',
+  stt_listen: '音频', stt_history: '音频', vad: '音频',
   tts: '输出', ts_output: '输出',
 }
 

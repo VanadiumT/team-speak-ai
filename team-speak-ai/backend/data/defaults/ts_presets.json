@@ -1,0 +1,20 @@
+{
+  "platforms": [
+    {
+      "name": "本地桥接",
+      "ws_url": "ws://localhost:8080/teamspeak/voice",
+      "api_key": "",
+      "id": "a65896cf0805",
+      "models": [
+        {
+          "name": "本地配置",
+          "is_default": true,
+          "nickname": "TeamSpeakAI",
+          "auto_reconnect": true,
+          "reconnect_delay": 3,
+          "id": "f26dcb5afd4f"
+        }
+      ]
+    }
+  ]
+}

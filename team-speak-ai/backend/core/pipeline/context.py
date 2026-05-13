@@ -2,9 +2,13 @@
 节点执行上下文和状态
 """
 
+import asyncio
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
+
+# 流式链 sentinel：生产者发送此值通知消费者"再无数据"
+_STREAM_END = object()
 
 
 class NodeState(Enum):
@@ -20,6 +24,7 @@ class NodeOutput:
     """节点执行输出"""
     data: dict = field(default_factory=dict)
     trigger_next: bool = True  # 是否自动触发下游
+    final: bool = True  # True=终端输出（存入accumulated_context），False=中间chunk
 
 
 @dataclass
@@ -33,6 +38,7 @@ class NodeContext:
     inputs: dict                    # 来自上游的输入数据
     state: NodeState = NodeState.PENDING
     accumulated_context: dict = field(default_factory=dict)  # 整个 pipeline 的累积上下文
+    stream_input: Optional["asyncio.Queue"] = None  # 流式 consumer 从上游读取 chunk 的 channel
 
 
 @dataclass

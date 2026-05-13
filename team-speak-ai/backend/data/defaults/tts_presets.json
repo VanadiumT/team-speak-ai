@@ -1,0 +1,28 @@
+{
+  "platforms": [
+    {
+      "id": "4c42aa5c7e93",
+      "name": "默认 MiniMax TTS",
+      "provider": "minimax",
+      "api_key": "sk-cp-dGhRj-LIlb7YIPFSfzCcWS9YoqtnpS4VHebQzuuPhD-qMt7tuj2EBYo3Lf_AJ53V3T8EYSMovmqRzQhBhBjvRVH7fzNr9ZU55taznFeMK-MzEexPuSevBAU",
+      "models": [
+        {
+          "voice_id": "male-qn-qingse",
+          "speed": 1.0,
+          "vol": 1.0,
+          "pitch": 0,
+          "emotion": "",
+          "sample_rate": 32000,
+          "bitrate": 128000,
+          "format": "mp3",
+          "channel": 1,
+          "streaming": true,
+          "language_boost": null,
+          "id": "24456f536d76",
+          "name": "speech-2.8-hd",
+          "is_default": true
+        }
+      ]
+    }
+  ]
+}

@@ -43,6 +43,11 @@
         <TeamSpeakPresetsPanel />
       </div>
 
+      <!-- VAD 预设管理 -->
+      <div v-else-if="settingsPage === 'vad_settings'" class="sv-section">
+        <VadPresetsPanel />
+      </div>
+
       <div v-else class="sv-section sv-placeholder">
         <span class="material-symbols-outlined" style="font-size: 48px; opacity: 0.15;">settings</span>
         <p>选择左侧设置项</p>
@@ -60,6 +65,7 @@ import TtsPresetsPanel from './TtsPresetsPanel.vue'
 import SttPresetsPanel from './SttPresetsPanel.vue'
 import TeamSpeakPresetsPanel from './TeamSpeakPresetsPanel.vue'
 import OcrPresetsPanel from './OcrPresetsPanel.vue'
+import VadPresetsPanel from './VadPresetsPanel.vue'
 
 const props = defineProps({
   settingsPage: { type: String, default: '' },
@@ -74,6 +80,7 @@ const pageTitle = computed(() => ({
   stt_settings: 'STT 设置',
   tts_settings: 'TTS 设置',
   ts_settings: 'TeamSpeak 连接',
+  vad_settings: 'VAD 设置',
 }[props.settingsPage] || '系统设置'))
 
 const pageIcon = computed(() => ({
@@ -84,6 +91,7 @@ const pageIcon = computed(() => ({
   stt_settings: 'mic',
   tts_settings: 'record_voice_over',
   ts_settings: 'headset_mic',
+  vad_settings: 'voice_selection',
 }[props.settingsPage] || 'settings'))
 </script>
 

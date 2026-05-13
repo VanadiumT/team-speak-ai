@@ -1,0 +1,175 @@
+{
+  "id": "测试_tts",
+  "name": "测试-tts和stt",
+  "group": "测试/开始",
+  "icon": "sports_esports",
+  "enabled": true,
+  "skill_prompt": "",
+  "canvas": {
+    "width": 2000,
+    "height": 1500
+  },
+  "params": {},
+  "nodes": [
+    {
+      "id": "start_aae34b",
+      "type": "start",
+      "name": "开始",
+      "position": {
+        "x": 240,
+        "y": 190
+      },
+      "config": {
+        "auto_run": true,
+        "init_params": {}
+      },
+      "input_mappings": [],
+      "trigger": null,
+      "listener": false
+    },
+    {
+      "id": "text_input_fa39f5",
+      "type": "text_input",
+      "name": "文本输入",
+      "position": {
+        "x": 669,
+        "y": 150
+      },
+      "config": {
+        "text": "这是用来测试minimax的测试文本",
+        "mode": "static",
+        "notify_on_reach": true,
+        "_visible_ports": [
+          "trigger-in"
+        ],
+        "_port_positions": {
+          "text-out": {
+            "side": "right",
+            "top": 85
+          }
+        }
+      },
+      "input_mappings": [],
+      "trigger": {
+        "type": "on_complete",
+        "source_node": "start_aae34b",
+        "keywords": [],
+        "wait_all_data": false
+      },
+      "listener": false
+    },
+    {
+      "id": "tts_df2686",
+      "type": "tts",
+      "name": "TTS 合成",
+      "position": {
+        "x": 1130,
+        "y": 183
+      },
+      "config": {
+        "platform_id": "4c42aa5c7e93",
+        "model_id": "24456f536d76",
+        "overrides": {}
+      },
+      "input_mappings": [
+        {
+          "from_node": "text_input_fa39f5",
+          "as_field": "tts-batch",
+          "source_field": "text",
+          "required": true
+        }
+      ],
+      "trigger": null,
+      "listener": false
+    },
+    {
+      "id": "stt_listen_68408b",
+      "type": "stt_listen",
+      "name": "STT 持续监听",
+      "position": {
+        "x": 1509,
+        "y": 180
+      },
+      "config": {
+        "platform_id": "sensevoice_local",
+        "model_id": "sensevoice_default",
+        "overrides": {},
+        "keywords": [
+          "求助",
+          "集合",
+          "撤退"
+        ]
+      },
+      "input_mappings": [
+        {
+          "from_node": "tts_df2686",
+          "as_field": "stt-stream",
+          "source_field": "stream-audio",
+          "required": true
+        }
+      ],
+      "trigger": null,
+      "listener": false
+    },
+    {
+      "id": "display_text_789a26",
+      "type": "display_text",
+      "name": "文本显示",
+      "position": {
+        "x": 1934,
+        "y": 176
+      },
+      "config": {
+        "text": "",
+        "mode": "passthrough",
+        "_visible_ports": [
+          "text-in"
+        ]
+      },
+      "input_mappings": [
+        {
+          "from_node": "stt_listen_68408b",
+          "as_field": "text",
+          "source_field": "stt-stream-text",
+          "required": true
+        }
+      ],
+      "trigger": null,
+      "listener": false
+    }
+  ],
+  "connections": [
+    {
+      "id": "conn_23db2892",
+      "from_node": "start_aae34b",
+      "from_port": "event-out",
+      "to_node": "text_input_fa39f5",
+      "to_port": "trigger-in",
+      "type": "event"
+    },
+    {
+      "id": "conn_bd726544",
+      "from_node": "text_input_fa39f5",
+      "from_port": "text-out",
+      "to_node": "tts_df2686",
+      "to_port": "tts-batch-in",
+      "type": "data"
+    },
+    {
+      "id": "conn_87575120",
+      "from_node": "tts_df2686",
+      "from_port": "stream-audio-out",
+      "to_node": "stt_listen_68408b",
+      "to_port": "stt-stream-in",
+      "type": "data"
+    },
+    {
+      "id": "conn_07394b48",
+      "from_node": "stt_listen_68408b",
+      "from_port": "stt-stream-text-out",
+      "to_node": "display_text_789a26",
+      "to_port": "text-in",
+      "type": "data"
+    }
+  ]
+}

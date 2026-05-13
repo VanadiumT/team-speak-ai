@@ -416,7 +416,7 @@ function getPortLabel(node, portId) {
 }
 
 function getNodeWidth(node) {
-  const m = { input_image: 220, ocr: 220, tts: 220, ts_output: 220, ts_input: 220, context_build: 250, llm: 250, stt_history: 280, stt_listen: 320 }
+  const m = { input_image: 220, ocr: 220, tts: 250, ts_output: 220, ts_input: 220, vad: 220, context_build: 250, llm: 250, stt_history: 280, stt_listen: 280 }
   return m[node.type] || 250
 }
 

@@ -565,6 +565,7 @@ class FlowManager:
                             SidebarNode(id="action:llm_settings", name="LLM设置", icon="psychology", type="action"),
                             SidebarNode(id="action:stt_settings", name="STT设置", icon="mic", type="action"),
                             SidebarNode(id="action:tts_settings", name="TTS设置", icon="record_voice_over", type="action"),
+                            SidebarNode(id="action:vad_settings", name="VAD设置", icon="voice_selection", type="action"),
                             SidebarNode(id="action:ts_settings", name="TeamSpeak连接", icon="headset_mic", type="action"),
                         ],
                     ),

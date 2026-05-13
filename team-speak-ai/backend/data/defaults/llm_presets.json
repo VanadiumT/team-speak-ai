@@ -1,0 +1,31 @@
+{
+  "platforms": [
+    {
+      "name": "minimax",
+      "provider": "openai",
+      "base_url": "https://api.minimaxi.com/v1",
+      "api_key": "sk-cp-dGhRj-LIlb7YIPFSfzCcWS9YoqtnpS4VHebQzuuPhD-qMt7tuj2EBYo3Lf_AJ53V3T8EYSMovmqRzQhBhBjvRVH7fzNr9ZU55taznFeMK-MzEexPuSevBAU",
+      "id": "bb879ad553dc",
+      "models": [
+        {
+          "name": "MiniMax-M2.7",
+          "is_default": true,
+          "temperature": 0.7,
+          "max_tokens": 4096,
+          "top_p": 1,
+          "streaming": true,
+          "thinking_mode": "inline",
+          "vision": false,
+          "image_detail": "auto",
+          "max_images": 4,
+          "system_prompt": "",
+          "max_context_tokens": 0,
+          "response_format": "text",
+          "stop": [],
+          "extra": {},
+          "id": "595c359f2bb8"
+        }
+      ]
+    }
+  ]
+}

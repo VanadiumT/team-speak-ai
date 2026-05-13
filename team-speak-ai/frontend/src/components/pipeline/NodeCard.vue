@@ -241,13 +241,23 @@ const expandedOutputPorts = computed(() => expandPorts(_outputPorts.value))
 
 // ── On-demand port visibility ──
 function isPortVisible(port) {
-  if (port.visibility === 'always' || !port.visibility) return true
-  if (port.visibility !== 'on-demand') return true
-  const vis = props.node.config?._visible_ports || []
-  if (vis.includes(port.id)) return true
-  return editorStore.connections.some((c) =>
+  const hasConnection = editorStore.connections.some((c) =>
     (c.from_node === props.node.id && c.from_port === port.id) ||
     (c.to_node === props.node.id && c.to_port === port.id))
+  const portSources = props.node.config?._port_sources || {}
+  const ps = portSources[port.id]
+  const hasSource = ps && ((ps.type === 'fixed' && ps.value) || (ps.type === 'param' && ps.value))
+  const vis = props.node.config?._visible_ports || []
+  const isExplicitlyVisible = vis.includes(port.id)
+
+  if (!props.editMode && !hasConnection && !hasSource && !isExplicitlyVisible) {
+    return false
+  }
+
+  if (port.visibility === 'always' || !port.visibility) return true
+  if (port.visibility !== 'on-demand') return true
+  if (isExplicitlyVisible) return true
+  return hasConnection
 }
 
 const visibleInputPorts = computed(() => expandedInputPorts.value.filter(isPortVisible))
@@ -311,7 +321,7 @@ const badgeColor = computed(() => {
   return c[nodeTypeDef.value?.color] || '#4edea3'
 })
 const nodeWidth = computed(() => {
-  const w = { input_image: 220, ocr: 220, tts: 220, ts_output: 220, ts_input: 220, context_build: 250, llm: 250, stt_history: 280, stt_listen: 320 }
+  const w = { input_image: 220, ocr: 220, tts: 250, ts_output: 220, ts_input: 220, context_build: 250, llm: 250, stt_history: 280, stt_listen: 280 }
   return w[props.node.type] || 250
 })
 

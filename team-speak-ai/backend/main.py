@@ -99,7 +99,7 @@ async def startup_event():
     logger.info("HistoryManager initialized")
 
     # 初始化 ConfigDefaultsManager（默认配置）
-    from core.config.defaults import init_defaults_manager, init_preset_manager, init_tts_preset_manager, init_stt_preset_manager, init_ts_preset_manager, init_ocr_preset_manager
+    from core.config.defaults import init_defaults_manager, init_preset_manager, init_tts_preset_manager, init_stt_preset_manager, init_ts_preset_manager, init_ocr_preset_manager, init_vad_preset_manager
     init_defaults_manager(data_dir)
     logger.info("ConfigDefaultsManager initialized")
     init_preset_manager(data_dir)
@@ -112,6 +112,8 @@ async def startup_event():
     logger.info("TeamSpeakPresetManager initialized")
     init_ocr_preset_manager(data_dir)
     logger.info("OcrPresetManager initialized")
+    init_vad_preset_manager(data_dir)
+    logger.info("VadPresetManager initialized")
 
     # 初始化 SysVarManager（系统变量）
     from core.variables.manager import init_sys_var_manager

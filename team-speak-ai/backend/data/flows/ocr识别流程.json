@@ -35,7 +35,8 @@
       "trigger": {
         "type": "on_complete",
         "source_node": "start_7523a8",
-        "keywords": []
+        "keywords": [],
+        "wait_all_data": false
       },
       "listener": false
     },
@@ -74,7 +75,10 @@
         "language": [
           "zh"
         ],
-        "confidence_threshold": 0.3
+        "confidence_threshold": 0.3,
+        "platform_id": "bdfd278fa622",
+        "model_id": "29f81fc2d8e9",
+        "overrides": {}
       },
       "input_mappings": [
         {

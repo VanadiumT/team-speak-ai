@@ -55,7 +55,8 @@
       "trigger": {
         "type": "on_complete",
         "source_node": "start_d84aca",
-        "keywords": []
+        "keywords": [],
+        "wait_all_data": false
       },
       "listener": false
     },

@@ -81,6 +81,107 @@ class LLMNode(BaseNode):
             return NodeOutput({"response": f"错误: {str(e)}", "reasoning": ""},
                               trigger_next=False)
 
+    async def execute_stream(self, context: NodeContext, emit: EventEmitter):
+        """流式大模型生成，逐 chunk yield NodeOutput(final=False)，最后 yield NodeOutput(final=True)"""
+        cfg = context.node_config
+
+        if cfg.get("platform_id") and cfg.get("model_id"):
+            effective = self._resolve_preset_config(cfg)
+        else:
+            effective = self._resolve_legacy_config(cfg)
+
+        messages = context.inputs.get("llm") or context.inputs.get("messages") or []
+        if not messages:
+            messages = [{"role": "user", "content": "你好"}]
+
+        images = context.inputs.get("image", []) or []
+        if effective.get("vision") and images:
+            messages = self._inject_images(messages, images, effective)
+
+        llm = self._build_llm(effective)
+        thinking_mode = effective.get("thinking_mode", "off")
+        yield_reasoning = thinking_mode == "separate"
+        model_name = effective.get("model", "")
+
+        await emit.emit_node_update(
+            context.node_id, "processing", "AI 思考中...",
+            data={"mode": "thinking"},
+        )
+
+        full_content = ""
+        full_reasoning = ""
+
+        try:
+            async for chunk in llm.chat_stream(messages):
+                if chunk.content:
+                    full_content += chunk.content
+                if chunk.reasoning:
+                    full_reasoning = chunk.reasoning
+
+                disp_text, inline_think = self._parse_think(full_content)
+
+                chunk_data = {
+                    "mode": "generating",
+                    "content_chunk": chunk.content,
+                    "content_full": disp_text,
+                }
+                if yield_reasoning or full_reasoning:
+                    chunk_data["reasoning"] = full_reasoning or inline_think
+                elif inline_think:
+                    chunk_data["reasoning"] = inline_think
+                elif thinking_mode == "inline" and chunk.reasoning:
+                    chunk_data["inline_reasoning"] = chunk.reasoning
+
+                await emit.emit_node_update(
+                    context.node_id, "processing",
+                    f"生成中 ({len(disp_text)} 字)...",
+                    progress=min(len(disp_text) / 500, 0.95),
+                    data=chunk_data,
+                )
+                yield NodeOutput(chunk_data, final=False)
+
+        except Exception:
+            logger.exception("LLM streaming error")
+            raise
+
+        # 构造最终输出（复用 _finish 逻辑）
+        clean_content, inline_think = self._parse_think(full_content)
+        reasoning = full_reasoning or inline_think
+        output_content = clean_content or full_content
+
+        await emit.emit_node_complete(
+            context.node_id, f"生成完成 ({len(output_content)} 字)",
+            output_data={"content": output_content, "model": model_name,
+                         **({"reasoning": reasoning} if reasoning else {})},
+        )
+
+        # 保存对话历史
+        acc = context.accumulated_context
+        if "llm_messages" not in acc:
+            acc["llm_messages"] = []
+        user_messages = [m for m in context.inputs.get("messages", [])
+                         if m.get("role") == "user"]
+        for um in user_messages:
+            existing = any(
+                m.get("role") == "user" and m.get("content") == um.get("content")
+                for m in acc["llm_messages"]
+            )
+            if not existing:
+                acc["llm_messages"].append(um)
+        acc["llm_messages"].append({"role": "assistant", "content": output_content})
+        if len(acc["llm_messages"]) > 20:
+            acc["llm_messages"] = acc["llm_messages"][-20:]
+
+        outputs = {
+            "response": output_content,
+            "raw": full_content,
+            "model": model_name,
+        }
+        if reasoning:
+            outputs["reasoning"] = reasoning
+
+        yield NodeOutput(outputs, final=True)
+
     # ═══════════════════════════════════════════════════════
     # Internal helpers
     # ═══════════════════════════════════════════════════════

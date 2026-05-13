@@ -112,7 +112,7 @@ def _build_metadata():
             ),
         ),
         NodeTypeDef(
-            type="stt_listen", name="STT 持续监听", icon="mic_external_on", color="primary",
+            type="stt_listen", name="STT合成", icon="mic_external_on", color="primary",
             default_config={"platform_id": "", "model_id": "", "overrides": {}},
             tabs=[
                 TabDef(id="config", label="配置"),
@@ -242,8 +242,9 @@ def _build_metadata():
         ),
         NodeTypeDef(
             type="ts_output", name="TS 音频输出", icon="volume_up", color="secondary",
-            default_config={"mode": "segment"},
+            default_config={"platform_id": "", "model_id": "", "overrides": {}},
             tabs=[
+                TabDef(id="config", label="配置"),
                 TabDef(id="detail", label="详情"),
                 TabDef(id="io-data", label="IO数据"),
                 TabDef(id="io-mgmt", label="IO管理"),
@@ -251,10 +252,11 @@ def _build_metadata():
             ],
             ports=PortsDef(
                 inputs=[
-                    port("left", 30, "out-in", "音频数据 (WAV)", "audio"),
-                    port("left", 68, "trigger-in", "触发", "event", _on),
+                    port("left", 22, "stream-audio-in", "流式音频 (分段)", "audio", _on),
+                    port("left", 44, "batch-audio-in", "完整音频 (WAV/PCM)", "audio", _on),
+                    port("left", 66, "trigger-in", "触发", "event", _on),
                 ],
-                outputs=[port("right", 72, "out-done", "播放完成信号", "event")],
+                outputs=[port("right", 66, "done", "播放完成", "event", _on)],
             ),
         ),
         NodeTypeDef(
@@ -274,6 +276,28 @@ def _build_metadata():
                 outputs=[
                     port("right", 30, "audio-out", "音频流 (PCM)", "audio"),
                     port("right", 72, "trigger-out", "触发信号", "event"),
+                ],
+            ),
+        ),
+        NodeTypeDef(
+            type="vad", name="VAD分句", icon="voice_selection", color="primary",
+            default_config={"platform_id": "", "model_id": "", "overrides": {}},
+            tabs=[
+                TabDef(id="config", label="配置"),
+                TabDef(id="detail", label="详情"),
+                TabDef(id="io-data", label="IO数据"),
+                TabDef(id="io-mgmt", label="IO管理"),
+                TabDef(id="log", label="日志"),
+            ],
+            ports=PortsDef(
+                inputs=[
+                    port("left", 30, "stream-audio-in", "流式音频 (Audio)", "audio"),
+                    port("left", 72, "trigger-in", "触发", "event", _on),
+                ],
+                outputs=[
+                    port("right", 30, "chunk-audio-out", "分句音频 (Audio)", "audio"),
+                    port("right", 68, "trigger-out", "分句触发", "event"),
+                    port("right", 106, "done", "完成", "event", _on),
                 ],
             ),
         ),
@@ -377,6 +401,29 @@ def _build_metadata():
                 outputs=[
                     port("right", 30, "data-out", "写入值 (透传)", "string"),
                     port("right", 68, "done", "完成", "event", _on),
+                ],
+            ),
+        ),
+        NodeTypeDef(
+            type="audio_player", name="音频播放", icon="volume_up", color="secondary",
+            default_config={"volume": 1.0, "auto_play": True},
+            tabs=[
+                TabDef(id="config", label="配置"),
+                TabDef(id="detail", label="详情"),
+                TabDef(id="io-data", label="IO数据"),
+                TabDef(id="io-mgmt", label="IO管理"),
+                TabDef(id="log", label="日志"),
+            ],
+            ports=PortsDef(
+                inputs=[
+                    port("left", 22, "stream-audio-in", "流式音频 (分段)", "audio", _on),
+                    port("left", 44, "batch-audio-in", "完整音频 (WAV/PCM)", "audio", _on),
+                    port("left", 66, "trigger-in", "触发", "event", _on),
+                ],
+                outputs=[
+                    port("right", 22, "stream-audio-out", "流式透传", "audio", _on),
+                    port("right", 44, "batch-audio-out", "完整透传", "audio", _on),
+                    port("right", 66, "done", "播放完成", "event", _on),
                 ],
             ),
         ),

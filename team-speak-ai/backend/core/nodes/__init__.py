@@ -16,3 +16,5 @@ import core.nodes.flow_var_read_node
 import core.nodes.flow_var_write_node
 import core.nodes.sys_var_read_node
 import core.nodes.sys_var_write_node
+import core.nodes.vad_node
+import core.nodes.audio_player_node

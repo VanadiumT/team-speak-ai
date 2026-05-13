@@ -21,9 +21,10 @@ from typing import Optional
 from core.pipeline.definition import (
     PipelineDefinition, NodeDefinition, TriggerConfig, InputMapping
 )
-from core.pipeline.context import NodeContext, NodeState, NodeOutput, NodeRuntime
+from core.pipeline.context import NodeContext, NodeState, NodeOutput, NodeRuntime, _STREAM_END
 from core.pipeline.registry import NodeRegistry
 from core.pipeline.emitter import EventEmitter
+from core.nodes.base import BaseNode
 from core.logger.handler import log_pipeline_event
 from core.logger.base import PipelineEvent
 
@@ -111,8 +112,8 @@ class PipelineEngine:
             input_mappings = []
             for m in n.get("input_mappings", []):
                 input_mappings.append(InputMapping(
-                    from_node=m["from"],
-                    as_field=m.get("as", m["from"]),
+                    from_node=m.get("from_node") or m.get("from", ""),
+                    as_field=m.get("as_field") or m.get("as", m.get("from_node") or m.get("from", "")),
                     source_field=m.get("source_field", ""),
                     required=m.get("required", True),
                 ))
@@ -392,6 +393,176 @@ class PipelineEngine:
             self._running_flows.discard(instance.pipeline_def.id)
         logger.info(f"Pipeline instance deleted: {execution_id}")
 
+    # ── 流式执行方法 ──
+
+    @staticmethod
+    def _supports_streaming(node_cls) -> bool:
+        """检查节点是否覆写了 execute_stream"""
+        return type(node_cls).execute_stream is not BaseNode.execute_stream
+
+    def _build_node_context(self, instance: 'PipelineInstance', node_def: NodeDefinition) -> Optional[NodeContext]:
+        """收集上游输入 + 构建 NodeContext。供 batch 和 streaming 两条路径复用。
+        若 required 输入缺失则返回 None。"""
+        pd = instance.pipeline_def
+        inputs = {}
+        for mapping in node_def.input_mappings:
+            source_rt = instance.get_runtime(mapping.from_node)
+            if source_rt and source_rt.output:
+                source_key = mapping.source_field or mapping.as_field
+                val = source_rt.output.data.get(source_key)
+                if val is None and source_rt.output.data:
+                    for k, v in source_rt.output.data.items():
+                        if v is not None:
+                            val = v
+                            break
+                if val is not None:
+                    inputs[mapping.as_field] = val
+                elif mapping.required:
+                    return None  # 调用方负责 fail_node
+        return NodeContext(
+            pipeline_id=pd.id, execution_id=instance.execution_id,
+            node_id=node_def.id, node_type=node_def.type,
+            node_config=node_def.config, inputs=inputs,
+            accumulated_context=instance.accumulated_context,
+        )
+
+    def _detect_streaming_chain(self, instance: 'PipelineInstance', start_id: str) -> list:
+        """沿 stream-* 端口 data 连线追踪流式链，返回 [A, B, ...]。
+        要求链长 >= 2 且每个节点支持 execute_stream。否则返回空列表。"""
+        pd = instance.pipeline_def
+        chain = [start_id]
+        current = start_id
+
+        while True:
+            nd = pd.get_node(current)
+            if nd is None:
+                break
+            nc = self._node_registry.create(nd.type, nd.config)
+            if not self._supports_streaming(nc):
+                break
+            next_id = None
+            for conn in pd.connections:
+                if (conn.from_node == current and conn.type == "data"
+                        and conn.from_port.startswith("stream-")
+                        and conn.to_port.startswith("stream-")):
+                    tgt = pd.get_node(conn.to_node)
+                    if tgt is None:
+                        continue
+                    tc = self._node_registry.create(tgt.type, tgt.config)
+                    if self._supports_streaming(tc) and conn.to_node not in chain:
+                        next_id = conn.to_node
+                        break
+            if next_id:
+                chain.append(next_id)
+                current = next_id
+            else:
+                break
+
+        return chain if len(chain) >= 2 else []
+
+    def _finalize_node_output(self, instance: 'PipelineInstance', node_id: str,
+                               output: NodeOutput, runtime: NodeRuntime):
+        """设置 runtime 为 COMPLETED，将 final 输出累积到 instance context"""
+        runtime.output = output
+        runtime.status = NodeState.COMPLETED
+        runtime.summary = (
+            str(output.data.get("text", output.data.get("value", "")))[:40]
+            if output.data else "完成"
+        )
+        for k, v in output.data.items():
+            if k in instance.accumulated_context:
+                acc = instance.accumulated_context[k]
+                if isinstance(acc, list):
+                    acc.append(v)
+                else:
+                    instance.accumulated_context[k] = v
+
+    async def _execute_chain_streaming(self, instance: 'PipelineInstance', chain: list):
+        """并行执行流式链：producer → Queue → consumer → Queue → ..."""
+        pd = instance.pipeline_def
+        n = len(chain)
+        channels = [asyncio.Queue(maxsize=8) for _ in range(n - 1)]
+
+        async def _run_producer(node_id: str, out_ch: asyncio.Queue):
+            nd = pd.get_node(node_id)
+            nc = self._node_registry.create(nd.type, nd.config)
+            rt = instance.get_runtime(node_id)
+            rt.status = NodeState.PROCESSING
+            emit = EventEmitter(self, pd.id)
+
+            ctx = self._build_node_context(instance, nd)
+            if ctx is None:
+                missing = next((m.as_field for m in nd.input_mappings
+                                if m.required and not instance.get_runtime(m.from_node)), "?")
+                await self._fail_node(instance, node_id, f"Missing input: {missing}", emit)
+                await out_ch.put(_STREAM_END)
+                raise RuntimeError(f"Missing required input for {node_id}")
+
+            await emit.emit_node_update(node_id, "processing", "流式处理中...")
+
+            try:
+                async for output in nc.execute_stream(ctx, emit):
+                    await out_ch.put(output)
+                    if not output.final:
+                        rt.output = output
+                await out_ch.put(_STREAM_END)
+            except Exception as e:
+                logger.exception(f"Streaming producer {node_id} error")
+                await self._fail_node(instance, node_id, str(e), emit)
+                await out_ch.put(_STREAM_END)  # 通知 consumer 结束
+                raise
+
+        async def _run_consumer(node_id: str, in_ch: asyncio.Queue, out_ch: asyncio.Queue = None):
+            nd = pd.get_node(node_id)
+            nc = self._node_registry.create(nd.type, nd.config)
+            rt = instance.get_runtime(node_id)
+            rt.status = NodeState.PROCESSING
+            emit = EventEmitter(self, pd.id)
+
+            ctx = self._build_node_context(instance, nd)
+            if ctx is None:
+                ctx = NodeContext(
+                    pipeline_id=pd.id, execution_id=instance.execution_id,
+                    node_id=node_id, node_type=nd.type,
+                    node_config=nd.config, inputs={},
+                    accumulated_context=instance.accumulated_context,
+                )
+            ctx.stream_input = in_ch
+
+            await emit.emit_node_update(node_id, "processing", "流式处理中...")
+
+            try:
+                async for output in nc.execute_stream(ctx, emit):
+                    if out_ch is not None:
+                        await out_ch.put(output)
+                    if not output.final:
+                        rt.output = output
+                    else:
+                        self._finalize_node_output(instance, node_id, output, rt)
+                if out_ch is not None:
+                    await out_ch.put(_STREAM_END)
+            except Exception as e:
+                logger.exception(f"Streaming consumer {node_id} error")
+                await self._fail_node(instance, node_id, str(e), emit)
+                if out_ch is not None:
+                    await out_ch.put(_STREAM_END)
+                raise
+
+        try:
+            async with asyncio.TaskGroup() as tg:
+                for i, node_id in enumerate(chain):
+                    out_ch = channels[i] if i < n - 1 else None
+                    if i == 0:
+                        tg.create_task(_run_producer(node_id, out_ch))
+                    else:
+                        tg.create_task(_run_consumer(node_id, channels[i - 1], out_ch))
+        except BaseException:
+            pass
+
+        # 流式链结束后，触发链中所有节点的非流式下游
+        for node_id in chain:
+            await self._trigger_downstream(instance, node_id)
+
     # ── 节点执行 ──
 
     async def execute_node(self, execution_id: str, node_id: str, user_input: dict = None):
@@ -408,42 +579,17 @@ class PipelineEngine:
             return
 
         node_cls = self._node_registry.create(node_def.type, node_def.config)
-        runtime = instance.get_runtime(node_id)
 
-        # 收集输入
-        inputs = {}
-        for mapping in node_def.input_mappings:
-            source_rt = instance.get_runtime(mapping.from_node)
-            if source_rt and source_rt.output:
-                source_key = mapping.source_field or mapping.as_field
-                val = source_rt.output.data.get(source_key)
-                # fallback: 用任意匹配的 key（适配 source_field 与输出 data key 不匹配的情况）
-                if val is None and source_rt.output.data:
-                    # 先尝试取第一个不为 None 的值
-                    for k, v in source_rt.output.data.items():
-                        if v is not None:
-                            val = v
-                            break
-                if val is not None:
-                    inputs[mapping.as_field] = val
-                elif mapping.required:
-                    await self._fail_node(instance, node_id, f"Missing input: {mapping.as_field}")
-                    return
+        ctx = self._build_node_context(instance, node_def)
+        if ctx is None:
+            await self._fail_node(instance, node_id, "Missing required input")
+            return
 
         # 用户输入覆盖
         if user_input:
-            inputs.update(user_input)
+            ctx.inputs.update(user_input)
 
-        # 构建上下文
-        ctx = NodeContext(
-            pipeline_id=pd.id,
-            execution_id=execution_id,
-            node_id=node_id,
-            node_type=node_def.type,
-            node_config=node_def.config,
-            inputs=inputs,
-            accumulated_context=instance.accumulated_context,
-        )
+        runtime = instance.get_runtime(node_id)
 
         emit = EventEmitter(self, pd.id)
 
@@ -602,8 +748,16 @@ class PipelineEngine:
                     if is_source:
                         triggered.add(node_def.id)
 
+        streaming_handled = set()
         for nid in triggered:
-            await self.execute_node(instance.execution_id, nid)
+            if nid in streaming_handled:
+                continue
+            chain = self._detect_streaming_chain(instance, nid)
+            if chain:
+                await self._execute_chain_streaming(instance, chain)
+                streaming_handled.update(chain)
+            else:
+                await self.execute_node(instance.execution_id, nid)
 
         # 检查是否所有非监听节点已完成（含等待中节点的流程不结束）
         all_done = all(
