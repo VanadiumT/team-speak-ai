@@ -517,6 +517,9 @@ class FlowManager:
         """检查两个端口类型是否兼容"""
         if source_type == target_type:
             return True
+        # "any" 是通配类型，与任意类型兼容
+        if source_type == "any" or target_type == "any":
+            return True
         compatible_pairs = {
             ("string", "string_array"),
             ("string_array", "messages"),
@@ -554,26 +557,22 @@ class FlowManager:
                 children=children,
             ),
             SidebarNode(
+                id="node_settings", name="节点设置", icon="tune", type="section",
+                children=[
+                    SidebarNode(id="action:ocr_settings", name="OCR设置", icon="document_scanner", type="action"),
+                    SidebarNode(id="action:llm_settings", name="LLM设置", icon="psychology", type="action"),
+                    SidebarNode(id="action:stt_settings", name="STT设置", icon="mic", type="action"),
+                    SidebarNode(id="action:tts_settings", name="TTS设置", icon="record_voice_over", type="action"),
+                    SidebarNode(id="action:vad_settings", name="VAD设置", icon="voice_selection", type="action"),
+                    SidebarNode(id="action:ts_settings", name="TeamSpeak连接", icon="headset_mic", type="action"),
+                ],
+            ),
+            SidebarNode(
                 id="system_settings", name="系统设置", icon="settings", type="section",
                 children=[
                     SidebarNode(id="action:sys_vars", name="系统变量", icon="data_object", type="action"),
                     SidebarNode(id="action:shortcuts", name="系统快捷键", icon="keyboard", type="action"),
-                    SidebarNode(
-                        id="node_settings_group", name="节点设置", icon="tune", type="group",
-                        children=[
-                            SidebarNode(id="action:ocr_settings", name="OCR设置", icon="document_scanner", type="action"),
-                            SidebarNode(id="action:llm_settings", name="LLM设置", icon="psychology", type="action"),
-                            SidebarNode(id="action:stt_settings", name="STT设置", icon="mic", type="action"),
-                            SidebarNode(id="action:tts_settings", name="TTS设置", icon="record_voice_over", type="action"),
-                            SidebarNode(id="action:vad_settings", name="VAD设置", icon="voice_selection", type="action"),
-                            SidebarNode(id="action:ts_settings", name="TeamSpeak连接", icon="headset_mic", type="action"),
-                        ],
-                    ),
                 ],
-            ),
-            SidebarNode(
-                id="statistics", name="统计", icon="bar_chart", type="section",
-                children=[],
             ),
         ]
 

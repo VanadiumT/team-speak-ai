@@ -63,7 +63,7 @@
       "type": "tts",
       "name": "TTS 合成",
       "position": {
-        "x": 1130,
+        "x": 1131,
         "y": 183
       },
       "config": {
@@ -74,7 +74,7 @@
       "input_mappings": [
         {
           "from_node": "text_input_fa39f5",
-          "as_field": "tts-batch",
+          "as_field": "batch-text",
           "source_field": "text",
           "required": true
         }
@@ -103,8 +103,8 @@
       "input_mappings": [
         {
           "from_node": "tts_df2686",
-          "as_field": "stt-stream",
-          "source_field": "stream-audio",
+          "as_field": "batch-audio",
+          "source_field": "batch-audio",
           "required": true
         }
       ],
@@ -130,7 +130,7 @@
         {
           "from_node": "stt_listen_68408b",
           "as_field": "text",
-          "source_field": "stt-stream-text",
+          "source_field": "batch-text",
           "required": true
         }
       ],
@@ -148,25 +148,25 @@
       "type": "event"
     },
     {
-      "id": "conn_bd726544",
+      "id": "conn_71d6a03b",
       "from_node": "text_input_fa39f5",
       "from_port": "text-out",
       "to_node": "tts_df2686",
-      "to_port": "tts-batch-in",
+      "to_port": "batch-text-in",
       "type": "data"
     },
     {
-      "id": "conn_87575120",
+      "id": "conn_8eaec170",
       "from_node": "tts_df2686",
-      "from_port": "stream-audio-out",
+      "from_port": "batch-audio-out",
       "to_node": "stt_listen_68408b",
-      "to_port": "stt-stream-in",
+      "to_port": "batch-audio-in",
       "type": "data"
     },
     {
-      "id": "conn_07394b48",
+      "id": "conn_95732d85",
       "from_node": "stt_listen_68408b",
-      "from_port": "stt-stream-text-out",
+      "from_port": "batch-text-out",
       "to_node": "display_text_789a26",
       "to_port": "text-in",
       "type": "data"

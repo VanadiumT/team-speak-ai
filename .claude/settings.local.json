@@ -62,7 +62,9 @@
       "Bash(python -c \"from core.pipeline.registry import NodeRegistry; td = NodeRegistry.get_type_def\\('tts'\\); print\\('Ports:', len\\(td.ports.inputs\\), 'in,', len\\(td.ports.outputs\\), 'out'\\); print\\('Default config:', td.default_config\\)\")",
       "Bash(python *)",
       "Bash(Remove-Item *)",
-      "Bash(npx vite *)"
+      "Bash(npx vite *)",
+      "PowerShell(Write-Output \"=== team-speak-ai/docs/ ===\"; Get-ChildItem \"E:\\\\programmetemp\\\\project\\\\team_speak_ai\\\\team-speak-ai\\\\docs\" | Select-Object Name, @{N='KB';E={[math]::Round\\($_.Length/1024,1\\)}} | Format-Table -AutoSize; Write-Output \"\"; Write-Output \"=== root docs/ ===\"; Get-ChildItem \"E:\\\\programmetemp\\\\project\\\\team_speak_ai\\\\docs\" | Select-Object Name, @{N='KB';E={[math]::Round\\($_.Length/1024,1\\)}} | Format-Table -AutoSize)",
+      "PowerShell(git *)"
     ]
   }
 }

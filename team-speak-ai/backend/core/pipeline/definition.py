@@ -14,15 +14,15 @@ from typing import Optional, Union
 
 
 class NodeType(Enum):
-    """支持的节点类型"""
-    INPUT_IMAGE = "input_image"       # 上传图片
-    OCR = "ocr"                       # 图片识别
-    STT_LISTEN = "stt_listen"         # TS 语音持续监听
-    STT_HISTORY = "stt_history"       # STT 历史记录 + 关键词判断
-    CONTEXT_BUILD = "context_build"   # 上下文合并
-    LLM = "llm"                       # 大模型
-    TTS = "tts"                       # 语音合成
-    TS_OUTPUT = "ts_output"           # TS 播放
+    """[已废弃] 节点类型枚举 — 不再使用。节点类型由 registry.py 的 _build_metadata() 动态管理。"""
+    INPUT_IMAGE = "input_image"
+    OCR = "ocr"
+    STT_LISTEN = "stt_listen"
+    STT_HISTORY = "stt_history"
+    CONTEXT_BUILD = "context_build"
+    LLM = "llm"
+    TTS = "tts"
+    TS_OUTPUT = "ts_output"
 
 
 # ── 端口与 Tab 元数据 ──────────────────────────────────────────
@@ -30,8 +30,8 @@ class NodeType(Enum):
 @dataclass
 class TabDef:
     """节点标签页定义"""
-    id: str         # "config" | "detail" | "log" | "fulltext"
-    label: str      # "配置" | "详情" | "日志" | "全文"
+    id: str         # "config" | "detail" | "io-data" | "io-mgmt" | "log"
+    label: str      # "配置" | "详情" | "IO数据" | "IO管理" | "日志"
 
 
 @dataclass
@@ -46,7 +46,7 @@ class PortDef:
     """单个端口定义"""
     id: str                 # 端口标识符, e.g. "img-out", "ocr-in"
     label: str              # 悬停提示文字
-    data_type: str          # "image" | "audio" | "string" | "string_array" | "messages" | "event"
+    data_type: str          # "image" | "audio" | "string" | "string_array" | "messages" | "event" | "number" | "any"
     position: PortPosition  # 渲染位置
     visibility: str = "always"   # "always"（始终可见）| "on-demand"（默认隐藏，通过 "+" 露出）
     group: Optional[str] = None  # 端口组名（repeatable 端口共用）
