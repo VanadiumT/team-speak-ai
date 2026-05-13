@@ -717,6 +717,9 @@ class PipelineEngine:
                         else:
                             instance.accumulated_context[k] = v
 
+                    # 提前设回 PROCESSING，避免下游链完成时误判为流程结束
+                    runtime.status = NodeState.PROCESSING
+
                     # 触发下游（context_build → llm → tts → ts_output）
                     await self._trigger_downstream(instance, node_def.id)
 
@@ -761,6 +764,8 @@ class PipelineEngine:
 
         def _all_data_ready(nd: NodeDefinition) -> bool:
             for m in nd.input_mappings:
+                if m.from_node == completed_node_id:
+                    continue  # 刚刚完成的节点，始终视为就绪
                 src_rt = instance.get_runtime(m.from_node)
                 if not src_rt or src_rt.status != NodeState.COMPLETED:
                     return False
@@ -784,23 +789,30 @@ class PipelineEngine:
 
         logger.info(f"_trigger_downstream: triggered set={triggered}")
         streaming_handled = set()
+
+        # 先从完成节点（生产者）开始检测流式链
+        chain = self._detect_streaming_chain(instance, completed_node_id)
+        if chain:
+            await self._execute_chain_streaming(instance, chain)
+            streaming_handled.update(chain)
+
         for nid in triggered:
             if nid in streaming_handled:
                 continue
-            chain = self._detect_streaming_chain(instance, nid)
-            if chain:
-                await self._execute_chain_streaming(instance, chain)
-                streaming_handled.update(chain)
-            else:
-                await self.execute_node(instance.execution_id, nid)
+            await self.execute_node(instance.execution_id, nid)
 
-        # 检查是否所有非监听节点已完成（含等待中节点的流程不结束）
-        all_done = all(
+        # 检查是否所有非监听节点已完成，且所有监听节点已终止
+        all_non_listeners_done = all(
             rt.status in (NodeState.COMPLETED, NodeState.ERROR)
             for nid, rt in instance.node_runtimes.items()
             if not any(n.listener for n in pd.nodes if n.id == nid)
         )
-        if all_done:
+        listeners_all_done = all(
+            rt.status in (NodeState.COMPLETED, NodeState.ERROR)
+            for nid, rt in instance.node_runtimes.items()
+            if any(n.listener for n in pd.nodes if n.id == nid)
+        )
+        if all_non_listeners_done and listeners_all_done:
             self._running_flows.discard(pd.id)
             emit = EventEmitter(self, pd.id)
             await emit.emit_pipeline_complete(instance.execution_id)

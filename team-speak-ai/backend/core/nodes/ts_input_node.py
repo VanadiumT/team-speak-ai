@@ -38,7 +38,7 @@ class TSInputNode(BaseNode):
         accumulated_frames = []
         total_bytes = 0
         max_bytes = context.node_config.get("max_buffer_bytes", 10 * 1024 * 1024)
-        silence_timeout = 2.0 if loopback else 0  # 回环模式下2秒无音频即输出
+        silence_timeout = 2.0 if loopback else 0
         last_audio_time = None
         has_any_audio = False
 
@@ -53,7 +53,6 @@ class TSInputNode(BaseNode):
             while True:
                 frame = await audio_bus.get_audio(listener_id, timeout=0.5)
                 if frame is None:
-                    # 回环模式：收到过音频且超过 silence_timeout → 输出
                     if silence_timeout > 0 and has_any_audio and last_audio_time:
                         if time.time() - last_audio_time >= silence_timeout:
                             break
@@ -75,18 +74,16 @@ class TSInputNode(BaseNode):
                     data={"bytes_received": total_bytes, "frame_count": len(accumulated_frames)},
                 )
 
-                # 达到缓冲区上限时输出
                 if total_bytes >= max_bytes:
                     break
 
         except asyncio.CancelledError:
             logger.info(f"TSInput cancelled: {context.node_id}")
-            raise
-        finally:
+            audio_bus.unsubscribe(listener_id)
             if loopback:
                 ts_client.loopback_enabled = False
                 logger.info(f"TSInput loopback disabled by {context.node_id}")
-            audio_bus.unsubscribe(listener_id)
+            raise
 
         await emit.emit_node_update(
             context.node_id,

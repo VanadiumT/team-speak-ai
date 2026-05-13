@@ -134,7 +134,10 @@
         "_visible_ports": [
           "trigger-in"
         ],
-        "loopback": true
+        "loopback": true,
+        "overrides": {
+          "max_buffer_bytes": 5242880
+        }
       },
       "input_mappings": [],
       "trigger": {
@@ -216,6 +219,63 @@
         {
           "from_node": "stt_listen_48f5b1",
           "as_field": "text",
+          "source_field": "text",
+          "required": true
+        }
+      ],
+      "trigger": null,
+      "listener": false
+    },
+    {
+      "id": "ts_output_821bf2",
+      "type": "ts_output",
+      "name": "TS 音频输出",
+      "position": {
+        "x": 3166,
+        "y": 842
+      },
+      "config": {
+        "platform_id": "a65896cf0805",
+        "model_id": "f26dcb5afd4f",
+        "overrides": {},
+        "_visible_ports": [
+          "stream-audio-in"
+        ]
+      },
+      "input_mappings": [
+        {
+          "from_node": "tts_87d266",
+          "as_field": "stream-audio",
+          "source_field": "stream-audio",
+          "required": true
+        }
+      ],
+      "trigger": null,
+      "listener": false
+    },
+    {
+      "id": "tts_87d266",
+      "type": "tts",
+      "name": "TTS 合成",
+      "position": {
+        "x": 2697,
+        "y": 839
+      },
+      "config": {
+        "platform_id": "4c42aa5c7e93",
+        "model_id": "24456f536d76",
+        "overrides": {},
+        "_port_positions": {
+          "batch-audio-out": {
+            "side": "right",
+            "top": 58
+          }
+        }
+      },
+      "input_mappings": [
+        {
+          "from_node": "display_text_bb75a3",
+          "as_field": "batch-text",
           "source_field": "text",
           "required": true
         }
@@ -304,6 +364,22 @@
       "to_node": "tts_30dd4d",
       "to_port": "trigger-in",
       "type": "event"
+    },
+    {
+      "id": "conn_7b6788f6",
+      "from_node": "display_text_bb75a3",
+      "from_port": "text-out",
+      "to_node": "tts_87d266",
+      "to_port": "batch-text-in",
+      "type": "data"
+    },
+    {
+      "id": "conn_8de54491",
+      "from_node": "tts_87d266",
+      "from_port": "stream-audio-out",
+      "to_node": "ts_output_821bf2",
+      "to_port": "stream-audio-in",
+      "type": "data"
     }
   ]
 }
