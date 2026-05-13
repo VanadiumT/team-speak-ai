@@ -32,6 +32,7 @@ class TeamSpeakWebSocket:
         self.reconnect_attempts = 0
         self.max_reconnect_attempts = 10
         self._should_reconnect = True
+        self.loopback_enabled = False
 
     async def connect(self, url: str = None) -> bool:
         url = url or settings.ts_ws_url
@@ -100,6 +101,17 @@ class TeamSpeakWebSocket:
                 await self.ws.send(json.dumps(message))
             except Exception as e:
                 logger.error(f"Send voice message error: {e}")
+
+        if self.loopback_enabled and audio_data:
+            import base64
+            try:
+                frame_data = base64.b64decode(audio_data)
+                logger.info(f"Loopback: decoded {len(frame_data)} bytes from base64, decoding to PCM...")
+                pcm = _decode_to_pcm(frame_data)
+                logger.info(f"Loopback: PCM {len(pcm)} bytes, publishing to AudioBus")
+                await audio_bus.publish(pcm, sender_id=-1)
+            except Exception as e:
+                logger.error(f"Loopback publish error: {e}")
 
     async def send_silence(self) -> None:
         if self.ws and self.connected:
@@ -276,3 +288,15 @@ async def connect_teamspeak(url: Optional[str] = None):
 async def disconnect_teamspeak():
     await ts_client.disconnect()
     return {"success": True}
+
+
+def _decode_to_pcm(audio_bytes: bytes, target_sr: int = 16000, target_channels: int = 1) -> bytes:
+    """将编码音频（MP3等）解码为 16-bit signed PCM，匹配 VAD 期望格式"""
+    import miniaudio
+    decoded = miniaudio.decode(audio_bytes)
+    pcm = miniaudio.convert_frames(
+        decoded.sample_format, decoded.nchannels, decoded.sample_rate,
+        decoded.samples.tobytes(),
+        miniaudio.SampleFormat.SIGNED16, target_channels, target_sr,
+    )
+    return bytes(pcm)

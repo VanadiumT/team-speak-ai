@@ -26,6 +26,7 @@ class VADNode(BaseNode):
 
     async def execute(self, context: NodeContext, emit: EventEmitter) -> NodeOutput:
         cfg = context.node_config
+        logger.info(f"VAD execute start: node={context.node_id}")
 
         # ── 预设解析 ──
         if cfg.get("platform_id") and cfg.get("model_id"):
@@ -37,15 +38,18 @@ class VADNode(BaseNode):
 
         # ── 获取输入音频 ──
         audio_data = context.inputs.get("stream-audio")
+        logger.info(f"VAD audio_data type={type(audio_data).__name__}, len={len(audio_data) if audio_data else 0}")
         if audio_data is None:
             await emit.emit_node_error(context.node_id, "未收到音频数据")
             return NodeOutput({}, trigger_next=False)
 
         pcm_bytes = _resolve_pcm(audio_data)
         if not pcm_bytes:
+            logger.warning(f"VAD _resolve_pcm returned empty, audio_data preview: {str(audio_data)[:200]}")
             await emit.emit_node_error(context.node_id, "无法解析音频数据")
             return NodeOutput({}, trigger_next=False)
 
+        logger.info(f"VAD pcm_bytes={len(pcm_bytes)} bytes, sample_rate={sample_rate}")
         await emit.emit_node_update(
             context.node_id, "processing",
             f"VAD 分句中 (共 {len(pcm_bytes)} 字节)",
@@ -92,7 +96,7 @@ class VADNode(BaseNode):
                 data={"total_chunks": 0},
             )
             return NodeOutput({
-                "chunk-audio-out": [],
+                "chunk-audio": [],
                 "total_chunks": 0,
             })
 
@@ -102,9 +106,10 @@ class VADNode(BaseNode):
             data={"total_chunks": len(chunks)},
         )
 
+        safe_chunks = [base64.b64encode(c).decode("ascii") if isinstance(c, bytes) else c for c in chunks]
         return NodeOutput({
-            "chunk-audio-out": chunks,
-            "total_chunks": len(chunks),
+            "chunk-audio": safe_chunks,
+            "total_chunks": len(safe_chunks),
         })
 
     # ── 预设解析 ──
@@ -149,8 +154,8 @@ def _resolve_pcm(audio_data) -> bytes:
     if isinstance(audio_data, (bytes, bytearray)):
         return bytes(audio_data)
     if isinstance(audio_data, dict):
-        # ts_input 输出: {"audio_frames": [...], ...}
-        frames = audio_data.get("audio_frames", [])
+        # ts_input 输出: {"audio": [...], "total_bytes": ...}
+        frames = audio_data.get("audio") or audio_data.get("audio_frames", [])
         if frames:
             return b"".join(f.get("data", b"") if isinstance(f, dict) else bytes(f) for f in frames)
         # 可能直接是 pcm data

@@ -36,6 +36,15 @@
           </select>
         </div>
 
+        <div class="cfg-field">
+          <label class="cfg-label">回环监听</label>
+          <select class="cfg-select" :value="configVal('loopback')" @change="onConfigChange('loopback', $event.target.value === 'true')">
+            <option :value="false">关闭 — 仅监听 TS 频道语音</option>
+            <option :value="true">开启 — 同时监听机器人播放的音频 (调试/回环)</option>
+          </select>
+          <div class="cfg-hint">开启后 TTS 输出到 TeamSpeak 的音频会回环到输入，方便测试</div>
+        </div>
+
         <details class="cfg-overrides">
           <summary class="cfg-summary">覆盖音频参数 (可选)</summary>
           <div class="cfg-field">
@@ -127,6 +136,17 @@ const displayPresetName = computed(() => {
   return '未选择桥接'
 })
 
+// ── Config helpers ──
+function configVal(key) {
+  const cfg = props.config || props.node?.config || {}
+  return cfg[key] ?? false
+}
+
+function onConfigChange(key, val) {
+  const cfg = props.config || props.node?.config || {}
+  editorStore.updateConfigImmediate(props.node.id, { ...cfg, [key]: val })
+}
+
 // ── Override helpers ──
 function overrideVal(key) {
   const cfg = props.config || props.node?.config || {}
@@ -139,6 +159,8 @@ function onOverride(key, rawVal) {
   const overrides = { ...(cfg.overrides || {}) }
   if (rawVal === '' || rawVal === undefined) {
     delete overrides[key]
+  } else if (key === 'loopback') {
+    overrides[key] = rawVal === 'true'
   } else if (key === 'sample_rate' || key === 'max_buffer_bytes' || key === 'channels') {
     overrides[key] = parseInt(rawVal)
   } else {
@@ -150,10 +172,12 @@ function onOverride(key, rawVal) {
 function onModelChange(e) {
   const [platformId, modelId] = e.target.value.split('/')
   const cfg = props.config || props.node?.config || {}
+  const modelInfo = presetsStore.tsAllModels.find(m => m.platformId === platformId && m.modelId === modelId)
   editorStore.updateConfigImmediate(props.node.id, {
     ...cfg,
     platform_id: platformId,
     model_id: modelId,
+    loopback: modelInfo?.loopback ?? false,
   })
 }
 
@@ -200,6 +224,7 @@ function onTogglePort(portId, show) {
   color: #e0e2ed; font-family: inherit; outline: none;
 }
 .ts-config .cfg-select:focus { border-color: #4a8eff; }
+.ts-config .cfg-hint { font-size: 9px; color: #64748b; margin-top: 2px; line-height: 1.4; }
 .ts-config .cfg-overrides { margin-top: 10px; }
 .ts-config .cfg-summary {
   font-size: 10px; color: #adc7ff; cursor: pointer; padding: 4px 0;

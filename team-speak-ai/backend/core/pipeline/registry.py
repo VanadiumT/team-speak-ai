@@ -123,13 +123,13 @@ def _build_metadata():
             ],
             ports=PortsDef(
                 inputs=[
-                    port("left", 30, "stt-stream-in", "流式音频 (Audio)", "audio"),
-                    port("left", 56, "stt-batch-in", "非流式音频 (Audio)", "audio"),
+                    port("left", 30, "stream-audio-in", "流式音频 (Audio)", "audio"),
+                    port("left", 56, "batch-audio-in", "非流式音频 (Audio)", "audio"),
                     port("left", 82, "trigger-in", "触发", "event", _on),
                 ],
                 outputs=[
-                    port("right", 30, "stt-stream-text-out", "流式-识别文本 (String)", "string"),
-                    port("right", 56, "stt-batch-text-out", "非流式-完整文本 (String)", "string"),
+                    port("right", 30, "stream-text-out", "流式-识别文本 (String)", "string"),
+                    port("right", 56, "batch-text-out", "非流式-完整文本 (String)", "string"),
                     port("right", 82, "done", "完成", "event", _on),
                 ],
             ),
@@ -229,8 +229,8 @@ def _build_metadata():
             ],
             ports=PortsDef(
                 inputs=[
-                    port("left", 30, "tts-stream-in", "流式-文本(拆分) (String)", "string"),
-                    port("left", 56, "tts-batch-in", "非流式-文本 (String)", "string"),
+                    port("left", 30, "stream-text-in", "流式-文本(拆分) (String)", "string"),
+                    port("left", 56, "batch-text-in", "非流式-文本 (String)", "string"),
                     port("left", 82, "trigger-in", "触发", "event", _on),
                 ],
                 outputs=[
@@ -261,7 +261,7 @@ def _build_metadata():
         ),
         NodeTypeDef(
             type="ts_input", name="TS 音频输入", icon="headset_mic", color="secondary",
-            default_config={"max_buffer_bytes": 10485760, "sample_rate": 16000, "channels": 1},
+            default_config={"max_buffer_bytes": 10485760, "sample_rate": 16000, "channels": 1, "loopback": False},
             tabs=[
                 TabDef(id="config", label="配置"),
                 TabDef(id="detail", label="详情"),
@@ -274,7 +274,7 @@ def _build_metadata():
                     port("left", 55, "trigger-in", "触发", "event", _on),
                 ],
                 outputs=[
-                    port("right", 30, "audio-out", "音频流 (PCM)", "audio"),
+                    port("right", 30, "stream-pcm-out", "音频流 (PCM)", "audio"),
                     port("right", 72, "trigger-out", "触发信号", "event"),
                 ],
             ),
@@ -295,7 +295,7 @@ def _build_metadata():
                     port("left", 72, "trigger-in", "触发", "event", _on),
                 ],
                 outputs=[
-                    port("right", 30, "chunk-audio-out", "分句音频 (Audio)", "audio"),
+                    port("right", 30, "stream-chunk-out", "分句音频 (Audio)", "audio"),
                     port("right", 68, "trigger-out", "分句触发", "event"),
                     port("right", 106, "done", "完成", "event", _on),
                 ],

@@ -5,7 +5,9 @@ TS Input 节点 — TeamSpeak 音频输入源
 """
 
 import asyncio
+import base64
 import logging
+import time
 
 from core.nodes.base import BaseNode
 from core.pipeline.context import NodeContext, NodeOutput
@@ -23,24 +25,38 @@ class TSInputNode(BaseNode):
     node_type = "ts_input"
 
     async def execute(self, context: NodeContext, emit: EventEmitter) -> NodeOutput:
+        from api.routes.ws_teamspeak import ts_client
+
         listener_id = f"ts_input_{context.execution_id}_{context.node_id}"
         audio_bus.subscribe(listener_id)
+
+        loopback = context.node_config.get("loopback", False)
+        if loopback:
+            ts_client.loopback_enabled = True
+            logger.info(f"TSInput loopback enabled by {context.node_id}")
 
         accumulated_frames = []
         total_bytes = 0
         max_bytes = context.node_config.get("max_buffer_bytes", 10 * 1024 * 1024)
+        silence_timeout = 2.0 if loopback else 0  # 回环模式下2秒无音频即输出
+        last_audio_time = None
+        has_any_audio = False
 
         try:
             await emit.emit_node_update(
                 context.node_id,
                 "listening",
-                "接收 TS 音频流...",
-                data={"mode": "receiving"},
+                "接收 TS 音频流..." + (" (含回环监听)" if loopback else ""),
+                data={"mode": "receiving", "loopback": loopback},
             )
 
             while True:
                 frame = await audio_bus.get_audio(listener_id, timeout=0.5)
                 if frame is None:
+                    # 回环模式：收到过音频且超过 silence_timeout → 输出
+                    if silence_timeout > 0 and has_any_audio and last_audio_time:
+                        if time.time() - last_audio_time >= silence_timeout:
+                            break
                     continue
 
                 audio_bytes = frame.get("data", b"")
@@ -49,6 +65,8 @@ class TSInputNode(BaseNode):
 
                 accumulated_frames.append(frame)
                 total_bytes += len(audio_bytes)
+                has_any_audio = True
+                last_audio_time = time.time()
 
                 await emit.emit_node_update(
                     context.node_id,
@@ -65,6 +83,9 @@ class TSInputNode(BaseNode):
             logger.info(f"TSInput cancelled: {context.node_id}")
             raise
         finally:
+            if loopback:
+                ts_client.loopback_enabled = False
+                logger.info(f"TSInput loopback disabled by {context.node_id}")
             audio_bus.unsubscribe(listener_id)
 
         await emit.emit_node_update(
@@ -74,7 +95,16 @@ class TSInputNode(BaseNode):
             data={"total_bytes": total_bytes, "frames": len(accumulated_frames)},
         )
 
+        # Base64-encode frame data for JSON serialization
+        safe_frames = []
+        for f in accumulated_frames:
+            d = dict(f)
+            if isinstance(d.get("data"), bytes):
+                d["data"] = base64.b64encode(d["data"]).decode("ascii")
+            safe_frames.append(d)
+
+        logger.info(f"TSInput returning: frames={len(safe_frames)}, total_bytes={total_bytes}")
         return NodeOutput({
-            "audio_frames": accumulated_frames,
+            "audio": safe_frames,
             "total_bytes": total_bytes,
         })

@@ -122,8 +122,8 @@
       "type": "ts_input",
       "name": "TS 音频输入",
       "position": {
-        "x": 712,
-        "y": 480
+        "x": 728,
+        "y": 977
       },
       "config": {
         "max_buffer_bytes": 10485760,
@@ -133,7 +133,8 @@
         "model_id": "f26dcb5afd4f",
         "_visible_ports": [
           "trigger-in"
-        ]
+        ],
+        "loopback": true
       },
       "input_mappings": [],
       "trigger": {
@@ -142,29 +143,22 @@
         "keywords": [],
         "wait_all_data": false
       },
-      "listener": false
+      "listener": true
     },
     {
       "id": "vad_26a379",
       "type": "vad",
       "name": "VAD分句",
       "position": {
-        "x": 1050,
-        "y": 475
+        "x": 1156,
+        "y": 984
       },
       "config": {
         "platform_id": "a8c7e1d24f3b",
         "model_id": "c3e5a7b9d1f2",
         "overrides": {}
       },
-      "input_mappings": [
-        {
-          "from_node": "ts_input_729198",
-          "as_field": "stream-audio",
-          "source_field": "audio_frames",
-          "required": true
-        }
-      ],
+      "input_mappings": [],
       "trigger": null,
       "listener": false
     },
@@ -173,8 +167,8 @@
       "type": "stt_listen",
       "name": "STT合成",
       "position": {
-        "x": 1426,
-        "y": 464
+        "x": 1654,
+        "y": 979
       },
       "config": {
         "platform_id": "sensevoice_local",
@@ -184,24 +178,17 @@
           "trigger-in"
         ],
         "_port_positions": {
-          "stt-stream-text-out": {
+          "stream-text-out": {
             "side": "right",
             "top": 60
           },
-          "stt-batch-text-out": {
+          "batch-text-out": {
             "side": "right",
             "top": 94
           }
         }
       },
-      "input_mappings": [
-        {
-          "from_node": "vad_26a379",
-          "as_field": "stt-stream",
-          "source_field": "chunk-audio-out",
-          "required": true
-        }
-      ],
+      "input_mappings": [],
       "trigger": {
         "type": "on_complete",
         "source_node": "vad_26a379",
@@ -215,8 +202,8 @@
       "type": "display_text",
       "name": "文本显示",
       "position": {
-        "x": 1834,
-        "y": 491
+        "x": 2212,
+        "y": 801
       },
       "config": {
         "text": "",
@@ -251,7 +238,7 @@
       "from_node": "text_input_ff5d76",
       "from_port": "text-out",
       "to_node": "tts_30dd4d",
-      "to_port": "tts-batch-in",
+      "to_port": "batch-text-in",
       "type": "data"
     },
     {
@@ -281,7 +268,7 @@
     {
       "id": "conn_86228548",
       "from_node": "ts_input_729198",
-      "from_port": "audio-out",
+      "from_port": "stream-pcm-out",
       "to_node": "vad_26a379",
       "to_port": "stream-audio-in",
       "type": "data"
@@ -289,9 +276,9 @@
     {
       "id": "conn_98235a85",
       "from_node": "vad_26a379",
-      "from_port": "chunk-audio-out",
+      "from_port": "stream-chunk-out",
       "to_node": "stt_listen_48f5b1",
-      "to_port": "stt-stream-in",
+      "to_port": "stream-audio-in",
       "type": "data"
     },
     {
@@ -305,7 +292,7 @@
     {
       "id": "conn_04f899ad",
       "from_node": "stt_listen_48f5b1",
-      "from_port": "stt-stream-text-out",
+      "from_port": "stream-text-out",
       "to_node": "display_text_bb75a3",
       "to_port": "text-in",
       "type": "data"

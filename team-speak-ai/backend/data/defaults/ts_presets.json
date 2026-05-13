@@ -12,6 +12,7 @@
           "nickname": "TeamSpeakAI",
           "auto_reconnect": true,
           "reconnect_delay": 3,
+          "loopback": false,
           "id": "f26dcb5afd4f"
         }
       ]

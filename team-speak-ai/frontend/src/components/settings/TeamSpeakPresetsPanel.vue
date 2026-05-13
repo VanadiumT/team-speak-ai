@@ -66,6 +66,7 @@
               <span class="tsb-tag" v-if="m.auto_reconnect !== false">
                 {{ m.reconnect_delay ?? 3 }}s
               </span>
+              <span v-if="m.loopback" class="tsb-tag on">回环监听</span>
             </div>
           </div>
           <div class="tsb-mc-actions">
@@ -155,6 +156,14 @@
           <input type="number" v-model.number="modelModal.form.reconnect_delay" min="1" max="60" step="0.5" />
         </div>
 
+        <div class="tsb-section-title">音频策略</div>
+        <div class="tsb-field">
+          <label class="tsb-check">
+            <input type="checkbox" v-model="modelModal.form.loopback" />
+            回环监听 — 将 TTS 播放的音频同时回环到输入，让 TS 输入节点能采集到机器人自身的语音
+          </label>
+        </div>
+
         <div class="tsb-modal-actions">
           <button class="tsb-btn-cancel" @click="modelModal.visible = false">取消</button>
           <button class="tsb-btn-save" @click="onSaveModel" :disabled="!modelModal.form.name.trim()">保存</button>
@@ -231,7 +240,7 @@ async function onDuplicatePlatform(id) {
 
 // ── 连接配置弹窗 ──
 function emptyModel() {
-  return { name: '', is_default: false, nickname: 'TeamSpeakAI', auto_reconnect: true, reconnect_delay: 3.0 }
+  return { name: '', is_default: false, nickname: 'TeamSpeakAI', auto_reconnect: true, reconnect_delay: 3.0, loopback: false }
 }
 const modelModal = ref({ visible: false, editingId: null, form: emptyModel() })
 

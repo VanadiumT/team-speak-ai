@@ -39,7 +39,7 @@ class TTSNode(BaseNode):
                 effective = self._resolve_legacy_config(cfg)
 
             # ── 获取输入文本 ──
-            text = context.inputs.get("tts-stream") or context.inputs.get("tts-batch") or ""
+            text = context.inputs.get("stream-text") or context.inputs.get("batch-text") or ""
             if not text or not text.strip():
                 if not text:
                     text = context.inputs.get("text") or context.inputs.get("response") or ""

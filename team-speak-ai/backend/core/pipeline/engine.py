@@ -458,7 +458,27 @@ class PipelineEngine:
             else:
                 break
 
-        return chain if len(chain) >= 2 else []
+        if len(chain) < 2:
+            return []
+
+        # 校验链的第一个节点是否有流式上游输入
+        # 如果没有 stream-input 来源，不应走流式链路（会因 stream_input=None 崩溃）
+        first_nd = pd.get_node(chain[0])
+        if first_nd and first_nd.input_mappings:
+            has_stream_input = False
+            for m in first_nd.input_mappings:
+                for conn in pd.connections:
+                    if (conn.to_node == chain[0] and conn.from_node == m.from_node
+                            and conn.to_port.startswith("stream-")
+                            and conn.from_port.startswith("stream-")):
+                        has_stream_input = True
+                        break
+                if has_stream_input:
+                    break
+            if not has_stream_input:
+                return []
+
+        return chain
 
     def _finalize_node_output(self, instance: 'PipelineInstance', node_id: str,
                                output: NodeOutput, runtime: NodeRuntime):
@@ -645,76 +665,88 @@ class PipelineEngine:
         if not instance:
             return
 
-        while True:
-            node_cls = self._node_registry.create(node_def.type, node_def.config)
-            runtime = instance.get_runtime(node_def.id)
+        loopback = node_def.config.get("loopback", False)
+        if loopback:
+            from api.routes.ws_teamspeak import ts_client
+            ts_client.loopback_enabled = True
+            logger.info(f"Loopback early-enabled by listener {node_def.id}")
 
-            # 重置运行时状态（保留 accumulated_context）
-            runtime.output = None
-            runtime.error = None
-            runtime.summary = ""
-            runtime.data = {}
+        try:
+            while True:
+                node_cls = self._node_registry.create(node_def.type, node_def.config)
+                runtime = instance.get_runtime(node_def.id)
 
-            ctx = NodeContext(
-                pipeline_id=instance.pipeline_def.id,
-                execution_id=execution_id,
-                node_id=node_def.id,
-                node_type=node_def.type,
-                node_config=node_def.config,
-                inputs={},
-                accumulated_context=instance.accumulated_context,
-            )
-            emit = EventEmitter(self, instance.pipeline_def.id)
+                # 重置运行时状态（保留 accumulated_context）
+                runtime.output = None
+                runtime.error = None
+                runtime.summary = ""
+                runtime.data = {}
 
-            runtime.status = NodeState.PROCESSING
-            await emit.emit_node_update(node_def.id, "listening", "监听中...")
-            await emit.emit_node_log_entry(node_def.id, "info", "开始监听...")
+                ctx = NodeContext(
+                    pipeline_id=instance.pipeline_def.id,
+                    execution_id=execution_id,
+                    node_id=node_def.id,
+                    node_type=node_def.type,
+                    node_config=node_def.config,
+                    inputs={},
+                    accumulated_context=instance.accumulated_context,
+                )
+                emit = EventEmitter(self, instance.pipeline_def.id)
 
-            log_pipeline_event(PipelineEvent(
-                event_type="listener_start",
-                pipeline_id=instance.pipeline_def.id,
-                execution_id=execution_id,
-                node_id=node_def.id,
-            ))
+                runtime.status = NodeState.PROCESSING
+                await emit.emit_node_update(node_def.id, "listening", "监听中...")
+                await emit.emit_node_log_entry(node_def.id, "info", "开始监听...")
 
-            try:
-                output = await node_cls.execute(ctx, emit)
-                runtime.status = NodeState.COMPLETED
-                runtime.output = output
-                await emit.emit_node_complete(node_def.id, output.data)
-
-                # 累积到 context
-                for k, v in output.data.items():
-                    if isinstance(instance.accumulated_context.get(k), list):
-                        instance.accumulated_context[k].append(v)
-                    else:
-                        instance.accumulated_context[k] = v
-
-                # 触发下游（context_build → llm → tts → ts_output）
-                await self._trigger_downstream(instance, node_def.id)
-
-                # 继续下一轮监听
                 log_pipeline_event(PipelineEvent(
-                    event_type="listener_cycle",
+                    event_type="listener_start",
                     pipeline_id=instance.pipeline_def.id,
                     execution_id=execution_id,
                     node_id=node_def.id,
                 ))
-                logger.info(f"Listener {node_def.id} loop next round")
 
-            except asyncio.CancelledError:
-                log_pipeline_event(PipelineEvent(
-                    event_type="listener_cancelled",
-                    pipeline_id=instance.pipeline_def.id,
-                    execution_id=execution_id,
-                    node_id=node_def.id,
-                ))
-                logger.info(f"Listener {node_def.id} cancelled")
-                break
-            except Exception as e:
-                logger.exception(f"Listener node {node_def.id} error")
-                await self._fail_node(instance, node_def.id, str(e), emit)
-                break
+                try:
+                    output = await node_cls.execute(ctx, emit)
+                    runtime.status = NodeState.COMPLETED
+                    runtime.output = output
+                    await emit.emit_node_complete(node_def.id, output.data)
+
+                    # 累积到 context
+                    for k, v in output.data.items():
+                        if isinstance(instance.accumulated_context.get(k), list):
+                            instance.accumulated_context[k].append(v)
+                        else:
+                            instance.accumulated_context[k] = v
+
+                    # 触发下游（context_build → llm → tts → ts_output）
+                    await self._trigger_downstream(instance, node_def.id)
+
+                    # 继续下一轮监听
+                    log_pipeline_event(PipelineEvent(
+                        event_type="listener_cycle",
+                        pipeline_id=instance.pipeline_def.id,
+                        execution_id=execution_id,
+                        node_id=node_def.id,
+                    ))
+                    logger.info(f"Listener {node_def.id} loop next round")
+
+                except asyncio.CancelledError:
+                    log_pipeline_event(PipelineEvent(
+                        event_type="listener_cancelled",
+                        pipeline_id=instance.pipeline_def.id,
+                        execution_id=execution_id,
+                        node_id=node_def.id,
+                    ))
+                    logger.info(f"Listener {node_def.id} cancelled")
+                    break
+                except Exception as e:
+                    logger.exception(f"Listener node {node_def.id} error")
+                    await self._fail_node(instance, node_def.id, str(e), emit)
+                    break
+        finally:
+            if loopback:
+                from api.routes.ws_teamspeak import ts_client
+                ts_client.loopback_enabled = False
+                logger.info(f"Loopback disabled by listener {node_def.id}")
 
     async def _trigger_downstream(self, instance: PipelineInstance, completed_node_id: str):
         """节点完成后，自动触发下游。
@@ -725,6 +757,7 @@ class PipelineEngine:
         """
         pd = instance.pipeline_def
         triggered = set()
+        logger.info(f"_trigger_downstream: completed={completed_node_id}")
 
         def _all_data_ready(nd: NodeDefinition) -> bool:
             for m in nd.input_mappings:
@@ -747,7 +780,9 @@ class PipelineEngine:
                     is_source = any(m.from_node == completed_node_id for m in node_def.input_mappings)
                     if is_source:
                         triggered.add(node_def.id)
+                        logger.info(f"_trigger_downstream: triggering={node_def.id} from {completed_node_id}")
 
+        logger.info(f"_trigger_downstream: triggered set={triggered}")
         streaming_handled = set()
         for nid in triggered:
             if nid in streaming_handled:
@@ -828,8 +863,8 @@ class PipelineEngine:
 
 def _port_input_key(port_id: str) -> str:
     KNOWN = {"llm-in": "messages",
-             "tts-stream-in": "tts-stream", "tts-batch-in": "tts-batch",
-             "stt-stream-in": "stt-stream", "stt-batch-in": "stt-batch"}
+             "stream-text-in": "stream-text", "batch-text-in": "batch-text",
+             "stream-audio-in": "stream-audio", "batch-audio-in": "batch-audio"}
     if port_id in KNOWN:
         return KNOWN[port_id]
     return port_id.replace("-in", "") if port_id.endswith("-in") else port_id
@@ -848,12 +883,15 @@ def _port_output_key(port_id: str) -> str:
              # LLM 元数据
              "meta-token-count": "token_count", "meta-model": "model",
              # STT 输出
-             "stt-stream-text-out": "text", "stt-batch-text-out": "text",
+             "stream-text-out": "text", "batch-text-out": "text",
              "stt-meta-keyword": "trigger_keyword",
              "stt-meta-confidence": "confidence",
              # TTS 输出
              "stream-audio-out": "stream-audio-out",
-             "batch-audio-out": "batch-audio-out"}
+             "batch-audio-out": "batch-audio-out",
+             # TS 输入 / VAD 输出
+             "stream-pcm-out": "audio",
+             "stream-chunk-out": "chunk-audio"}
     if port_id in KNOWN:
         return KNOWN[port_id]
     return port_id.replace("-out", "") if port_id.endswith("-out") else port_id

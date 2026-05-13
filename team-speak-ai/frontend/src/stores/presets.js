@@ -327,6 +327,7 @@ export const usePresetsStore = defineStore('presets', () => {
           nickname: m.nickname || 'TeamSpeakAI',
           autoReconnect: m.auto_reconnect !== false,
           reconnectDelay: m.reconnect_delay ?? 3.0,
+          loopback: !!m.loopback,
           isDefault: !!m.is_default,
         })
       }
@@ -350,6 +351,7 @@ export const usePresetsStore = defineStore('presets', () => {
       nickname: m.nickname,
       auto_reconnect: m.autoReconnect,
       reconnect_delay: m.reconnectDelay,
+      loopback: m.loopback,
     }
   }
 

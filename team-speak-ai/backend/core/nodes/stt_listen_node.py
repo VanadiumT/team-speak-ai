@@ -31,14 +31,26 @@ class STTListenNode(BaseNode):
             effective = self._resolve_stt_legacy_config(cfg)
         stt = self._get_stt_from_config(effective)
 
-        # 获取音频数据：流式优先，否则非流式
-        audio_data = context.inputs.get("stt-stream") or context.inputs.get("stt-batch")
+        # 获取音频数据：流式优先，否则非流式，也兼容 stt-stream
+        audio_data = context.inputs.get("stream-audio") or context.inputs.get("batch-audio") or context.inputs.get("stt-stream")
         if not audio_data:
             await emit.emit_node_error(context.node_id, "未收到音频数据")
             return NodeOutput({"text": ""}, trigger_next=False)
 
-        # 如果是 base64 字符串 (来自 TTS 等上游), 解码为 bytes
-        if isinstance(audio_data, str):
+        # 处理列表形式的音频分块 (来自 VAD 等)
+        if isinstance(audio_data, list) and audio_data:
+            import base64 as _b64
+            pcm = bytearray()
+            for chunk in audio_data:
+                if isinstance(chunk, str):
+                    try:
+                        pcm.extend(_b64.b64decode(chunk))
+                    except Exception:
+                        pass
+                elif isinstance(chunk, (bytes, bytearray)):
+                    pcm.extend(chunk)
+            audio_data = bytes(pcm)
+        elif isinstance(audio_data, str):
             import base64 as _b64
             try:
                 audio_data = _b64.b64decode(audio_data)
