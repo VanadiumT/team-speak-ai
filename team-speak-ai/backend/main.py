@@ -24,7 +24,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[o.strip() for o in settings.cors_origins.split(",") if o.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -46,11 +46,12 @@ async def root():
 @app.get("/health")
 async def health():
     from api.routes.ws_teamspeak import ts_client
-    from core.pipeline.engine import engine
+    from core.app_context import get_app_context
+    ctx = get_app_context()
     return {
         "status": "healthy",
         "teamspeak_connected": ts_client.connected,
-        "pipelines_loaded": len(engine.get_definitions()),
+        "pipelines_loaded": len(ctx.pipeline_engine.get_definitions()),
     }
 
 
@@ -66,14 +67,16 @@ async def startup_event():
     logger.info(f"Log Provider: {settings.log_provider} -> {settings.log_dir}")
     logger.info("=" * 50)
 
-    # 初始化 Pipeline 引擎
-    from core.pipeline.engine import engine
+    # 计算目录路径
+    data_dir = os.path.join(os.path.dirname(__file__), settings.data_dir)
+    os.makedirs(data_dir, exist_ok=True)
+    upload_dir = os.path.join(os.path.dirname(__file__), settings.upload_dir)
+    os.makedirs(upload_dir, exist_ok=True)
     config_dir = getattr(settings, "pipeline_config_dir", "config/pipelines")
-    abs_dir = os.path.join(os.path.dirname(__file__), config_dir)
-    if os.path.exists(abs_dir):
-        engine.load_definitions_from_dir(abs_dir)
-    else:
-        logger.warning(f"Pipeline config dir not found: {abs_dir}")
+    abs_config_dir = os.path.join(os.path.dirname(__file__), config_dir)
+    if not os.path.exists(abs_config_dir):
+        logger.warning(f"Pipeline config dir not found: {abs_config_dir}")
+        abs_config_dir = ""
 
     # 初始化结构化日志模块
     from core.logger.factory import create_logger, LoggerProvider
@@ -86,50 +89,19 @@ async def startup_event():
     install_logger(log_instance)
     logger.info(f"Logger initialized: {settings.log_provider} -> {settings.log_dir}")
 
-    # 初始化 FlowManager（流程数据持久化）
-    from core.flow.manager import init_flow_manager
-    data_dir = os.path.join(os.path.dirname(__file__), settings.data_dir)
-    os.makedirs(data_dir, exist_ok=True)
-    fm = init_flow_manager(data_dir)
-    logger.info(f"FlowManager initialized: {data_dir} ({len(fm.list_flows())} flows)")
+    # 一次性创建所有应用服务（替代原来的 12 次 init_xxx 调用）
+    from core.app_context import AppContext, set_app_context
 
-    # 初始化 HistoryManager（撤销/重做）
-    from core.history.manager import init_history_manager
-    init_history_manager(data_dir)
-    logger.info("HistoryManager initialized")
+    ctx = AppContext.create(
+        data_dir=data_dir,
+        upload_dir=upload_dir,
+        max_upload_size=settings.max_upload_size,
+        pipeline_config_dir=abs_config_dir,
+    )
+    set_app_context(ctx)
 
-    # 初始化 ConfigDefaultsManager（默认配置）
-    from core.config.defaults import init_defaults_manager, init_preset_manager, init_tts_preset_manager, init_stt_preset_manager, init_ts_preset_manager, init_ocr_preset_manager, init_vad_preset_manager
-    init_defaults_manager(data_dir)
-    logger.info("ConfigDefaultsManager initialized")
-    init_preset_manager(data_dir)
-    logger.info("PresetManager initialized")
-    init_tts_preset_manager(data_dir)
-    logger.info("TtsPresetManager initialized")
-    init_stt_preset_manager(data_dir)
-    logger.info("SttPresetManager initialized")
-    init_ts_preset_manager(data_dir)
-    logger.info("TeamSpeakPresetManager initialized")
-    init_ocr_preset_manager(data_dir)
-    logger.info("OcrPresetManager initialized")
-    init_vad_preset_manager(data_dir)
-    logger.info("VadPresetManager initialized")
-
-    # 初始化 SysVarManager（系统变量）
-    from core.variables.manager import init_sys_var_manager
-    init_sys_var_manager(data_dir)
-    logger.info("SysVarManager initialized")
-
-    # 初始化 ChunkReceiver（文件分块上传）
-    from core.upload.chunk_receiver import init_chunk_receiver
-    upload_dir = os.path.join(os.path.dirname(__file__), settings.upload_dir)
-    os.makedirs(upload_dir, exist_ok=True)
-    cr = init_chunk_receiver(upload_dir, settings.max_upload_size)
-    logger.info(f"ChunkReceiver initialized: {upload_dir}")
-
-    # 启动上传会话超时清理后台任务
-    import asyncio
-    asyncio.create_task(cr.cleanup_timeouts())
+    # 启动后台任务
+    ctx.start_background_tasks()
 
     # 连接 TeamSpeak Voice Bridge
     from api.routes.ws_teamspeak import ts_client
@@ -146,6 +118,12 @@ async def shutdown_event():
     logger.info("Shutting down...")
     from api.routes.ws_teamspeak import ts_client
     await ts_client.disconnect()
+    from core.app_context import get_app_context
+    try:
+        ctx = get_app_context()
+        await ctx.shutdown()
+    except RuntimeError:
+        pass  # AppContext was never initialized
     from core.logger.handler import close_logger
     close_logger()
 

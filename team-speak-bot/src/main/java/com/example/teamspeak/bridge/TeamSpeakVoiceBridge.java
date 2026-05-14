@@ -19,6 +19,7 @@ import java.net.InetSocketAddress;
 import java.util.Base64;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class TeamSpeakVoiceBridge implements TS3Listener {
@@ -28,7 +29,7 @@ public class TeamSpeakVoiceBridge implements TS3Listener {
     private final BridgeConfig config;
     private final ObjectMapper objectMapper;
 
-    private LocalTeamspeakClientSocket ts3Client;
+    private volatile LocalTeamspeakClientSocket ts3Client;
     private final WebSocketAudioSource audioSource;
     private final BlockingQueue<VoiceMessage> sendQueue;
     private final AtomicInteger sequence = new AtomicInteger(0);
@@ -38,13 +39,14 @@ public class TeamSpeakVoiceBridge implements TS3Listener {
     private volatile boolean running = false;
     private final ConcurrentHashMap<Integer, String> clientNames = new ConcurrentHashMap<>();
     private final Semaphore wsSendLock = new Semaphore(1);
+    private final AtomicLong droppedVoiceCount = new AtomicLong(0);
 
     public TeamSpeakVoiceBridge(BridgeConfig config) {
         this.config = config;
         this.objectMapper = new ObjectMapper();
         this.audioSource = new WebSocketAudioSource(config.getMicrophoneQueueCapacity());
         this.sendQueue = new LinkedBlockingQueue<>(config.getVoiceQueueCapacity());
-        this.scheduler = Executors.newScheduledThreadPool(3, r -> {
+        this.scheduler = Executors.newScheduledThreadPool(config.getSchedulerPoolSize(), r -> {
             Thread t = new Thread(r, "VoiceBridge-Scheduler");
             t.setDaemon(true);
             return t;
@@ -98,7 +100,7 @@ public class TeamSpeakVoiceBridge implements TS3Listener {
 
     private void initTs3Client() throws Exception {
         ts3Client = new LocalTeamspeakClientSocket();
-        ts3Client.setIdentity(com.github.manevolent.ts3j.identity.LocalIdentity.generateNew(22));
+        ts3Client.setIdentity(com.github.manevolent.ts3j.identity.LocalIdentity.generateNew(config.getIdentityDifficulty()));
         ts3Client.setNickname(config.getTsNickname());
         audioSource.setCodec(config.getDefaultCodec());
         ts3Client.setMicrophone(audioSource);
@@ -122,56 +124,42 @@ public class TeamSpeakVoiceBridge implements TS3Listener {
     }
 
     private void startScheduledTasks() {
-        scheduler.scheduleAtFixedRate(this::dispatchVoiceQueue, 0, 10, TimeUnit.MILLISECONDS);
+        scheduler.scheduleAtFixedRate(this::dispatchVoiceQueue, 0, config.getDispatchIntervalMs(), TimeUnit.MILLISECONDS);
         scheduler.scheduleAtFixedRate(this::sendHeartbeat, config.getHeartbeatIntervalSeconds(),
                 config.getHeartbeatIntervalSeconds(), TimeUnit.SECONDS);
     }
 
-    private void onReceivedVoice(PacketBody0Voice voice) {
-        if (voice == null) return;
-
-        byte[] codecData = voice.getCodecData();
+    private void enqueueVoiceMessage(VoiceMessageType type, int clientId,
+                                      String codecType, byte[] codecData) {
         if (codecData == null || codecData.length == 0) return;
-
         VoiceMessage msg = new VoiceMessage();
-        msg.setType(VoiceMessageType.VOICE);
-        msg.setSenderId(voice.getClientId());
-        msg.setSenderName(clientNames.get(voice.getClientId()));
-        msg.setCodecType(voice.getCodecType().name());
+        msg.setType(type);
+        msg.setSenderId(clientId);
+        msg.setSenderName(clientNames.get(clientId));
+        msg.setCodecType(codecType);
         msg.setData(Base64.getEncoder().encodeToString(codecData));
         msg.setTimestamp(System.currentTimeMillis());
         msg.setSequence(sequence.incrementAndGet());
-
         if (!sendQueue.offer(msg)) {
-            int queueSize = sendQueue.size();
-            if (queueSize >= config.getVoiceQueueCapacity() * 0.8) {
-                log.warn("语音队列使用率高: {}/{}", queueSize, config.getVoiceQueueCapacity());
-            }
+            long dropped = droppedVoiceCount.incrementAndGet();
+            log.warn("语音消息丢弃 (累计 {}), 队列已满: {}/{}",
+                     dropped, sendQueue.size(), config.getVoiceQueueCapacity());
         }
+    }
+
+    private void onReceivedVoice(PacketBody0Voice voice) {
+        if (voice == null) return;
+        enqueueVoiceMessage(VoiceMessageType.VOICE, voice.getClientId(),
+                            voice.getCodecType().name(), voice.getCodecData());
     }
 
     private void onReceivedWhisper(PacketBody1VoiceWhisper whisper) {
         if (whisper == null) return;
-
-        byte[] codecData = whisper.getCodecData();
-        if (codecData == null || codecData.length == 0) return;
-
-        VoiceMessage msg = new VoiceMessage();
-        msg.setType(VoiceMessageType.WHISPER);
-        msg.setSenderId(whisper.getClientId());
-        msg.setSenderName(clientNames.get(whisper.getClientId()));
-        msg.setCodecType(whisper.getCodecType().name());
-        msg.setData(Base64.getEncoder().encodeToString(codecData));
-        msg.setTimestamp(System.currentTimeMillis());
-        msg.setSequence(sequence.incrementAndGet());
-
-        if (!sendQueue.offer(msg)) {
-            int queueSize = sendQueue.size();
-            if (queueSize >= config.getVoiceQueueCapacity() * 0.8) {
-                log.warn("语音队列使用率高: {}/{}", queueSize, config.getVoiceQueueCapacity());
-            }
-        }
+        enqueueVoiceMessage(VoiceMessageType.WHISPER, whisper.getClientId(),
+                            whisper.getCodecType().name(), whisper.getCodecData());
     }
+
+    // Max messages to dispatch per tick (configurable, default 20)
 
     private void dispatchVoiceQueue() {
         if (!wsSendLock.tryAcquire()) return;
@@ -183,8 +171,10 @@ public class TeamSpeakVoiceBridge implements TS3Listener {
         }
 
         try {
-            VoiceMessage msg;
-            while ((msg = sendQueue.poll()) != null) {
+            int dispatched = 0;
+            while (dispatched < config.getMaxDispatchPerTick()) {
+                VoiceMessage msg = sendQueue.poll();
+                if (msg == null) break;
                 if (!session.isOpen()) {
                     sendQueue.clear();
                     break;
@@ -192,13 +182,20 @@ public class TeamSpeakVoiceBridge implements TS3Listener {
                 try {
                     String json = objectMapper.writeValueAsString(msg);
                     session.getBasicRemote().sendText(json);
+                    dispatched++;
                 } catch (Exception e) {
-                    log.error("发送 WebSocket 消息失败: {}", msg, e);
+                    log.error("发送 WebSocket 消息失败, 尝试放回队列", e);
+                    if (!sendQueue.offer(msg)) {
+                        log.error("放回队列失败, 消息永久丢失: seq={}", msg.getSequence());
+                    }
                     if (!session.isOpen()) {
                         sendQueue.clear();
                         break;
                     }
                 }
+            }
+            if (!sendQueue.isEmpty()) {
+                log.debug("语音队列仍有 {} 条待发送", sendQueue.size());
             }
         } finally {
             wsSendLock.release();
@@ -316,7 +313,7 @@ public class TeamSpeakVoiceBridge implements TS3Listener {
     @Override
     public void onDisconnected(DisconnectedEvent e) {
         log.warn("已断开 TeamSpeak 服务器");
-        scheduler.schedule(this::reconnectTs3, 5, TimeUnit.SECONDS);
+        scheduler.schedule(this::reconnectTs3, config.getReconnectDelaySeconds(), TimeUnit.SECONDS);
     }
 
     @Override
@@ -418,12 +415,12 @@ public class TeamSpeakVoiceBridge implements TS3Listener {
             log.info("尝试重新连接 TeamSpeak 服务器...");
             if (ts3Client != null && !ts3Client.isConnected()) {
                 InetSocketAddress address = new InetSocketAddress(config.getTsHost(), config.getTsPort());
-                ts3Client.connect(address, config.getTsPassword(), 10000);
+                ts3Client.connect(address, config.getTsPassword(), config.getConnectionTimeoutSeconds() * 1000);
                 log.info("TeamSpeak 服务器重连成功");
             }
         } catch (Exception e) {
             log.error("TeamSpeak 服务器重连失败", e);
-            scheduler.schedule(this::reconnectTs3, 10, TimeUnit.SECONDS);
+            scheduler.schedule(this::reconnectTs3, config.getReconnectMaxDelaySeconds(), TimeUnit.SECONDS);
         }
     }
 
@@ -441,7 +438,7 @@ public class TeamSpeakVoiceBridge implements TS3Listener {
     public void connect() throws Exception {
         if (ts3Client != null) {
             InetSocketAddress address = new InetSocketAddress(config.getTsHost(), config.getTsPort());
-            ts3Client.connect(address, config.getTsPassword(), 10000);
+            ts3Client.connect(address, config.getTsPassword(), config.getConnectionTimeoutSeconds() * 1000);
         }
     }
 

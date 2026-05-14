@@ -139,8 +139,8 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import NodeCard from './NodeCard.vue'
 import CanvasControls from './CanvasControls.vue'
 import PortPopover from './PortPopover.vue'
-import { useEditorStore } from '@/stores/editor.js'
-import { useExecutionStore } from '@/stores/execution.js'
+import { useEditorStore, NODE_W } from '@/stores/editor'
+import { useExecutionStore } from '@/stores/execution'
 import { useKeybindings } from '@/keybindings.js'
 
 const props = defineProps({ editMode: { type: Boolean, default: false }, detailPanelOpen: { type: Boolean, default: false } })
@@ -416,8 +416,7 @@ function getPortLabel(node, portId) {
 }
 
 function getNodeWidth(node) {
-  const m = { input_image: 220, ocr: 220, tts: 250, ts_output: 220, ts_input: 220, vad: 220, context_build: 250, llm: 250, stt_history: 280, stt_listen: 280 }
-  return m[node.type] || 250
+  return NODE_W[node.type] || 250
 }
 
 function getStepNumber(nodeId) {

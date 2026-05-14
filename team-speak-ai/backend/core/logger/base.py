@@ -25,7 +25,7 @@ class LogEntry:
 @dataclass
 class PipelineEvent:
     event_type: str
-    pipeline_id: str
+    flow_id: str
     execution_id: str
     node_id: Optional[str] = None
     data: dict = field(default_factory=dict)

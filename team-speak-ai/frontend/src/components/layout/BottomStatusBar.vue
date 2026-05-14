@@ -17,8 +17,8 @@
 
 <script setup>
 import { computed } from 'vue'
-import { useConnectionStore } from '@/stores/connection.js'
-import { useExecutionStore } from '@/stores/execution.js'
+import { useConnectionStore } from '@/stores/connection'
+import { useExecutionStore } from '@/stores/execution'
 
 const connectionStore = useConnectionStore()
 const executionStore = useExecutionStore()

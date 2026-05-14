@@ -5,7 +5,7 @@
       <div class="h-left">
         <span class="material-symbols-outlined h-logo" style="font-size: 22px;">smart_toy</span>
         <span class="h-title">TeamSpeak AI</span>
-        <span class="h-version">v2.4.0-Stable</span>
+        <span class="h-version">v{{ appVersion }}</span>
         <template v-if="activeFlowId">
           <span class="h-sep">|</span>
           <span class="h-flow-name">{{ editorStore.flowMeta.name || '' }}</span>
@@ -253,17 +253,17 @@
 </template>
 
 <script setup>
+const appVersion = __APP_VERSION__
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { storeToRefs } from 'pinia'
-import { pipelineSocket } from '@/api/pipeline.js'
-import { useEditorStore } from '@/stores/editor.js'
-import { useExecutionStore } from '@/stores/execution.js'
-import { useNotificationsStore } from '@/stores/notifications.js'
-import { useConnectionStore } from '@/stores/connection.js'
-import { useSidebarStore } from '@/stores/sidebar.js'
-import { useFilesStore } from '@/stores/files.js'
-import { usePresetsStore } from '@/stores/presets.js'
-import { useSttPresetsStore } from '@/stores/sttPresets.js'
+import { pipelineSocket } from '@/api/pipeline'
+import { useEditorStore } from '@/stores/editor'
+import { useExecutionStore } from '@/stores/execution'
+import { useNotificationsStore } from '@/stores/notifications'
+import { useConnectionStore } from '@/stores/connection'
+import { useSidebarStore } from '@/stores/sidebar'
+import { useFilesStore } from '@/stores/files'
+import { usePresetsStore } from '@/stores/presets'
 import PipelineView from '@/components/pipeline/PipelineView.vue'
 import DynamicPanel from '@/components/panels/DynamicPanel.vue'
 import NodePalette from '@/components/pipeline/NodePalette.vue'
@@ -281,7 +281,6 @@ const connectionStore = useConnectionStore()
 const sidebarStore = useSidebarStore()
 const filesStore = useFilesStore()
 const presetsStore = usePresetsStore()
-const sttPresetsStore = useSttPresetsStore()
 
 const { sidebarTree, expandedSections, activeFlowId, recentFlows, availableGroups } = storeToRefs(sidebarStore)
 
@@ -574,7 +573,8 @@ onMounted(() => {
   presetsStore.initTts()
   presetsStore.initTs()
   presetsStore.initOcr()
-  sttPresetsStore.init()
+  presetsStore.initStt()
+  presetsStore.initVad()
 
   // 主动拉取所有预设数据，避免 WS 初始广播时序竞争导致数据丢失
   pipelineSocket.sendCommand('_system', 'preset.list', {}).catch(() => {})
@@ -582,13 +582,9 @@ onMounted(() => {
   pipelineSocket.sendCommand('_system', 'stt_preset.list', {}).catch(() => {})
   pipelineSocket.sendCommand('_system', 'ts_preset.list', {}).catch(() => {})
   pipelineSocket.sendCommand('_system', 'ocr_preset.list', {}).catch(() => {})
+  pipelineSocket.sendCommand('_system', 'vad_preset.list', {}).catch(() => {})
 
   // 以下 handler 只在 onMounted 注册一次，不会被重复添加
-  pipelineSocket.on('flow.loaded', ({ flow }) => {
-    editorStore.onFlowLoaded({ flow })
-    notificationsStore.fetchList(flow.id)
-  })
-
   pipelineSocket.on('flow.renamed', ({ flow_id, name }) => {
     if (editorStore.flowId === flow_id) {
       editorStore.flowMeta.name = name

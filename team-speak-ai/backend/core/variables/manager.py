@@ -8,11 +8,8 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
-
-_manager: Optional["SysVarManager"] = None
 
 
 class SysVarManager:
@@ -34,9 +31,17 @@ class SysVarManager:
     def _save(self):
         self._file.parent.mkdir(parents=True, exist_ok=True)
         tmp = self._file.with_suffix(".tmp")
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(self._data, f, ensure_ascii=False, indent=2)
-        os.replace(tmp, self._file)
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(self._data, f, ensure_ascii=False, indent=2)
+            os.replace(tmp, self._file)
+        except Exception as e:
+            logger.error(f"Failed to save system_vars.json: {e}")
+            # 清理临时文件
+            try:
+                tmp.unlink(missing_ok=True)
+            except Exception:
+                pass
 
     def get(self, key: str, default=None):
         return self._data.get(key, default)
@@ -58,16 +63,3 @@ class SysVarManager:
 
     def list_all(self) -> dict:
         return dict(self._data)
-
-
-def init_sys_var_manager(data_dir: str) -> SysVarManager:
-    global _manager
-    _manager = SysVarManager(data_dir)
-    logger.info(f"SysVarManager initialized: {len(_manager.list_all())} variables")
-    return _manager
-
-
-def get_sys_var_manager() -> SysVarManager:
-    if _manager is None:
-        raise RuntimeError("SysVarManager not initialized")
-    return _manager

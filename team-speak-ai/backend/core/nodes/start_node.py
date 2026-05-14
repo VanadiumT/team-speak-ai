@@ -7,7 +7,7 @@ Start 节点 — 流程起点
 import logging
 
 from core.nodes.base import BaseNode
-from core.pipeline.context import NodeContext, NodeOutput
+from core.pipeline.context import NodeContext, NodeOutput, NodeState
 from core.pipeline.emitter import EventEmitter
 from core.pipeline.registry import NodeRegistry
 
@@ -21,14 +21,15 @@ class StartNode(BaseNode):
     node_type = "start"
 
     async def execute(self, context: NodeContext, emit: EventEmitter) -> NodeOutput:
-        await emit.emit_node_status_changed(context.node_id, "processing")
+        await emit.emit_node_status_changed(context.node_id, NodeState.PROCESSING)
 
-        init_params = self.config.get("init_params", {})
+        cfg = context.node_config or self.config
+        init_params = cfg.get("init_params", {})
 
         if init_params:
-            from core.flow.manager import get_flow_manager
-            fm = get_flow_manager()
-            fm.update_flow_params(context.pipeline_id, init_params)
+            from core.app_context import get_app_context
+            fm = get_app_context().flow_manager
+            await fm.update_flow_params(context.flow_id, init_params)
 
             for key, value in init_params.items():
                 context.accumulated_context[key] = value

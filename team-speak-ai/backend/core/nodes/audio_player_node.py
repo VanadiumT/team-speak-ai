@@ -10,7 +10,7 @@ import logging
 from typing import AsyncGenerator
 
 from core.nodes.base import BaseNode
-from core.pipeline.context import NodeContext, NodeOutput, _STREAM_END
+from core.pipeline.context import NodeContext, NodeOutput, NodeState, _STREAM_END
 from core.pipeline.emitter import EventEmitter
 from core.pipeline.registry import NodeRegistry
 
@@ -28,7 +28,7 @@ class AudioPlayerNode(BaseNode):
     async def execute(self, context: NodeContext, emit: EventEmitter) -> NodeOutput:
         audio_b64 = _extract_b64_from_inputs(context.inputs)
         if not audio_b64:
-            await emit.emit_node_update(context.node_id, "completed", "无音频数据")
+            await emit.emit_node_update(context.node_id, NodeState.COMPLETED, "无音频数据")
             return NodeOutput({
                 "stream-audio": None,
                 "batch-audio": None,

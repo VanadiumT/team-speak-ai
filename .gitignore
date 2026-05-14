@@ -61,5 +61,8 @@ logs/
 .playwright-mcp/
 .claude/worktrees/
 
+# Temp
+tmp/
+
 # OS
 Thumbs.db

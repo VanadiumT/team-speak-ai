@@ -163,8 +163,8 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { usePresetsStore } from '@/stores/presets.js'
-import { pipelineSocket } from '@/api/pipeline.js'
+import { usePresetsStore } from '@/stores/presets'
+import { pipelineSocket } from '@/api/pipeline'
 
 const store = usePresetsStore()
 

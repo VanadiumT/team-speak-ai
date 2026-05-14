@@ -12,10 +12,12 @@ from core.pipeline.context import NodeContext, NodeOutput
 from core.pipeline.emitter import EventEmitter
 from core.pipeline.registry import NodeRegistry
 from core.llm.factory import LLMProvider, create_llm
-from core.config.defaults import get_preset_manager
+from core.app_context import get_app_context
 from config import settings
 
 logger = logging.getLogger(__name__)
+
+_DEFAULT_USER_MSG = "请介绍一下你自己"  # 无输入时的默认提示词
 
 # 匹配内嵌思考标签：<think>...</think>（兼容 MiniMax / DeepSeek / 其他格式）
 _THINK_RE = re.compile(r'<\s*think\s*>(.*?)<\s*/\s*think\s*>', re.IGNORECASE | re.DOTALL)
@@ -40,7 +42,7 @@ class LLMNode(BaseNode):
             # ── 构建 messages（兼容 as_field 为 "llm" 或 "messages" 的映射） ──
             messages = context.inputs.get("llm") or context.inputs.get("messages") or []
             if not messages:
-                messages = [{"role": "user", "content": "你好"}]
+                messages = [{"role": "user", "content": _DEFAULT_USER_MSG}]
 
             images = context.inputs.get("image", []) or []
             if effective.get("vision") and images:
@@ -92,7 +94,7 @@ class LLMNode(BaseNode):
 
         messages = context.inputs.get("llm") or context.inputs.get("messages") or []
         if not messages:
-            messages = [{"role": "user", "content": "你好"}]
+            messages = [{"role": "user", "content": _DEFAULT_USER_MSG}]
 
         images = context.inputs.get("image", []) or []
         if effective.get("vision") and images:
@@ -155,22 +157,7 @@ class LLMNode(BaseNode):
                          **({"reasoning": reasoning} if reasoning else {})},
         )
 
-        # 保存对话历史
-        acc = context.accumulated_context
-        if "llm_messages" not in acc:
-            acc["llm_messages"] = []
-        user_messages = [m for m in context.inputs.get("messages", [])
-                         if m.get("role") == "user"]
-        for um in user_messages:
-            existing = any(
-                m.get("role") == "user" and m.get("content") == um.get("content")
-                for m in acc["llm_messages"]
-            )
-            if not existing:
-                acc["llm_messages"].append(um)
-        acc["llm_messages"].append({"role": "assistant", "content": output_content})
-        if len(acc["llm_messages"]) > 20:
-            acc["llm_messages"] = acc["llm_messages"][-20:]
+        self._save_history(context, output_content)
 
         outputs = {
             "response": output_content,
@@ -188,33 +175,11 @@ class LLMNode(BaseNode):
 
     @staticmethod
     def _resolve_preset_config(cfg: dict) -> dict:
-        pm = get_preset_manager()
-        try:
-            effective = pm.get_effective_config(
-                cfg["platform_id"], cfg["model_id"],
-                cfg.get("overrides"),
-            )
-            logger.info(f"LLM effective config (preset match): api_key={'***' if effective.get('api_key') else 'EMPTY'}, "
-                        f"base_url={effective.get('base_url')}, model={effective.get('model')}")
-            return effective
-        except (ValueError, KeyError) as e:
-            # 预设 ID 不匹配 → 降级用第一个默认预设（保留用户配置的 api_key/base_url）
-            logger.warning(f"Preset not found ({e}), falling back to default preset")
-            data = pm.list_all()
-            platforms = data.get("platforms", [])
-            for p in platforms:
-                models = p.get("models", [])
-                if not models:
-                    continue
-                default_model = next((m for m in models if m.get("is_default")), models[0])
-                if default_model:
-                    effective = pm.get_effective_config(p["id"], default_model["id"], cfg.get("overrides"))
-                    logger.info(f"LLM effective config (default fallback): api_key={'***' if effective.get('api_key') else 'EMPTY'}, "
-                                f"base_url={effective.get('base_url')}, model={effective.get('model')}")
-                    return effective
-            # 最后的最后才降级 legacy
-            logger.warning(f"No presets available, falling back to legacy .env config")
-            return LLMNode._resolve_legacy_config(cfg)
+        pm = get_app_context().preset_manager
+        effective = BaseNode._resolve_preset_with_fallback(cfg, pm, legacy_fn=LLMNode._resolve_legacy_config)
+        logger.info(f"LLM effective config: api_key={'***' if effective.get('api_key') else 'EMPTY'}, "
+                    f"base_url={effective.get('base_url')}, model={effective.get('model')}")
+        return effective
 
     @staticmethod
     def _resolve_legacy_config(cfg: dict) -> dict:
@@ -346,6 +311,19 @@ class LLMNode(BaseNode):
         return await self._finish(context, emit, full_content, full_reasoning,
                                   yield_reasoning, model_name)
 
+    def _save_history(self, context, output_content: str):
+        """保存对话历史到 accumulated_context（去重 + 窗口裁剪）"""
+        acc = context.accumulated_context
+        if "llm_messages" not in acc:
+            acc["llm_messages"] = []
+        for um in (m for m in context.inputs.get("messages", []) if m.get("role") == "user"):
+            if not any(m.get("role") == "user" and m.get("content") == um.get("content")
+                       for m in acc["llm_messages"]):
+                acc["llm_messages"].append(um)
+        acc["llm_messages"].append({"role": "assistant", "content": output_content})
+        if len(acc["llm_messages"]) > 20:
+            acc["llm_messages"] = acc["llm_messages"][-20:]
+
     @staticmethod
     def _parse_think(content: str) -> tuple[str, str]:
         """从 content 中提取 <think>...</think> 标签内的思考内容。
@@ -377,27 +355,7 @@ class LLMNode(BaseNode):
             data=data,
         )
 
-        # 对话历史管理 — 用清洗后的内容存储
-        acc = context.accumulated_context
-        if "llm_messages" not in acc:
-            acc["llm_messages"] = []
-
-        user_messages = [m for m in context.inputs.get("messages", [])
-                         if m.get("role") == "user"]
-        for um in user_messages:
-            existing = any(
-                m.get("role") == "user" and m.get("content") == um.get("content")
-                for m in acc["llm_messages"]
-            )
-            if not existing:
-                acc["llm_messages"].append(um)
-
-        acc["llm_messages"].append({
-            "role": "assistant",
-            "content": output_content,
-        })
-        if len(acc["llm_messages"]) > 20:
-            acc["llm_messages"] = acc["llm_messages"][-20:]
+        self._save_history(context, output_content)
 
         outputs = {
             "response": output_content,

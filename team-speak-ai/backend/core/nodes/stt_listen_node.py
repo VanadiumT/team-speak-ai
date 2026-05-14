@@ -8,7 +8,7 @@ STT 节点 — 语音转文本
 import logging
 
 from core.nodes.base import BaseNode
-from core.pipeline.context import NodeContext, NodeOutput
+from core.pipeline.context import NodeContext, NodeOutput, NodeState
 from core.pipeline.emitter import EventEmitter
 from core.pipeline.registry import NodeRegistry
 
@@ -37,28 +37,10 @@ class STTListenNode(BaseNode):
             await emit.emit_node_error(context.node_id, "未收到音频数据")
             return NodeOutput({"text": ""}, trigger_next=False)
 
-        # 处理列表形式的音频分块 (来自 VAD 等)
-        if isinstance(audio_data, list) and audio_data:
-            import base64 as _b64
-            pcm = bytearray()
-            for chunk in audio_data:
-                if isinstance(chunk, str):
-                    try:
-                        pcm.extend(_b64.b64decode(chunk))
-                    except Exception:
-                        pass
-                elif isinstance(chunk, (bytes, bytearray)):
-                    pcm.extend(chunk)
-            audio_data = bytes(pcm)
-        elif isinstance(audio_data, str):
-            import base64 as _b64
-            try:
-                audio_data = _b64.b64decode(audio_data)
-            except Exception:
-                pass  # 不是 base64, 保持原样
+        audio_data = self._decode_audio_input(audio_data)
 
         await emit.emit_node_update(
-            context.node_id, "processing",
+            context.node_id, NodeState.PROCESSING,
             "转写中...",
             data={"mode": "transcribing"},
         )
@@ -83,26 +65,9 @@ class STTListenNode(BaseNode):
 
     @staticmethod
     def _resolve_stt_preset_config(cfg: dict) -> dict:
-        from core.config.defaults import get_stt_preset_manager
-        pm = get_stt_preset_manager()
-        try:
-            return pm.get_effective_config(
-                cfg["platform_id"], cfg["model_id"],
-                cfg.get("overrides"),
-            )
-        except (ValueError, KeyError) as e:
-            logger.warning(f"STT preset not found ({e}), falling back to default")
-            data = pm.list_all()
-            platforms = data.get("platforms", [])
-            for p in platforms:
-                models = p.get("models", [])
-                if not models:
-                    continue
-                default_model = next((m for m in models if m.get("is_default")), models[0])
-                if default_model:
-                    return pm.get_effective_config(p["id"], default_model["id"], cfg.get("overrides"))
-            logger.warning("No STT presets available, falling back to legacy config")
-            return STTListenNode._resolve_stt_legacy_config(cfg)
+        from core.app_context import get_app_context
+        pm = get_app_context().stt_preset_manager
+        return BaseNode._resolve_preset_with_fallback(cfg, pm, legacy_fn=STTListenNode._resolve_stt_legacy_config)
 
     @staticmethod
     def _resolve_stt_legacy_config(cfg: dict) -> dict:
@@ -122,6 +87,21 @@ class STTListenNode(BaseNode):
         }
 
     @staticmethod
+    def _decode_audio_input(audio_data) -> bytes:
+        """将上游输入统一解码为 raw PCM bytes"""
+        import base64 as _b64
+        if isinstance(audio_data, list):
+            pcm = bytearray()
+            for chunk in audio_data:
+                pcm.extend(_b64.b64decode(chunk) if isinstance(chunk, str) else chunk)
+            return bytes(pcm)
+        if isinstance(audio_data, str):
+            return _b64.b64decode(audio_data)
+        if isinstance(audio_data, (bytes, bytearray)):
+            return bytes(audio_data)
+        raise TypeError(f"Unsupported audio input type: {type(audio_data)}")
+
+    @staticmethod
     def _get_stt_from_config(effective: dict):
         from core.stt.sensevoice_stt import SenseVoiceSTT
         from core.stt.whisper_stt import WhisperSTT
@@ -130,7 +110,7 @@ class STTListenNode(BaseNode):
         provider = effective["provider"]
         if provider == "sensevoice":
             return SenseVoiceSTT(
-                model_dir=effective.get("model_dir") or "iic/SenseVoiceSmall",
+                model_dir=effective.get("model_dir") or settings.sensevoice_model,
                 device=effective.get("device", "cpu"),
             )
         elif provider == "whisper":
@@ -141,6 +121,6 @@ class STTListenNode(BaseNode):
         elif provider == "minimax":
             return MiniMaxSTT(
                 api_key=effective["api_key"] or "",
-                api_url=effective.get("api_url", "https://api.minimax.chat/v1"),
+                api_url=effective.get("api_url") or settings.minimax_api_url,
             )
         raise ValueError(f"Unknown STT provider: {provider}")

@@ -208,18 +208,3 @@ class ChunkReceiver:
         return safe or "uploaded_file"
 
 
-# 全局单例
-_chunk_receiver: Optional[ChunkReceiver] = None
-
-
-def get_chunk_receiver() -> ChunkReceiver:
-    global _chunk_receiver
-    if _chunk_receiver is None:
-        raise RuntimeError("ChunkReceiver not initialized")
-    return _chunk_receiver
-
-
-def init_chunk_receiver(upload_dir: str, max_file_size: int = MAX_FILE_SIZE) -> ChunkReceiver:
-    global _chunk_receiver
-    _chunk_receiver = ChunkReceiver(upload_dir, max_file_size)
-    return _chunk_receiver

@@ -198,58 +198,54 @@ class HistoryManager:
 
     def _append_to_jsonl(self, flow_id: str, op: dict) -> None:
         path = self._history_path(flow_id)
-        with open(path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(op, ensure_ascii=False) + "\n")
+        try:
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(op, ensure_ascii=False) + "\n")
+        except Exception as e:
+            logger.error(f"Failed to append history for {flow_id}: {e}")
 
     def _truncate_last_line(self, flow_id: str, new_size: int) -> None:
         """通过文件截断移除最后一行，用于 undo 操作"""
         path = self._history_path(flow_id)
         if not path.exists():
             return
-        # 重写文件只保留前 new_size 行（一次读写, O(n) 但 n≤100 可以接受）
-        if new_size == 0:
-            with open(path, "w", encoding="utf-8") as f:
-                pass
-            return
-        lines = []
-        with open(path, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-        if len(lines) > new_size:
-            with open(path, "w", encoding="utf-8") as f:
-                f.writelines(lines[:new_size])
+        try:
+            if new_size == 0:
+                with open(path, "w", encoding="utf-8") as f:
+                    pass
+                return
+            lines = []
+            with open(path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+            if len(lines) > new_size:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.writelines(lines[:new_size])
+        except Exception as e:
+            logger.error(f"Failed to truncate history for {flow_id}: {e}")
 
     def _rewrite_last_line(self, flow_id: str, op: dict) -> None:
         path = self._history_path(flow_id)
-        lines = []
-        if path.exists():
-            with open(path, "r", encoding="utf-8") as f:
-                lines = f.readlines()
-        if lines:
-            lines[-1] = json.dumps(op, ensure_ascii=False) + "\n"
-        else:
-            lines = [json.dumps(op, ensure_ascii=False) + "\n"]
-        with open(path, "w", encoding="utf-8") as f:
-            f.writelines(lines)
+        try:
+            lines = []
+            if path.exists():
+                with open(path, "r", encoding="utf-8") as f:
+                    lines = f.readlines()
+            if lines:
+                lines[-1] = json.dumps(op, ensure_ascii=False) + "\n"
+            else:
+                lines = [json.dumps(op, ensure_ascii=False) + "\n"]
+            with open(path, "w", encoding="utf-8") as f:
+                f.writelines(lines)
+        except Exception as e:
+            logger.error(f"Failed to rewrite history for {flow_id}: {e}")
 
     def _rewrite_all(self, flow_id: str, stack: list[dict]) -> None:
         path = self._history_path(flow_id)
-        with open(path, "w", encoding="utf-8") as f:
-            for op in stack:
-                f.write(json.dumps(op, ensure_ascii=False) + "\n")
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                for op in stack:
+                    f.write(json.dumps(op, ensure_ascii=False) + "\n")
+        except Exception as e:
+            logger.error(f"Failed to rewrite all history for {flow_id}: {e}")
 
 
-# 全局单例
-_history_manager: Optional[HistoryManager] = None
-
-
-def get_history_manager() -> HistoryManager:
-    global _history_manager
-    if _history_manager is None:
-        raise RuntimeError("HistoryManager not initialized")
-    return _history_manager
-
-
-def init_history_manager(data_dir: str) -> HistoryManager:
-    global _history_manager
-    _history_manager = HistoryManager(data_dir)
-    return _history_manager

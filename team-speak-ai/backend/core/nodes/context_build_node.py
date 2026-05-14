@@ -19,14 +19,6 @@ class ContextBuildNode(BaseNode):
 
     node_type = "context_build"
 
-    @staticmethod
-    def _input_key(port_id: str) -> str:
-        # 复用 _port_input_key 的对应逻辑：剥离 -in 后缀
-        # 但引擎的 input_mapping.as_field 存的是完整 port_id，不带 -in 后缀
-        # 所以直接返回 port_id 本身，避免双重剥离
-        # ctx-in1 → 存为 "ctx-in1"，读为 "ctx-in1"
-        return port_id
-
     async def execute(self, context: NodeContext, emit: EventEmitter) -> NodeOutput:
         # 1. System prompt: 仅当 system-in 有输入时才添加
         messages = []
@@ -60,14 +52,13 @@ class ContextBuildNode(BaseNode):
             total_chars += len(str(req_text))
         # 上下文信息片段
         for i, port_id in enumerate(repeatable_ports, 1):
-            key = self._input_key(port_id)
-            value = context.inputs.get(key, "")
+            value = context.inputs.get(port_id, "")
             if value:
                 label = port_labels.get(port_id, f"信息{i}")
                 user_parts.append(f"【{label}】\n{value}")
                 total_chars += len(str(value))
 
-        user_message = "\n\n".join(user_parts) if user_parts else "你好"
+        user_message = "\n\n".join(user_parts) if user_parts else "请介绍一下你自己"
         messages.append({"role": "user", "content": user_message})
 
         await emit.emit_node_update(

@@ -17,17 +17,16 @@ from PIL import Image
 import numpy as np
 
 from core.nodes.base import BaseNode
-from core.pipeline.context import NodeContext, NodeOutput
+from core.pipeline.context import NodeContext, NodeOutput, NodeState
 from core.pipeline.emitter import EventEmitter
 from core.pipeline.registry import NodeRegistry
 from core.ocr.factory import create_ocr, OCRProvider
-from core.config.defaults import get_ocr_preset_manager
+from core.app_context import get_app_context
 from config import settings
 
 logger = logging.getLogger(__name__)
 
-_ocr_instance = None
-_ocr_config_key = None  # 用于检测配置是否变化，变化时重新加载
+_ocr_cache: dict[str, object] = {}  # config_key → OCR instance（支持多配置并发）
 
 
 def _ocr_config_hash(provider, config):
@@ -35,14 +34,11 @@ def _ocr_config_hash(provider, config):
 
 
 def _load_ocr(provider, config):
-    """在调用线程中加载 OCR 模型（供 run_in_executor 使用）"""
-    global _ocr_instance, _ocr_config_key
+    """在调用线程中加载 OCR 模型（供 run_in_executor 使用）。按配置哈希缓存，不同配置互不干扰。"""
     key = _ocr_config_hash(provider, config)
-    if _ocr_instance is not None and _ocr_config_key == key:
-        return _ocr_instance
-    _ocr_instance = create_ocr(OCRProvider(provider), config)
-    _ocr_config_key = key
-    return _ocr_instance
+    if key not in _ocr_cache:
+        _ocr_cache[key] = create_ocr(OCRProvider(provider), config)
+    return _ocr_cache[key]
 
 
 def _run_ocr(img_array, provider, config):
@@ -84,11 +80,11 @@ class OCRNode(BaseNode):
         elif isinstance(file_input, str):
             b64 = file_input
         else:
-            await emit.emit_node_update(context.node_id, "error", "未收到图片数据")
+            await emit.emit_node_update(context.node_id, NodeState.ERROR, "未收到图片数据")
             return NodeOutput({"text": "", "error": "no_image_data"})
 
         if not b64:
-            await emit.emit_node_update(context.node_id, "error", "图片数据为空")
+            await emit.emit_node_update(context.node_id, NodeState.ERROR, "图片数据为空")
             return NodeOutput({"text": "", "error": "empty_image_data"})
 
         await emit.emit_node_update(
@@ -101,7 +97,7 @@ class OCRNode(BaseNode):
             img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
         except Exception as e:
             logger.exception("Failed to decode image")
-            await emit.emit_node_update(context.node_id, "error", f"图片解码失败: {e}")
+            await emit.emit_node_update(context.node_id, NodeState.ERROR, f"图片解码失败: {e}")
             return NodeOutput({"text": "", "error": str(e)})
 
         try:
@@ -110,7 +106,7 @@ class OCRNode(BaseNode):
             result = await loop.run_in_executor(None, _run_ocr, img_array, provider, ocr_config)
         except Exception as e:
             logger.exception("OCR recognition failed")
-            await emit.emit_node_update(context.node_id, "error", f"OCR 识别失败: {e}")
+            await emit.emit_node_update(context.node_id, NodeState.ERROR, f"OCR 识别失败: {e}")
             return NodeOutput({"text": "", "error": str(e)})
 
         await emit.emit_node_log_entry(
@@ -142,33 +138,13 @@ class OCRNode(BaseNode):
     @staticmethod
     def _resolve_preset_config(cfg: dict) -> dict:
         """从 OCR 预设解析配置"""
-        pm = get_ocr_preset_manager()
-        try:
-            effective = pm.get_effective_config(
-                cfg["platform_id"], cfg["model_id"],
-                cfg.get("overrides"),
-            )
-            provider = effective.pop("provider", "easyocr")
-            label = effective.pop("label", provider)
-            ocr_config = OCRNode._build_ocr_config(provider, effective)
-            logger.info(f"OCR effective config (preset): provider={provider}, gpu={ocr_config.get('gpu', ocr_config.get('use_gpu'))}")
-            return {"provider": provider, "ocr_config": ocr_config, "label": label}
-        except (ValueError, KeyError) as e:
-            logger.warning(f"OCR preset not found ({e}), falling back to default preset")
-            data = pm.list_all()
-            platforms = data.get("platforms", [])
-            for p in platforms:
-                models = p.get("models", [])
-                if not models:
-                    continue
-                default_model = next((m for m in models if m.get("is_default")), models[0])
-                if default_model:
-                    effective = pm.get_effective_config(p["id"], default_model["id"], cfg.get("overrides"))
-                    provider = effective.pop("provider", "easyocr")
-                    ocr_config = OCRNode._build_ocr_config(provider, effective)
-                    logger.info(f"OCR effective config (default fallback): provider={provider}")
-                    return {"provider": provider, "ocr_config": ocr_config}
-            return OCRNode._resolve_legacy_config(cfg)
+        pm = get_app_context().ocr_preset_manager
+        effective = BaseNode._resolve_preset_with_fallback(cfg, pm, legacy_fn=OCRNode._resolve_legacy_config)
+        provider = effective.pop("provider", "easyocr")
+        label = effective.pop("label", provider)
+        ocr_config = OCRNode._build_ocr_config(provider, effective)
+        logger.info(f"OCR effective config: provider={provider}, gpu={ocr_config.get('gpu', ocr_config.get('use_gpu'))}")
+        return {"provider": provider, "ocr_config": ocr_config, "label": label}
 
     @staticmethod
     def _resolve_legacy_config(cfg: dict) -> dict:

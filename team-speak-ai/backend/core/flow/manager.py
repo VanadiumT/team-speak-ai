@@ -101,27 +101,40 @@ class FlowManager:
         data = self._load_json(filepath)
         return self._deserialize_flow(data)
 
-    def save_flow(self, flow: PipelineDefinition) -> None:
-        """序列化并原子写入到磁盘"""
+    def _save_flow_locked(self, flow: PipelineDefinition) -> None:
+        """原子写入到磁盘（内部方法，假设锁已持有）"""
         filepath = self._flow_path(flow.id)
         data = self._serialize_flow(flow)
         tmp_path = filepath.with_suffix(".tmp")
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        os.replace(tmp_path, filepath)
+        try:
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            os.replace(tmp_path, filepath)
+        except OSError as e:
+            logger.error(f"Failed to save flow {flow.id}: {e}")
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+            raise
 
-    def delete_flow(self, flow_id: str) -> None:
+    async def save_flow(self, flow: PipelineDefinition) -> None:
+        """序列化并原子写入到磁盘（加锁版）"""
+        async with self._get_lock(flow.id):
+            self._save_flow_locked(flow)
+
+    async def delete_flow(self, flow_id: str) -> None:
         """删除流程 JSON 文件"""
-        filepath = self._flow_path(flow_id)
-        if filepath.exists():
-            filepath.unlink()
+        async with self._get_lock(flow_id):
+            filepath = self._flow_path(flow_id)
+            if filepath.exists():
+                filepath.unlink()
 
     def create_flow(self, name: str, group: str = "", icon: str = "account_tree") -> PipelineDefinition:
-        """创建新流程，生成唯一 ID"""
+        """创建新流程，生成唯一 ID（新建流程无竞争，无需加锁）"""
         flow_id = self._slugify(name)
         filepath = self._flow_path(flow_id)
         if filepath.exists():
-            # 追加数字后缀避免重名
             i = 2
             while True:
                 flow_id = f"{self._slugify(name)}_{i}"
@@ -135,12 +148,13 @@ class FlowManager:
             group=group,
             icon=icon,
         )
-        self.save_flow(flow)
+        self._save_flow_locked(flow)
         return flow
 
-    def copy_flow(self, flow_id: str, new_name: str = None) -> PipelineDefinition:
+    async def copy_flow(self, flow_id: str, new_name: str = None) -> PipelineDefinition:
         """复制流程，生成新 ID"""
-        original = self.load_flow(flow_id)
+        async with self._get_lock(flow_id):
+            original = self.load_flow(flow_id)
         base_name = new_name or f"{original.name} (副本)"
         new_id = self._slugify(base_name)
         filepath = self._flow_path(new_id)
@@ -170,73 +184,81 @@ class FlowManager:
                 to_node=c.to_node, to_port=c.to_port, type=c.type,
             ) for c in original.connections],
         )
-        self.save_flow(copy_flow)
+        self._save_flow_locked(copy_flow)
         return copy_flow
 
-    def update_flow_group(self, flow_id: str, group: str) -> PipelineDefinition:
+    async def update_flow_group(self, flow_id: str, group: str) -> PipelineDefinition:
         """更新流程的分组"""
-        flow = self.load_flow(flow_id)
-        flow.group = group
-        self.save_flow(flow)
-        return flow
+        async with self._get_lock(flow_id):
+            flow = self.load_flow(flow_id)
+            flow.group = group
+            self._save_flow_locked(flow)
+            return flow
 
-    def update_flow_canvas(self, flow_id: str, canvas: dict) -> PipelineDefinition:
+    async def update_flow_canvas(self, flow_id: str, canvas: dict) -> PipelineDefinition:
         """更新流程的画布尺寸"""
-        flow = self.load_flow(flow_id)
-        flow.canvas = canvas
-        self.save_flow(flow)
-        return flow
+        async with self._get_lock(flow_id):
+            flow = self.load_flow(flow_id)
+            flow.canvas = canvas
+            self._save_flow_locked(flow)
+            return flow
 
-    def update_flow_params(self, flow_id: str, params: dict) -> PipelineDefinition:
+    async def update_flow_params(self, flow_id: str, params: dict) -> PipelineDefinition:
         """更新流程参数（合并写入）"""
-        flow = self.load_flow(flow_id)
-        flow.params.update(params)
-        self.save_flow(flow)
-        return flow
+        async with self._get_lock(flow_id):
+            flow = self.load_flow(flow_id)
+            flow.params.update(params)
+            self._save_flow_locked(flow)
+            return flow
 
-    def delete_flow_param(self, flow_id: str, key: str) -> PipelineDefinition:
+    async def delete_flow_param(self, flow_id: str, key: str) -> PipelineDefinition:
         """删除单个流程参数"""
-        flow = self.load_flow(flow_id)
-        flow.params.pop(key, None)
-        self.save_flow(flow)
-        return flow
+        async with self._get_lock(flow_id):
+            flow = self.load_flow(flow_id)
+            flow.params.pop(key, None)
+            self._save_flow_locked(flow)
+            return flow
 
-    def toggle_flow_enabled(self, flow_id: str) -> PipelineDefinition:
+    async def toggle_flow_enabled(self, flow_id: str) -> PipelineDefinition:
         """切换流程启用/禁用状态，返回新状态"""
-        flow = self.load_flow(flow_id)
-        flow.enabled = not flow.enabled
-        self.save_flow(flow)
-        return flow
+        async with self._get_lock(flow_id):
+            flow = self.load_flow(flow_id)
+            flow.enabled = not flow.enabled
+            self._save_flow_locked(flow)
+            return flow
 
-    def rename_group(self, old_group_path: str, new_group_path: str) -> int:
+    async def rename_group(self, old_group_path: str, new_group_path: str) -> int:
         """重命名分组：批量更新所有匹配路径的 flow 的 group 字段。返回更新数量。"""
         count = 0
         for filepath in sorted(self.flows_dir.glob("*.json")):
             try:
-                flow = self.load_flow(filepath.stem)
-                if flow.group == old_group_path or flow.group.startswith(old_group_path + "/"):
-                    # 替换路径前缀
-                    if flow.group == old_group_path:
-                        flow.group = new_group_path
-                    else:
-                        flow.group = new_group_path + flow.group[len(old_group_path):]
-                    self.save_flow(flow)
-                    count += 1
+                flow_id = filepath.stem
+                async with self._get_lock(flow_id):
+                    flow = self.load_flow(flow_id)
+                    if flow.group == old_group_path or flow.group.startswith(old_group_path + "/"):
+                        if flow.group == old_group_path:
+                            flow.group = new_group_path
+                        else:
+                            flow.group = new_group_path + flow.group[len(old_group_path):]
+                        self._save_flow_locked(flow)
+                        count += 1
             except Exception:
-                pass
+                logger.warning(f"Failed to rename group for {filepath.stem}", exc_info=True)
         return count
 
-    def delete_flows_in_group(self, group_path: str) -> int:
+    async def delete_flows_in_group(self, group_path: str) -> int:
         """删除分组下所有流程。返回删除数量。"""
         count = 0
         for filepath in sorted(self.flows_dir.glob("*.json")):
             try:
-                flow = self.load_flow(filepath.stem)
-                if flow.group == group_path or flow.group.startswith(group_path + "/"):
-                    filepath.unlink()
-                    count += 1
+                flow_id = filepath.stem
+                async with self._get_lock(flow_id):
+                    flow = self.load_flow(flow_id)
+                    if flow.group == group_path or flow.group.startswith(group_path + "/"):
+                        filepath.unlink()
+                        count += 1
             except Exception:
-                pass
+                logger.warning(f"Failed to delete flow {filepath.stem}", exc_info=True)
         return count
 
     def export_flow(self, flow_id: str) -> dict:
@@ -244,28 +266,25 @@ class FlowManager:
         flow = self.load_flow(flow_id)
         return self._serialize_flow(flow)
 
-    def import_flow(self, data: dict, overwrite: bool = False) -> PipelineDefinition:
+    async def import_flow(self, data: dict, overwrite: bool = False) -> PipelineDefinition:
         """从 JSON 字典导入流程"""
         flow_id = data.get("id", "")
         if not flow_id:
             raise ValueError("Missing flow id in import data")
         filepath = self._flow_path(flow_id)
-        if filepath.exists() and not overwrite:
-            # 生成新 ID
-            i = 2
-            while True:
-                flow_id = f"{self._slugify(data.get('name', flow_id))}_{i}"
-                filepath = self._flow_path(flow_id)
-                if not filepath.exists():
-                    break
-                i += 1
-        elif filepath.exists() and overwrite:
-            # 备份原文件
-            pass
-        flow = self._deserialize_flow(data)
-        flow.id = flow_id
-        self.save_flow(flow)
-        return flow
+        async with self._get_lock(flow_id):
+            if filepath.exists() and not overwrite:
+                i = 2
+                while True:
+                    flow_id = f"{self._slugify(data.get('name', flow_id))}_{i}"
+                    filepath = self._flow_path(flow_id)
+                    if not filepath.exists():
+                        break
+                    i += 1
+            flow = self._deserialize_flow(data)
+            flow.id = flow_id
+            self._save_flow_locked(flow)
+            return flow
 
     def export_group_zip(self, group_path: str) -> bytes:
         """导出分组下所有流程为 ZIP，group 字段保留相对路径（去掉父前缀）"""
@@ -309,8 +328,8 @@ class FlowManager:
                     pass
         return buf.getvalue()
 
-    def import_group_zip(self, zip_data: bytes, target_group: str = "",
-                         overwrite: bool = False) -> list[PipelineDefinition]:
+    async def import_group_zip(self, zip_data: bytes, target_group: str = "",
+                                overwrite: bool = False) -> list[PipelineDefinition]:
         """从 ZIP 导入流程，将 ZIP 内相对 group 路径拼接到 target_group 下"""
         import io
         import zipfile
@@ -328,7 +347,7 @@ class FlowManager:
                         data["group"] = target_group + "/" + rel_group if rel_group else target_group
                     else:
                         data["group"] = rel_group
-                    flow = self.import_flow(data, overwrite=overwrite)
+                    flow = await self.import_flow(data, overwrite=overwrite)
                     imported.append(flow)
                 except Exception as e:
                     logger.warning(f"Failed to import {name} from zip: {e}")
@@ -341,7 +360,7 @@ class FlowManager:
         async with self._get_lock(flow_id):
             flow = self.load_flow(flow_id)
             flow.nodes.append(node)
-            self.save_flow(flow)
+            self._save_flow_locked(flow)
             return flow
 
     async def remove_node(self, flow_id: str, node_id: str) -> PipelineDefinition:
@@ -353,7 +372,7 @@ class FlowManager:
                 c for c in flow.connections
                 if c.from_node != node_id and c.to_node != node_id
             ]
-            self.save_flow(flow)
+            self._save_flow_locked(flow)
             return flow
 
     async def move_node(self, flow_id: str, node_id: str, x: float, y: float) -> PipelineDefinition:
@@ -364,7 +383,7 @@ class FlowManager:
             if not node:
                 raise ValueError(f"Node not found: {node_id}")
             node.position = {"x": x, "y": y}
-            self.save_flow(flow)
+            self._save_flow_locked(flow)
             return flow
 
     async def update_node_config(self, flow_id: str, node_id: str, config: dict) -> PipelineDefinition:
@@ -375,7 +394,7 @@ class FlowManager:
             if not node:
                 raise ValueError(f"Node not found: {node_id}")
             node.config.update(config)
-            self.save_flow(flow)
+            self._save_flow_locked(flow)
             return flow
 
     async def rename_node(self, flow_id: str, node_id: str, name: str) -> PipelineDefinition:
@@ -386,7 +405,7 @@ class FlowManager:
             if not node:
                 raise ValueError(f"Node not found: {node_id}")
             node.name = name
-            self.save_flow(flow)
+            self._save_flow_locked(flow)
             return flow
 
     # ── 连线 CRUD ──────────────────────────────────────────────
@@ -396,7 +415,7 @@ class FlowManager:
         async with self._get_lock(flow_id):
             flow = self.load_flow(flow_id)
             flow.connections.append(conn)
-            self.save_flow(flow)
+            self._save_flow_locked(flow)
             return flow
 
     async def remove_connection(self, flow_id: str, connection_id: str) -> PipelineDefinition:
@@ -404,7 +423,7 @@ class FlowManager:
         async with self._get_lock(flow_id):
             flow = self.load_flow(flow_id)
             flow.connections = [c for c in flow.connections if c.id != connection_id]
-            self.save_flow(flow)
+            self._save_flow_locked(flow)
             return flow
 
     def get_connection(self, flow_id: str, connection_id: str) -> Optional[ConnectionDef]:
@@ -606,8 +625,15 @@ class FlowManager:
 
     @staticmethod
     def _load_json(filepath: Path) -> dict:
-        with open(filepath, "r", encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except json.JSONDecodeError as e:
+            logger.error(f"Corrupted JSON file {filepath}: {e}")
+            raise FileNotFoundError(f"Corrupted flow file: {filepath}")
+        except OSError as e:
+            logger.error(f"Failed to read {filepath}: {e}")
+            raise
 
     @staticmethod
     def _get_mtime(filepath: Path) -> str:
@@ -761,18 +787,3 @@ class FlowManager:
         )
 
 
-# 全局单例
-flow_manager: Optional[FlowManager] = None
-
-
-def get_flow_manager() -> FlowManager:
-    global flow_manager
-    if flow_manager is None:
-        raise RuntimeError("FlowManager not initialized")
-    return flow_manager
-
-
-def init_flow_manager(data_dir: str) -> FlowManager:
-    global flow_manager
-    flow_manager = FlowManager(data_dir)
-    return flow_manager

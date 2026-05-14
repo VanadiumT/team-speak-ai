@@ -64,7 +64,17 @@
       "Bash(Remove-Item *)",
       "Bash(npx vite *)",
       "PowerShell(Write-Output \"=== team-speak-ai/docs/ ===\"; Get-ChildItem \"E:\\\\programmetemp\\\\project\\\\team_speak_ai\\\\team-speak-ai\\\\docs\" | Select-Object Name, @{N='KB';E={[math]::Round\\($_.Length/1024,1\\)}} | Format-Table -AutoSize; Write-Output \"\"; Write-Output \"=== root docs/ ===\"; Get-ChildItem \"E:\\\\programmetemp\\\\project\\\\team_speak_ai\\\\docs\" | Select-Object Name, @{N='KB';E={[math]::Round\\($_.Length/1024,1\\)}} | Format-Table -AutoSize)",
-      "PowerShell(git *)"
+      "PowerShell(git *)",
+      "Bash(node --check \"E:\\\\programmetemp\\\\project\\\\team_speak_ai\\\\team-speak-ai\\\\frontend\\\\src\\\\stores\\\\presetFactory.js\")",
+      "Bash(node --check \"E:\\\\programmetemp\\\\project\\\\team_speak_ai\\\\team-speak-ai\\\\frontend\\\\src\\\\stores\\\\presets.js\")",
+      "Bash(node --check \"E:\\\\programmetemp\\\\project\\\\team_speak_ai\\\\team-speak-ai\\\\frontend\\\\src\\\\stores\\\\sttPresets.js\")",
+      "PowerShell(\\(Get-Content \"E:\\\\programmetemp\\\\project\\\\team_speak_ai\\\\team-speak-ai\\\\backend\\\\api\\\\routes\\\\ws_main.py\" | Measure-Object -Line\\).Lines)",
+      "PowerShell(Get-ChildItem -Path \"E:\\\\programmetemp\\\\project\\\\team_speak_ai\\\\team-speak-ai\\\\frontend\\\\src\\\\components\\\\pipeline\" -Recurse -File | ForEach-Object { $_.FullName })",
+      "PowerShell(Get-ChildItem -Path \"E:\\\\programmetemp\\\\project\\\\team_speak_ai\\\\team-speak-ai\\\\frontend\\\\src\\\\components\\\\layout\" -Recurse -File | ForEach-Object { $_.FullName })",
+      "PowerShell(Get-ChildItem -Path \"E:\\\\programmetemp\\\\project\\\\team_speak_ai\\\\team-speak-ai\\\\frontend\\\\src\\\\components\\\\settings\" -Recurse -File | ForEach-Object { $_.FullName })",
+      "PowerShell(Get-ChildItem -Path \"E:\\\\programmetemp\\\\project\\\\team_speak_ai\\\\team-speak-ai\\\\frontend\\\\src\\\\components\\\\panels\" -Recurse -File | ForEach-Object { $_.FullName })",
+      "PowerShell(Get-ChildItem -Path \"E:\\\\programmetemp\\\\project\\\\team_speak_ai\\\\team-speak-ai\\\\frontend\\\\src\\\\components\" -Recurse -File | ForEach-Object { $_.FullName })",
+      "Bash(npm run *)"
     ]
   }
 }

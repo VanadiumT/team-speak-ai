@@ -37,7 +37,7 @@
 </template>
 
 <script setup>
-import { useNotificationsStore } from '@/stores/notifications.js'
+import { useNotificationsStore } from '@/stores/notifications'
 
 const store = useNotificationsStore()
 

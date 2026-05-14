@@ -29,7 +29,7 @@
           <label class="cfg-label">STT 模型</label>
           <select class="cfg-select" :value="selectedModelKey" @change="onModelChange">
             <option v-if="!selectedModelKey" value="" disabled>选择模型...</option>
-            <option v-for="m in sttPresetsStore.allModels"
+            <option v-for="m in presetsStore.sttAllModels"
                     :key="m.platformId + '/' + m.modelId"
                     :value="m.platformId + '/' + m.modelId">
               {{ m.label }}
@@ -76,7 +76,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useEditorStore } from '@/stores/editor'
-import { useSttPresetsStore } from '@/stores/sttPresets.js'
+import { usePresetsStore } from '@/stores/presets'
 import NodeIODataView from './NodeIODataView.vue'
 import NodeIOMgmt from './NodeIOMgmt.vue'
 import NodeLogView from './NodeLogView.vue'
@@ -96,7 +96,7 @@ const props = defineProps({
 })
 
 const editorStore = useEditorStore()
-const sttPresetsStore = useSttPresetsStore()
+const presetsStore = usePresetsStore()
 
 const statusLabel = computed(() => {
   const map = { pending: '等待中', processing: '转写中', completed: '已完成', error: '错误' }
@@ -112,13 +112,13 @@ const selectedModelKey = computed(() => {
 
 const currentModelInfo = computed(() => {
   const cfg = props.config || props.node?.config || {}
-  if (cfg.platform_id && cfg.model_id) return sttPresetsStore.getModelInfo(cfg.platform_id, cfg.model_id)
+  if (cfg.platform_id && cfg.model_id) return presetsStore.getSttModelInfo(cfg.platform_id, cfg.model_id)
   return null
 })
 
 const displayModelName = computed(() => {
   const cfg = props.config || props.node?.config || {}
-  if (cfg.platform_id && cfg.model_id) return sttPresetsStore.getLabel(cfg.platform_id, cfg.model_id)
+  if (cfg.platform_id && cfg.model_id) return presetsStore.getSttLabel(cfg.platform_id, cfg.model_id)
   return cfg.engine || 'sensevoice'
 })
 

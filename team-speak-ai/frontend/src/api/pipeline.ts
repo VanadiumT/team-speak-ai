@@ -3,40 +3,75 @@
  *
  * 信封协议: {msg_id, flow_id, type, action, params, ts}
  * 支持 text frame (JSON) 和 binary frame (文件上传)
+ *
+ * 前端配置优先级：.env.development → import.meta.env.VITE_* → 硬编码默认值。
+ * 每个常量都有对应的环境变量覆盖点（见下方 const 声明）。
+ *
+ * 🔗 跨服务对齐要求（此文件中的常量与后端必须一致）：
+ *   - WS_URL → Python config.host + config.port
+ *   - HEARTBEAT_INTERVAL → Python ws_main.HEARTBEAT_TIMEOUT 应 ≥ 此值 × 3
+ *   - HEARTBEAT_TIMEOUT → Python ws_main.HEARTBEAT_TIMEOUT 应与此值一致
  */
 
-const WS_URL = 'ws://localhost:8000/ws'
-const RECONNECT_INITIAL = 3000
-const RECONNECT_MAX = 30000
-const CHUNK_SIZE = 256 * 1024 // 256KB
-const HEARTBEAT_INTERVAL = 30000 // 30s ping
-const HEARTBEAT_TIMEOUT = 90000  // 90s without pong → disconnect
+import type { WsEnvelope } from '@/types/pipeline'
+
+const WS_URL: string = import.meta.env.VITE_WS_URL || (
+  // Auto-detect from current page: same host, backend port 8000
+  location.hostname === 'localhost'
+    ? 'ws://localhost:8000/ws'
+    : `ws://${location.hostname}:8000/ws`
+)
+const RECONNECT_INITIAL: number = import.meta.env.VITE_WS_RECONNECT_INITIAL ? Number(import.meta.env.VITE_WS_RECONNECT_INITIAL) : 3000
+const RECONNECT_MAX: number = import.meta.env.VITE_WS_RECONNECT_MAX ? Number(import.meta.env.VITE_WS_RECONNECT_MAX) : 30000
+const CHUNK_SIZE: number = import.meta.env.VITE_UPLOAD_CHUNK_SIZE ? Number(import.meta.env.VITE_UPLOAD_CHUNK_SIZE) : 256 * 1024
+const HEARTBEAT_INTERVAL: number = import.meta.env.VITE_WS_HEARTBEAT_INTERVAL ? Number(import.meta.env.VITE_WS_HEARTBEAT_INTERVAL) : 30000
+const HEARTBEAT_TIMEOUT: number = import.meta.env.VITE_WS_HEARTBEAT_TIMEOUT ? Number(import.meta.env.VITE_WS_HEARTBEAT_TIMEOUT) : 90000
+const WS_AUTH_TOKEN: string = import.meta.env.VITE_WS_AUTH_TOKEN || ''
+
+// ── 类型定义 ──────────────────────────────────────────────────
+
+type EventHandler = (params: Record<string, unknown>) => void
+
+interface PendingAck {
+  resolve: (value: Record<string, unknown>) => void
+  reject: (reason: Error) => void
+  timer: ReturnType<typeof setTimeout>
+}
+
+// ── PipelineSocket ────────────────────────────────────────────
 
 class PipelineSocket {
+  private url: string
+  private ws: WebSocket | null = null
+  private handlers: Map<string, EventHandler[]> = new Map()
+  private _ackResolvers: Map<string, PendingAck> = new Map()
+  private _reconnectAttempts: number = 0
+  private _reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  private _intentionalClose: boolean = false
+  private _connected: boolean = false
+  private _heartbeatTimer: ReturnType<typeof setInterval> | null = null
+  private _lastPong: number = Date.now()
+
+  activeFlowId: string | null = null
+
   constructor() {
-    this.url = WS_URL
-    this.ws = null
-    this.handlers = new Map()
-    this._ackResolvers = new Map()     // msg_id → {resolve, reject, timer}
-    this._reconnectAttempts = 0
-    this._reconnectTimer = null
-    this._intentionalClose = false
-    this._connected = false
-    this.activeFlowId = null
-    this._heartbeatTimer = null
-    this._heartbeatTimeoutTimer = null
-    this._lastPong = Date.now()
+    this.url = WS_AUTH_TOKEN ? `${WS_URL}?token=${encodeURIComponent(WS_AUTH_TOKEN)}` : WS_URL
   }
 
-  get connected() {
+  get connected(): boolean {
     return this._connected
   }
 
   // ── 连接管理 ──────────────────────────────────────────────
 
-  connect() {
+  connect(): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) return
     this._intentionalClose = false
+    // 取消待执行的 reconnect timer，避免手动 connect 后 timer 再次触发创建重复连接
+    if (this._reconnectTimer) {
+      clearTimeout(this._reconnectTimer)
+      this._reconnectTimer = null
+    }
 
     try {
       this.ws = new WebSocket(this.url)
@@ -52,7 +87,7 @@ class PipelineSocket {
       this._reconnectAttempts = 0
       this._lastPong = Date.now()
       this._startHeartbeat()
-      this.emit('connected')
+      this.emit('connected', {})
       // Re-subscribe to current flow after reconnect so broadcasts (node.created etc.) reach us
       if (this.activeFlowId) {
         try {
@@ -61,7 +96,7 @@ class PipelineSocket {
       }
     }
 
-    this.ws.onmessage = (event) => {
+    this.ws.onmessage = (event: MessageEvent) => {
       if (event.data instanceof ArrayBuffer) {
         // Binary frame (server→client is not used for now)
         return
@@ -71,7 +106,7 @@ class PipelineSocket {
         return
       }
       try {
-        const msg = JSON.parse(event.data)
+        const msg: WsEnvelope = JSON.parse(event.data as string)
         this._dispatch(msg)
       } catch (e) {
         console.error('[PipelineWS] Parse error:', e)
@@ -86,21 +121,22 @@ class PipelineSocket {
         reject(new Error('Connection lost'))
       })
       this._ackResolvers.clear()
-      this.emit('disconnected')
+      this.emit('disconnected', {})
       if (!this._intentionalClose) {
         this._scheduleReconnect()
       }
     }
 
-    this.ws.onerror = (err) => {
+    this.ws.onerror = (err: Event) => {
       console.error('[PipelineWS] Error:', err)
     }
   }
 
-  disconnect() {
+  disconnect(): void {
     this._intentionalClose = true
     this._connected = false
     this._stopHeartbeat()
+    this.handlers.clear()
     if (this._reconnectTimer) {
       clearTimeout(this._reconnectTimer)
       this._reconnectTimer = null
@@ -116,7 +152,7 @@ class PipelineSocket {
     this._ackResolvers.clear()
   }
 
-  _startHeartbeat() {
+  private _startHeartbeat(): void {
     this._stopHeartbeat()
     this._heartbeatTimer = setInterval(() => {
       if (Date.now() - this._lastPong > HEARTBEAT_TIMEOUT) {
@@ -127,7 +163,7 @@ class PipelineSocket {
           this.ws.close()
           this.ws = null
         }
-        this.emit('disconnected')
+        this.emit('disconnected', {})
         this._scheduleReconnect()
         return
       }
@@ -137,14 +173,14 @@ class PipelineSocket {
     }, HEARTBEAT_INTERVAL)
   }
 
-  _stopHeartbeat() {
+  private _stopHeartbeat(): void {
     if (this._heartbeatTimer) {
       clearInterval(this._heartbeatTimer)
       this._heartbeatTimer = null
     }
   }
 
-  _scheduleReconnect() {
+  private _scheduleReconnect(): void {
     if (this._reconnectTimer) clearTimeout(this._reconnectTimer)
     const delay = Math.min(
       RECONNECT_INITIAL * Math.pow(2, this._reconnectAttempts),
@@ -160,9 +196,9 @@ class PipelineSocket {
   /**
    * 发送命令，返回 Promise<params> (对应 ack 后的事件 params)
    */
-  sendCommand(flowId, action, params = {}, msgId = null) {
+  sendCommand(flowId: string, action: string, params: Record<string, unknown> = {}, msgId?: string | null): Promise<Record<string, unknown>> {
     msgId = msgId || crypto.randomUUID()
-    const msg = {
+    const msg: WsEnvelope = {
       msg_id: msgId,
       flow_id: flowId,
       type: 'command',
@@ -179,17 +215,17 @@ class PipelineSocket {
 
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
-        this._ackResolvers.delete(msgId)
+        this._ackResolvers.delete(msgId!)
         reject(new Error(`Command timeout: ${action}`))
       }, 15000)
-      this._ackResolvers.set(msgId, { resolve, reject, timer })
+      this._ackResolvers.set(msgId!, { resolve, reject, timer })
     })
   }
 
   /**
    * 发送二进制数据块（文件上传）
    */
-  sendBinaryChunk(msgId, chunk) {
+  sendBinaryChunk(msgId: string, chunk: ArrayBuffer): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return
     const encoder = new TextEncoder()
     const idBytes = encoder.encode(msgId)
@@ -204,13 +240,13 @@ class PipelineSocket {
 
   /**
    * 上传文件（完整流程）
-   * @param {string} flowId
-   * @param {File} file
-   * @param {string|null} nodeId
-   * @param {function|null} onReady - 收到 upload_id 后、发送 chunk 前回调
-   * @returns {Promise<string>} file_id
    */
-  async uploadFile(flowId, file, nodeId = null, onReady = null) {
+  async uploadFile(
+    flowId: string,
+    file: File,
+    nodeId?: string | null,
+    onReady?: ((uploadId: string) => void) | null,
+  ): Promise<string> {
     const msgId = crypto.randomUUID()
 
     // ① 发起上传请求（使用同一 msgId，后续二进制帧共用）
@@ -223,46 +259,45 @@ class PipelineSocket {
 
     // ② 等待 ready 事件
     const readyEvent = await this._waitForEvent('file.upload_ready', 10000)
-    const uploadId = readyEvent.upload_id
+    const uploadId = readyEvent.upload_id as string
 
     // 通知调用方 upload_id 已就绪（用于注册到 files store）
     onReady?.(uploadId)
 
-    // ③ 分块发送
-    const buffer = await file.arrayBuffer()
+    // ③ 分块发送（逐片读取，避免大文件全量加载到内存）
     let offset = 0
-    while (offset < buffer.byteLength) {
-      const chunk = buffer.slice(offset, offset + CHUNK_SIZE)
+    while (offset < file.size) {
+      const slice = file.slice(offset, offset + CHUNK_SIZE)
+      const chunk = await slice.arrayBuffer()
       this.sendBinaryChunk(msgId, chunk)
       offset += CHUNK_SIZE
     }
 
     // ④ 等待完成
     const result = await this._waitForEvent('file.upload_done', 60000)
-    return result.file_id
+    return result.file_id as string
   }
 
   // ── 消息分发 ──────────────────────────────────────────────
 
-  _dispatch(msg) {
+  private _dispatch(msg: WsEnvelope): void {
     const { type, action, params, ref_msg_id } = msg
 
     switch (type) {
       case 'event':
         if (action === 'node.created') {
-          console.log('[PipelineWS] ← node.created event received:', params?.node?.id, params?.node?.type, params?.node?.position)
+          console.log('[PipelineWS] ← node.created event received:', params)
         }
         this.emit(action, params)
-        this.emit('message', msg)
+        this.emit('message', msg as unknown as Record<string, unknown>)
         break
       case 'ack': {
-        // 解析对应的 pending Promise
         if (ref_msg_id) {
           const pending = this._ackResolvers.get(ref_msg_id)
           if (pending) {
             clearTimeout(pending.timer)
             this._ackResolvers.delete(ref_msg_id)
-            pending.resolve(params || { ok: true })
+            pending.resolve((params as Record<string, unknown>) || { ok: true })
           }
         }
         break
@@ -273,25 +308,25 @@ class PipelineSocket {
           if (pending) {
             clearTimeout(pending.timer)
             this._ackResolvers.delete(ref_msg_id)
-            pending.reject(new Error(params?.message || 'Unknown error'))
+            pending.reject(new Error((params as Record<string, unknown>)?.message as string || 'Unknown error'))
           }
         }
-        this.emit('error', msg)
+        this.emit('error', msg as unknown as Record<string, unknown>)
         break
       }
       default:
-        this.emit('message', msg)
+        this.emit('message', msg as unknown as Record<string, unknown>)
     }
   }
 
-  _waitForEvent(action, timeoutMs = 15000) {
+  _waitForEvent(action: string, timeoutMs: number = 15000): Promise<Record<string, unknown>> {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.off(action, handler)
         reject(new Error(`Event timeout: ${action}`))
       }, timeoutMs)
 
-      const handler = (params) => {
+      const handler: EventHandler = (params: Record<string, unknown>) => {
         clearTimeout(timer)
         this.off(action, handler)
         resolve(params)
@@ -302,20 +337,20 @@ class PipelineSocket {
 
   // ── 事件系统 ──────────────────────────────────────────────
 
-  on(type, handler) {
+  on(type: string, handler: EventHandler): void {
     if (!this.handlers.has(type)) this.handlers.set(type, [])
-    const list = this.handlers.get(type)
+    const list = this.handlers.get(type)!
     if (!list.includes(handler)) list.push(handler)
   }
 
-  off(type, handler) {
+  off(type: string, handler: EventHandler): void {
     if (!this.handlers.has(type)) return
-    const list = this.handlers.get(type)
+    const list = this.handlers.get(type)!
     const idx = list.indexOf(handler)
     if (idx > -1) list.splice(idx, 1)
   }
 
-  emit(type, data) {
+  emit(type: string, data: Record<string, unknown>): void {
     const list = this.handlers.get(type) || []
     list.forEach((fn) => {
       try { fn(data) } catch (e) { console.error(`[PipelineWS] Handler error (${type}):`, e) }

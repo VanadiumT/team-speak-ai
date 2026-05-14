@@ -38,7 +38,10 @@ class TeamSpeakWebSocket:
         url = url or settings.ts_ws_url
         try:
             import websockets
-            self.ws = await websockets.connect(url)
+            self.ws = await asyncio.wait_for(
+                websockets.connect(url),
+                timeout=settings.connection_timeout if hasattr(settings, 'connection_timeout') else 10.0
+            )
             self.connected = True
             self.reconnect_attempts = 0
             logger.info(f"Connected to TeamSpeak WebSocket: {url}")
@@ -257,7 +260,7 @@ async def teamspeak_websocket(websocket: WebSocket):
     async def heartbeat_loop():
         while client_active and ts_client.connected:
             await ts_client.send_heartbeat()
-            await asyncio.sleep(25)
+            await asyncio.sleep(settings.ts_heartbeat_interval)
 
     try:
         await asyncio.gather(

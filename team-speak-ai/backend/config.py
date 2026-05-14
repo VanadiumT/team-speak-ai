@@ -1,3 +1,15 @@
+"""
+Backend 配置权威源（Pydantic BaseSettings）。
+
+配置优先级（高 → 低）：
+  1. 环境变量 / .env 文件
+  2. 本文件中的字段默认值（🔗 标记的参数有跨服务对齐要求，见 .env.example）
+  3. Preset JSON 文件 (data/defaults/*.json) 提供各 AI 能力的平台+模型配置
+  4. 节点级 config 覆盖（运行时由前端传入，保存在 flow JSON 中）
+
+改动原则：此文件定义所有全局开关和连接信息。AI 提供者的具体参数
+（temperature、voice_id 等）走 Preset 系统，不在此处硬编码。
+"""
 from pydantic_settings import BaseSettings
 
 
@@ -7,10 +19,10 @@ class Settings(BaseSettings):
     port: int = 8000
     debug: bool = False
 
-    # TeamSpeak
+    # TeamSpeak（🔗 ts_ws_url 必须与 Java BridgeConfig.wsPort + wsPath 一致）
     ts_ws_url: str = "ws://localhost:8080/teamspeak/voice"
-    ts_reconnect_interval: int = 5
-    ts_heartbeat_interval: int = 25
+    ts_reconnect_interval: int = 5      # Python→Java WS 重连间隔（秒）
+    ts_heartbeat_interval: int = 30     # 🔗 必须与 Java BridgeConfig.heartbeatIntervalSeconds 一致
 
     # STT Provider (whisper, minimax, sensevoice)
     stt_provider: str = "sensevoice"
@@ -30,6 +42,7 @@ class Settings(BaseSettings):
 
     # TTS
     tts_provider: str = "edge"
+    edge_tts_voice: str = "zh-CN-XiaoxiaoNeural"  # Edge TTS 默认语音
 
     # MiniMax TTS
     minimax_tts_model: str = "speech-2.8-hd"
@@ -71,10 +84,15 @@ class Settings(BaseSettings):
     log_dir: str = "logs"
     log_keep_days: int = 30
 
-    # WebSocket
-    ws_reconnect_interval: int = 3000  # ms
-    ws_max_reconnect_attempts: int = 10
-    ws_max_connections_per_ip: int = 5
+    # CORS（逗号分隔的允许来源列表，如 "http://localhost:5173,https://example.com"）
+    cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+
+    # WS 鉴权（空 = 不校验；设置后前端连接时必须带 ?token=xxx）
+    ws_auth_token: str = ""
+
+    # WebSocket 前端连接（🔗 必须与前端 pipeline.js 的 VITE_WS_* 一致）
+    ws_heartbeat_timeout: int = 90      # 🔗 必须 ≥ 前端 VITE_WS_HEARTBEAT_TIMEOUT / 1000
+    ws_max_msg_size: int = 65536        # 64KB
 
     class Config:
         env_file = ".env"

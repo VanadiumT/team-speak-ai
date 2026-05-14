@@ -21,8 +21,9 @@ class FlowVarWriteNode(BaseNode):
     node_type = "flow_var_write"
 
     async def execute(self, context: NodeContext, emit: EventEmitter) -> NodeOutput:
-        key = self.config.get("key", "")
-        merge_mode = self.config.get("merge_mode", "overwrite")
+        cfg = context.node_config or self.config
+        key = cfg.get("key", "")
+        merge_mode = cfg.get("merge_mode", "overwrite")
 
         if not key:
             await emit.emit_node_log_entry(context.node_id, "warn", "未配置参数 key")

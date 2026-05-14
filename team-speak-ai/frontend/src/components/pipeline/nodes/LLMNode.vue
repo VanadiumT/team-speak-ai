@@ -115,6 +115,7 @@ import { computed, ref, watch } from 'vue'
 import { useEditorStore } from '@/stores/editor'
 import { usePresetsStore } from '@/stores/presets'
 import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import NodeIODataView from './NodeIODataView.vue'
 import NodeIOMgmt from './NodeIOMgmt.vue'
 import NodeLogView from './NodeLogView.vue'
@@ -123,7 +124,7 @@ import NodeLogView from './NodeLogView.vue'
 marked.setOptions({ breaks: true, gfm: true })
 function renderMd(text) {
   if (!text) return ''
-  try { return marked.parse(text) } catch { return text.replace(/</g, '&lt;') }
+  try { return DOMPurify.sanitize(marked.parse(text)) } catch { return text.replace(/</g, '&lt;') }
 }
 
 // ── Mermaid 懒加载 ──
@@ -171,7 +172,7 @@ async function renderWithMermaid(text) {
       const { svg } = await m.render(id, code)
       const wrapper = document.createElement('div')
       wrapper.className = 'mermaid-diagram'
-      wrapper.innerHTML = svg
+      wrapper.innerHTML = DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true } })
       const pre = block.closest('pre')
       if (pre) pre.replaceWith(wrapper)
     } catch {

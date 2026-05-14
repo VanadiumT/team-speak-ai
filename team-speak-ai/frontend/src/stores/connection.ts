@@ -4,11 +4,12 @@
 
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { pipelineSocket } from '@/api/pipeline.js'
+import { pipelineSocket } from '@/api/pipeline'
+import type { ServiceStatus } from '@/types/pipeline'
 
 export const useConnectionStore = defineStore('connection', () => {
   const isConnected = ref(false)
-  const services = ref([])            // ServiceStatus[]
+  const services = ref<ServiceStatus[]>([])
   const reconnectAttempts = ref(0)
 
   const tsBotStatus = computed(() => {
@@ -26,18 +27,17 @@ export const useConnectionStore = defineStore('connection', () => {
     return s?.status || 'unknown'
   })
 
-  function onConnected() {
+  function onConnected(): void {
     isConnected.value = true
     reconnectAttempts.value = 0
   }
 
-  function onDisconnected() {
+  function onDisconnected(): void {
     isConnected.value = false
   }
 
-  function onConnectionStatus({ services: svcs }) {
+  function onConnectionStatus({ services: svcs }: { services?: ServiceStatus[] }): void {
     if (svcs) {
-      // 合并更新（后端可能只发变更项）
       for (const svc of svcs) {
         const idx = services.value.findIndex((s) => s.id === svc.id)
         if (idx >= 0) {
@@ -50,12 +50,12 @@ export const useConnectionStore = defineStore('connection', () => {
   }
 
   let _initialized = false
-  function init() {
+  function init(): void {
     if (_initialized) return
     _initialized = true
-    pipelineSocket.on('connected', onConnected)
-    pipelineSocket.on('disconnected', onDisconnected)
-    pipelineSocket.on('connection.status', onConnectionStatus)
+    pipelineSocket.on('connected', onConnected as (p: Record<string, unknown>) => void)
+    pipelineSocket.on('disconnected', onDisconnected as (p: Record<string, unknown>) => void)
+    pipelineSocket.on('connection.status', onConnectionStatus as (p: Record<string, unknown>) => void)
   }
 
   return {

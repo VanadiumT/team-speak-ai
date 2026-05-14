@@ -15,7 +15,7 @@ from typing import AsyncGenerator
 import soundfile as sf
 
 from core.nodes.base import BaseNode
-from core.pipeline.context import NodeContext, NodeOutput, _STREAM_END
+from core.pipeline.context import NodeContext, NodeOutput, NodeState, _STREAM_END
 from core.pipeline.emitter import EventEmitter
 from core.pipeline.registry import NodeRegistry
 
@@ -39,19 +39,19 @@ class TSOutputNode(BaseNode):
 
         audio_b64 = _extract_b64_from_inputs(context.inputs)
         if not audio_b64:
-            await emit.emit_node_update(context.node_id, "completed", "无音频数据")
+            await emit.emit_node_update(context.node_id, NodeState.COMPLETED, "无音频数据")
             return NodeOutput({"sent": False, "reason": "no_audio"})
 
         connected = ts_client and ts_client.connected
         if not connected and not ts_client.loopback_enabled:
-            await emit.emit_node_update(context.node_id, "error", "TeamSpeak 未连接且未开启回环")
+            await emit.emit_node_update(context.node_id, NodeState.ERROR, "TeamSpeak 未连接且未开启回环")
             return NodeOutput({"sent": False, "reason": "not_connected"}, trigger_next=False)
 
         label = "TS 播放" if connected else "回环"
         chunks = _chunk_audio_b64(audio_b64)
         total = len(chunks)
 
-        await emit.emit_node_update(context.node_id, "processing", f"{label}中 (0/{total})",
+        await emit.emit_node_update(context.node_id, NodeState.PROCESSING, f"{label}中 (0/{total})",
                                     data={"total_chunks": total})
 
         for i, chunk_b64 in enumerate(chunks):
@@ -72,7 +72,7 @@ class TSOutputNode(BaseNode):
                 await asyncio.sleep(0.15)
 
         summary = f"已发送 {total} 段到 TeamSpeak" if connected else f"已回环 {total} 段到 AudioBus"
-        await emit.emit_node_update(context.node_id, "completed", summary)
+        await emit.emit_node_update(context.node_id, NodeState.COMPLETED, summary)
         return NodeOutput({"sent": True, "segment_count": total})
 
     # ── 流式路径 ──
@@ -87,7 +87,7 @@ class TSOutputNode(BaseNode):
 
         connected = ts_client and ts_client.connected
         if not connected and not ts_client.loopback_enabled:
-            await emit.emit_node_update(context.node_id, "error", "TeamSpeak 未连接且未开启回环")
+            await emit.emit_node_update(context.node_id, NodeState.ERROR, "TeamSpeak 未连接且未开启回环")
             yield NodeOutput({"sent": False, "reason": "not_connected"}, final=True)
             return
 
@@ -135,7 +135,7 @@ class TSOutputNode(BaseNode):
             segment_index += 1
 
         summary = f"已发送 {total_chunks} 段到 TeamSpeak" if connected else f"已回环 {total_chunks} 段到 AudioBus"
-        await emit.emit_node_update(context.node_id, "completed", summary)
+        await emit.emit_node_update(context.node_id, NodeState.COMPLETED, summary)
         yield NodeOutput({"sent": True, "segment_count": total_chunks}, final=True)
 
 

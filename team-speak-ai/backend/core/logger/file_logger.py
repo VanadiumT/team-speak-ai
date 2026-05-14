@@ -66,7 +66,7 @@ class FileLogger(BaseLogger):
             "type": "pipeline_event",
             "timestamp": event.timestamp.isoformat(),
             "event_type": event.event_type,
-            "pipeline_id": event.pipeline_id,
+            "flow_id": event.flow_id,
             "execution_id": event.execution_id,
             "node_id": event.node_id,
             "data": event.data,

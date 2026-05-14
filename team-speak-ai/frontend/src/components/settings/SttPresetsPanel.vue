@@ -163,10 +163,24 @@
 
 <script setup>
 import { ref, computed, reactive, onMounted } from 'vue'
-import { useSttPresetsStore } from '@/stores/sttPresets.js'
-import { pipelineSocket } from '@/api/pipeline.js'
+import { usePresetsStore } from '@/stores/presets'
+import { pipelineSocket } from '@/api/pipeline'
 
-const store = useSttPresetsStore()
+const presetsStore = usePresetsStore()
+const store = {
+  get platforms() { return presetsStore.sttPlatforms },
+  get allModels() { return presetsStore.sttAllModels },
+  get defaultModel() { return presetsStore.sttDefaultModel },
+  getLabel: (...a) => presetsStore.getSttLabel(...a),
+  getModelInfo: (...a) => presetsStore.getSttModelInfo(...a),
+  savePlatform: (...a) => presetsStore.saveSttPlatform(...a),
+  deletePlatform: (...a) => presetsStore.deleteSttPlatform(...a),
+  duplicatePlatform: (...a) => presetsStore.duplicateSttPlatform(...a),
+  saveModel: (...a) => presetsStore.saveSttModel(...a),
+  deleteModel: (...a) => presetsStore.deleteSttModel(...a),
+  duplicateModel: (...a) => presetsStore.duplicateSttModel(...a),
+  init: () => presetsStore.initStt(),
+}
 const testStates = reactive({})
 
 function testLabel(modelId) {

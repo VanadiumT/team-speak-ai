@@ -98,8 +98,8 @@
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import IOPort from './IOPort.vue'
 import { getNodeComponent } from './nodes/registry.js'
-import { useEditorStore } from '@/stores/editor.js'
-import { useExecutionStore } from '@/stores/execution.js'
+import { useEditorStore, NODE_W } from '@/stores/editor'
+import { useExecutionStore } from '@/stores/execution'
 
 const props = defineProps({
   node: { type: Object, required: true },
@@ -321,8 +321,7 @@ const badgeColor = computed(() => {
   return c[nodeTypeDef.value?.color] || '#4edea3'
 })
 const nodeWidth = computed(() => {
-  const w = { input_image: 220, ocr: 220, tts: 250, ts_output: 220, ts_input: 220, context_build: 250, llm: 250, stt_history: 280, stt_listen: 280 }
-  return w[props.node.type] || 250
+  return NODE_W[props.node.type] || 250
 })
 
 // ── Drag (direct DOM, zoom-aware) ──

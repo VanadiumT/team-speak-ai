@@ -116,26 +116,9 @@ class VADNode(BaseNode):
 
     @staticmethod
     def _resolve_vad_preset_config(cfg: dict) -> dict:
-        from core.config.defaults import get_vad_preset_manager
-        pm = get_vad_preset_manager()
-        try:
-            return pm.get_effective_config(
-                cfg["platform_id"], cfg["model_id"],
-                cfg.get("overrides"),
-            )
-        except (ValueError, KeyError) as e:
-            logger.warning(f"VAD preset not found ({e}), falling back to default")
-            data = pm.list_all()
-            platforms = data.get("platforms", [])
-            for p in platforms:
-                models = p.get("models", [])
-                if not models:
-                    continue
-                default_model = next((m for m in models if m.get("is_default")), models[0])
-                if default_model:
-                    return pm.get_effective_config(p["id"], default_model["id"], cfg.get("overrides"))
-            logger.warning("No VAD presets available, using hardcoded defaults")
-            return _DEFAULT_VAD_EFFECTIVE
+        from core.app_context import get_app_context
+        pm = get_app_context().vad_preset_manager
+        return BaseNode._resolve_preset_with_fallback(cfg, pm, fallback_default=_DEFAULT_VAD_EFFECTIVE)
 
 
 # ── Hardcoded fallback when no presets exist ──

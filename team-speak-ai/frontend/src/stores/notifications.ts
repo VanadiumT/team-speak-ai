@@ -1,42 +1,46 @@
 /**
  * Notifications Store — 通知铃铛状态
- *
- * 处理 important_update 推送、notification.list_result 分页查询、
- * notification.unread 连接恢复、notification.mark_read 已读标记。
  */
 
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { pipelineSocket } from '@/api/pipeline.js'
+import { pipelineSocket } from '@/api/pipeline'
 
 const MAX_ITEMS = 50
 
+interface NotificationDisplayItem {
+  id: string
+  title: string
+  content: string
+  level: string
+  node_id: string | null
+  timestamp: string
+  read: boolean
+}
+
 export const useNotificationsStore = defineStore('notifications', () => {
-  const items = ref([])       // NotificationItem[]
+  const items = ref<NotificationDisplayItem[]>([])
   const unread = ref(0)
   const isOpen = ref(false)
-  const hasMore = ref(false)   // 后端是否还有更多历史通知
-  const _activeFlowId = ref(null)
+  const hasMore = ref(false)
+  const _activeFlowId = ref<string | null>(null)
 
   const hasUnread = computed(() => unread.value > 0)
 
-  // ── 实时推送 ──────────────────────────────────────────────
-
-  function onImportantUpdate(params) {
+  function onImportantUpdate(params: Record<string, unknown>): void {
     const { notification_id, title, content, level, node_id, timestamp } = params
-    const item = {
-      id: notification_id || crypto.randomUUID(),
-      title,
-      content,
-      level: level || 'info',
-      node_id: node_id || null,
-      timestamp: timestamp || new Date().toISOString(),
+    const item: NotificationDisplayItem = {
+      id: (notification_id as string) || crypto.randomUUID(),
+      title: title as string,
+      content: content as string,
+      level: (level as string) || 'info',
+      node_id: (node_id as string) || null,
+      timestamp: (timestamp as string) || new Date().toISOString(),
       read: false,
     }
     items.value.unshift(item)
     unread.value++
 
-    // 裁剪
     if (items.value.length > MAX_ITEMS) {
       const removed = items.value.splice(MAX_ITEMS)
       const removedUnread = removed.filter((i) => !i.read).length
@@ -44,11 +48,10 @@ export const useNotificationsStore = defineStore('notifications', () => {
     }
   }
 
-  // ── 分页查询结果 ──────────────────────────────────────────
-
-  function onListResult(params) {
-    const { items: newItems, unread: serverUnread, has_more } = params
-    // 替换或追加
+  function onListResult(params: Record<string, unknown>): void {
+    const { items: newItems, unread: serverUnread, has_more } = params as {
+      items: NotificationDisplayItem[]; unread: number; has_more: boolean
+    }
     if (!_loadingMore.value) {
       items.value = newItems
     } else {
@@ -59,63 +62,49 @@ export const useNotificationsStore = defineStore('notifications', () => {
     _loadingMore.value = false
   }
 
-  // ── 连接恢复时的未读计数 ──────────────────────────────────
-
-  function onUnreadPush(params) {
-    const { flow_id, unread: count } = params
-    // 如果当前活跃 flow 匹配，更新未读数
+  function onUnreadPush(params: Record<string, unknown>): void {
+    const { flow_id, unread: count } = params as { flow_id: string; unread: number }
     if (flow_id === _activeFlowId.value) {
       unread.value = count
     }
   }
 
-  // ── 已读确认 ──────────────────────────────────────────────
-
-  function onReadConfirm(params) {
-    const { notification_id, unread: serverUnread } = params
+  function onReadConfirm(params: Record<string, unknown>): void {
+    const { notification_id, unread: serverUnread } = params as { notification_id?: string; unread: number }
     unread.value = serverUnread
     if (notification_id) {
       const item = items.value.find((i) => i.id === notification_id)
       if (item) item.read = true
     } else {
-      // 全部已读
       items.value.forEach((i) => { i.read = true })
     }
   }
 
-  // ── 前端操作 ──────────────────────────────────────────────
-
   const _loadingMore = ref(false)
 
-  /**
-   * 加载当前 flow 的历史通知
-   */
-  function fetchList(flowId) {
+  function fetchList(flowId: string): void {
     _activeFlowId.value = flowId
     pipelineSocket.sendCommand(flowId, 'notification.list', { flow_id: flowId, limit: 20 })
   }
 
-  /**
-   * 加载更多（cursor 分页）
-   */
-  function loadMore() {
+  function loadMore(): void {
     if (!hasMore.value || _loadingMore.value || items.value.length === 0) return
     _loadingMore.value = true
     const lastId = items.value[items.value.length - 1].id
-    pipelineSocket.sendCommand(_activeFlowId.value, 'notification.list', {
+    pipelineSocket.sendCommand(_activeFlowId.value!, 'notification.list', {
       flow_id: _activeFlowId.value,
       limit: 20,
       before: lastId,
     })
   }
 
-  function markAllRead() {
+  function markAllRead(): void {
     const flowId = _activeFlowId.value
     if (!flowId) return
     pipelineSocket.sendCommand(flowId, 'notification.mark_read', { flow_id: flowId })
   }
 
-  function markRead(notificationId) {
+  function markRead(notificationId: string): void {
     const flowId = _activeFlowId.value
     if (!flowId) return
     pipelineSocket.sendCommand(flowId, 'notification.mark_read', {
@@ -124,18 +113,16 @@ export const useNotificationsStore = defineStore('notifications', () => {
     })
   }
 
-  function toggle() {
+  function toggle(): void {
     isOpen.value = !isOpen.value
   }
 
-  function close() {
+  function close(): void {
     isOpen.value = false
   }
 
-  // ── 初始化 ────────────────────────────────────────────────
-
   let _initialized = false
-  function init() {
+  function init(): void {
     if (_initialized) return
     _initialized = true
     pipelineSocket.on('important_update', onImportantUpdate)

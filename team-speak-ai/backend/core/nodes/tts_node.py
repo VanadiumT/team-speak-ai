@@ -8,11 +8,11 @@ import re
 import base64
 import logging
 from core.nodes.base import BaseNode
-from core.pipeline.context import NodeContext, NodeOutput, _STREAM_END
+from core.pipeline.context import NodeContext, NodeOutput, NodeState, _STREAM_END
 from core.pipeline.emitter import EventEmitter
 from core.pipeline.registry import NodeRegistry
 from core.tts.factory import TTSProvider, create_tts
-from core.config.defaults import get_tts_preset_manager
+from core.app_context import get_app_context
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -44,7 +44,7 @@ class TTSNode(BaseNode):
                 if not text:
                     text = context.inputs.get("text") or context.inputs.get("response") or ""
             if not text or not text.strip():
-                await emit.emit_node_update(context.node_id, "completed", "无文本可合成")
+                await emit.emit_node_update(context.node_id, NodeState.COMPLETED, "无文本可合成")
                 return NodeOutput({"stream-audio-out": "", "batch-audio-out": "", "segments": [], "text": ""})
 
             tts = self._build_tts(effective)
@@ -162,28 +162,14 @@ class TTSNode(BaseNode):
 
     @staticmethod
     def _resolve_preset_config(cfg: dict) -> dict:
-        pm = get_tts_preset_manager()
-        try:
-            return pm.get_effective_config(cfg["platform_id"], cfg["model_id"], cfg.get("overrides"))
-        except (ValueError, KeyError) as e:
-            logger.warning(f"TTS preset not found ({e}), falling back to default")
-            data = pm.list_all()
-            platforms = data.get("platforms", [])
-            for p in platforms:
-                models = p.get("models", [])
-                if not models:
-                    continue
-                default_model = next((m for m in models if m.get("is_default")), models[0])
-                if default_model:
-                    return pm.get_effective_config(p["id"], default_model["id"], cfg.get("overrides"))
-            logger.warning("No TTS presets available, falling back to legacy")
-            return TTSNode._resolve_legacy_config(cfg)
+        pm = get_app_context().tts_preset_manager
+        return BaseNode._resolve_preset_with_fallback(cfg, pm, legacy_fn=TTSNode._resolve_legacy_config)
 
     @staticmethod
     def _resolve_legacy_config(cfg: dict) -> dict:
         engine = cfg.get("engine", settings.tts_provider)
         if engine == "edge":
-            default_voice = cfg.get("voice") or "zh-CN-XiaoxiaoNeural"
+            default_voice = cfg.get("voice") or settings.edge_tts_voice
         else:
             default_voice = cfg.get("voice") or settings.minimax_voice_id
         return {
@@ -208,7 +194,7 @@ class TTSNode(BaseNode):
         provider = TTSProvider(effective["provider"])
         if provider == TTSProvider.EDGE:
             tts_config = {
-                "voice": effective.get("voice_id") or "zh-CN-XiaoxiaoNeural",
+                "voice": effective.get("voice_id") or settings.edge_tts_voice,
             }
         else:
             tts_config = {
@@ -231,72 +217,36 @@ class TTSNode(BaseNode):
     # Execute modes
     # ═══════════════════════════════════════════════════════
 
-    async def _execute_streaming(self, context, emit, tts, sentences, text, total, model_name=""):
+    async def _synthesize_all(self, context, emit, tts, sentences, text, total,
+                               model_name="", rich_progress=False):
+        """统一的合成循环：逐句合成 → base64 → 进度通知 → 返回 NodeOutput"""
         segments = []
         all_audio = b""
-
-        for i, sentence in enumerate(sentences):
-            audio_bytes = await tts.synthesize(sentence)
-            all_audio += audio_bytes
-            audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
-            segment = {"text": sentence, "audio_b64": audio_b64, "index": i}
-            segments.append(segment)
-
-            await emit.emit_node_update(
-                context.node_id, "processing",
-                f"语音合成中 ({i+1}/{total})",
-                data={
-                    "segment_index": i,
-                    "segment_text": sentence,
-                    "audio_b64": audio_b64,
-                    "progress": (i + 1) / total if total > 0 else 1,
-                },
-            )
-
-        full_audio_b64 = base64.b64encode(all_audio).decode("ascii")
-
-        await emit.emit_node_update(
-            context.node_id, "completed",
-            f"合成完成 ({total} 句)",
-            data={"audio_b64": full_audio_b64, "segments": segments, "model": model_name},
-        )
-
-        return NodeOutput({
-            "stream-audio-out": full_audio_b64,
-            "batch-audio-out": full_audio_b64,
-            "segments": segments,
-            "text": text,
-            "total_segments": total,
-        })
-
-    async def _execute_batch(self, context, emit, tts, sentences, text, total, model_name=""):
-        segments = []
-        all_audio = b""
-
         for i, sentence in enumerate(sentences):
             audio_bytes = await tts.synthesize(sentence)
             all_audio += audio_bytes
             audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
             segments.append({"text": sentence, "audio_b64": audio_b64, "index": i})
-
-            await emit.emit_node_update(
-                context.node_id, "processing",
-                f"语音合成中 ({i+1}/{total})",
-                progress=(i + 1) / total if total > 0 else 1,
-            )
-
+            if rich_progress:
+                await emit.emit_node_update(context.node_id, NodeState.PROCESSING,
+                    f"语音合成中 ({i+1}/{total})",
+                    data={"segment_index": i, "segment_text": sentence,
+                          "audio_b64": audio_b64, "progress": (i+1)/total if total else 1})
+            else:
+                await emit.emit_node_update(context.node_id, NodeState.PROCESSING,
+                    f"语音合成中 ({i+1}/{total})",
+                    progress=(i+1)/total if total else 1)
         full_audio_b64 = base64.b64encode(all_audio).decode("ascii")
-
-        await emit.emit_node_update(
-            context.node_id, "completed",
+        await emit.emit_node_update(context.node_id, NodeState.COMPLETED,
             f"合成完成 ({total} 句)",
-            data={"audio_b64": full_audio_b64, "segments": segments, "model": model_name},
-        )
-
+            data={"audio_b64": full_audio_b64, "segments": segments, "model": model_name})
         return NodeOutput({
-            "stream-audio-out": full_audio_b64,
-            "batch-audio-out": full_audio_b64,
-            "segments": segments,
-            "text": text,
-            "total_segments": total,
+            "stream-audio-out": full_audio_b64, "batch-audio-out": full_audio_b64,
+            "segments": segments, "text": text, "total_segments": total,
         })
+
+    async def _execute_streaming(self, context, emit, tts, sentences, text, total, model_name=""):
+        return await self._synthesize_all(context, emit, tts, sentences, text, total, model_name, rich_progress=True)
+
+    async def _execute_batch(self, context, emit, tts, sentences, text, total, model_name=""):
+        return await self._synthesize_all(context, emit, tts, sentences, text, total, model_name, rich_progress=False)

@@ -37,7 +37,7 @@ TeamSpeak 语音 → Java Bridge (ts3j 音频捕获)
 ### 一键启动（Windows）
 
 ```bat
-.\start-all.bat     # 构建 Java，启动全部 3 个服务
+.\start-all.bat     # 构建 Java，启动全部 3 个服务（Windows Terminal 多标签页）
 .\stop-all.bat      # 按端口停止全部服务
 ```
 

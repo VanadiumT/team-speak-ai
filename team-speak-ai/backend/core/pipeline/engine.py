@@ -16,10 +16,11 @@ from datetime import datetime
 
 # 导入所有节点类型，确保 @register 装饰器执行
 import core.nodes  # noqa: F401
-from typing import Optional
+from typing import Callable, Optional
 
 from core.pipeline.definition import (
-    PipelineDefinition, NodeDefinition, TriggerConfig, InputMapping
+    PipelineDefinition, NodeDefinition, TriggerConfig, InputMapping,
+    port_input_key, port_output_key,
 )
 from core.pipeline.context import NodeContext, NodeState, NodeOutput, NodeRuntime, _STREAM_END
 from core.pipeline.registry import NodeRegistry
@@ -85,71 +86,17 @@ class PipelineEngine:
     def __init__(self):
         self._definitions: dict[str, PipelineDefinition] = {}
         self._instances: dict[str, PipelineInstance] = {}
-        self._ws_connections: dict[str, set] = {}  # feature_id → {ws, ...}
         self._node_registry = NodeRegistry()
         self._running_flows: set[str] = set()  # 编辑锁
 
-        self._flow_broadcast_fn: dict[str, callable] = {}  # flow_id → async broadcast_fn
+        self._flow_broadcast_fn: dict[str, Callable] = {}  # flow_id → async broadcast_fn
+        self._lock = asyncio.Lock()  # 保护 check-then-act 临界区
+        self._pending_executions: set[tuple[str, str]] = set()  # (execution_id, node_id) 防重复触发
 
     # ── 定义管理 ──
 
-    def load_yaml(self, yaml_path: str):
-        """从 YAML 加载一个 Pipeline 定义"""
-        import yaml
-        with open(yaml_path, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-
-        nodes = []
-        for n in data.get("nodes", []):
-            trigger = None
-            if "trigger" in n:
-                t = n["trigger"]
-                trigger = TriggerConfig(
-                    type=t.get("type", "on_complete"),
-                    source_node=t.get("source_node", ""),
-                    keywords=t.get("keywords", []),
-                )
-            input_mappings = []
-            for m in n.get("input_mappings", []):
-                input_mappings.append(InputMapping(
-                    from_node=m.get("from_node") or m.get("from", ""),
-                    as_field=m.get("as_field") or m.get("as", m.get("from_node") or m.get("from", "")),
-                    source_field=m.get("source_field", ""),
-                    required=m.get("required", True),
-                ))
-
-            nodes.append(NodeDefinition(
-                id=n["id"],
-                type=n["type"],
-                name=n.get("name", n["id"]),
-                config=n.get("config", {}),
-                input_mappings=input_mappings,
-                trigger=trigger,
-                listener=n.get("listener", False),
-            ))
-
-        pd = PipelineDefinition(
-            id=data["id"],
-            name=data["name"],
-            group=data.get("group", ""),
-            icon=data.get("icon", ""),
-            nodes=nodes,
-            skill_prompt=data.get("skill_prompt", ""),
-        )
-        self._definitions[pd.id] = pd
-        logger.info(f"Pipeline loaded: {pd.id} ({pd.name}), {len(nodes)} nodes")
-        return pd
-
-    def load_definitions_from_dir(self, config_dir: str):
-        """加载目录下所有 YAML 定义"""
-        import os
-        import glob
-        for fpath in glob.glob(os.path.join(config_dir, "*.yaml")):
-            self.load_yaml(fpath)
-        logger.info(f"Loaded {len(self._definitions)} pipeline definitions")
-
-    def get_definition(self, feature_id: str) -> Optional[PipelineDefinition]:
-        return self._definitions.get(feature_id)
+    def get_definition(self, flow_id: str) -> Optional[PipelineDefinition]:
+        return self._definitions.get(flow_id)
 
     def get_definitions(self) -> list[dict]:
         """返回给前端的序列化定义列表"""
@@ -188,26 +135,7 @@ class PipelineEngine:
             })
         return result
 
-    # ── WebSocket 订阅管理 ──
-
-    def register_ws(self, feature_id: str, ws):
-        """WebSocket 订阅某个 feature 的事件"""
-        if feature_id not in self._ws_connections:
-            self._ws_connections[feature_id] = set()
-        self._ws_connections[feature_id].add(ws)
-
-    def unregister_ws(self, feature_id: str, ws):
-        """取消订阅"""
-        if feature_id in self._ws_connections:
-            self._ws_connections[feature_id].discard(ws)
-
-    def unregister_ws_all(self, ws):
-        """WebSocket 断开时清理所有订阅"""
-        for feature_id in list(self._ws_connections.keys()):
-            self._ws_connections[feature_id].discard(ws)
-
-    def get_ws_connections(self, feature_id: str) -> set:
-        return self._ws_connections.get(feature_id, set())
+    # ── 广播管理 ──
 
     def register_flow_broadcast_fn(self, flow_id: str, fn):
         """注册 flow 级别的广播函数（由 ws_main 的 _flow_subscribers 使用）"""
@@ -232,28 +160,28 @@ class PipelineEngine:
     def get_instance(self, execution_id: str) -> Optional[PipelineInstance]:
         return self._instances.get(execution_id)
 
-    def list_instances(self, feature_id: str) -> list[PipelineInstance]:
+    def list_instances(self, flow_id: str) -> list[PipelineInstance]:
         return [
             inst for inst in self._instances.values()
-            if inst.pipeline_def.id == feature_id
+            if inst.pipeline_def.id == flow_id
         ]
 
-    def start_pipeline(self, feature_id: str, initial_input: dict = None) -> str:
+    def start_pipeline(self, flow_id: str, initial_input: dict = None) -> str:
         """启动一个新的 Pipeline 执行"""
-        pd = self.get_definition(feature_id)
+        pd = self.get_definition(flow_id)
         if not pd:
-            raise ValueError(f"Unknown pipeline: {feature_id}")
+            raise ValueError(f"Unknown pipeline: {flow_id}")
 
-        execution_id = f"{feature_id}_{uuid.uuid4().hex[:8]}"
+        execution_id = f"{flow_id}_{uuid.uuid4().hex[:8]}"
         instance = PipelineInstance(execution_id, pd)
         self._instances[execution_id] = instance
 
-        logger.info(f"Pipeline started: {feature_id} [{execution_id}]")
+        logger.info(f"Pipeline started: {flow_id} [{execution_id}]")
         log_pipeline_event(PipelineEvent(
             event_type="pipeline_start",
-            pipeline_id=pd.id,
+            flow_id=pd.id,
             execution_id=execution_id,
-            data={"feature_id": feature_id},
+            data={"flow_id": flow_id},
         ))
 
         # 存入 skill_prompt 供 context_build 节点使用
@@ -267,16 +195,19 @@ class PipelineEngine:
 
         return execution_id
 
-    def start_pipeline_from_flow(self, flow_id: str, initial_input: dict = None) -> str:
+    async def start_pipeline_from_flow(self, flow_id: str, initial_input: dict = None) -> str:
         """从 FlowManager 加载流程并启动执行"""
-        from core.flow.manager import get_flow_manager
-        fm = get_flow_manager()
+        async with self._lock:
+            if flow_id in self._running_flows:
+                raise RuntimeError(f"Flow '{flow_id}' is already running. Stop it first.")
+            self._running_flows.add(flow_id)
+
+        from core.app_context import get_app_context
+        fm = get_app_context().flow_manager
         flow = fm.load_flow(flow_id)
 
         pd = self._flowdef_to_pipeline_def(flow)
         self._definitions[flow_id] = pd
-
-        self._running_flows.add(flow_id)
 
         execution_id = self._start(pd, initial_input)
         # 设置信封协议标志在实例级别
@@ -318,9 +249,9 @@ class PipelineEngine:
         logger.info(f"Pipeline started: {pd.id} [{execution_id}]")
         log_pipeline_event(PipelineEvent(
             event_type="pipeline_start",
-            pipeline_id=pd.id,
+            flow_id=pd.id,
             execution_id=execution_id,
-            data={"feature_id": pd.id},
+            data={"flow_id": pd.id},
         ))
 
         instance.accumulated_context["skill_prompt"] = pd.skill_prompt
@@ -386,7 +317,7 @@ class PipelineEngine:
                     task.cancel()
             log_pipeline_event(PipelineEvent(
                 event_type="pipeline_deleted",
-                pipeline_id=instance.pipeline_def.id,
+                flow_id=instance.pipeline_def.id,
                 execution_id=execution_id,
             ))
             # 释放编辑锁
@@ -420,7 +351,7 @@ class PipelineEngine:
                 elif mapping.required:
                     return None  # 调用方负责 fail_node
         return NodeContext(
-            pipeline_id=pd.id, execution_id=instance.execution_id,
+            flow_id=pd.id, execution_id=instance.execution_id,
             node_id=node_def.id, node_type=node_def.type,
             node_config=node_def.config, inputs=inputs,
             accumulated_context=instance.accumulated_context,
@@ -518,7 +449,7 @@ class PipelineEngine:
                 await out_ch.put(_STREAM_END)
                 raise RuntimeError(f"Missing required input for {node_id}")
 
-            await emit.emit_node_update(node_id, "processing", "流式处理中...")
+            await emit.emit_node_update(node_id, NodeState.PROCESSING, "流式处理中...")
 
             try:
                 async for output in nc.execute_stream(ctx, emit):
@@ -542,14 +473,14 @@ class PipelineEngine:
             ctx = self._build_node_context(instance, nd)
             if ctx is None:
                 ctx = NodeContext(
-                    pipeline_id=pd.id, execution_id=instance.execution_id,
+                    flow_id=pd.id, execution_id=instance.execution_id,
                     node_id=node_id, node_type=nd.type,
                     node_config=nd.config, inputs={},
                     accumulated_context=instance.accumulated_context,
                 )
             ctx.stream_input = in_ch
 
-            await emit.emit_node_update(node_id, "processing", "流式处理中...")
+            await emit.emit_node_update(node_id, NodeState.PROCESSING, "流式处理中...")
 
             try:
                 async for output in nc.execute_stream(ctx, emit):
@@ -576,8 +507,9 @@ class PipelineEngine:
                         tg.create_task(_run_producer(node_id, out_ch))
                     else:
                         tg.create_task(_run_consumer(node_id, channels[i - 1], out_ch))
-        except BaseException:
-            pass
+        except* Exception as eg:
+            for exc in eg.exceptions:
+                logger.error(f"Streaming chain error: {exc}")
 
         # 流式链结束后，触发链中所有节点的非流式下游
         for node_id in chain:
@@ -615,12 +547,12 @@ class PipelineEngine:
 
         # 执行
         runtime.status = NodeState.PROCESSING
-        await emit.emit_node_update(node_id, "processing", f"执行中...")
+        await emit.emit_node_update(node_id, NodeState.PROCESSING, f"执行中...")
         await emit.emit_node_log_entry(node_id, "info", f"开始执行: {node_def.name}")
 
         log_pipeline_event(PipelineEvent(
             event_type="node_start",
-            pipeline_id=pd.id,
+            flow_id=pd.id,
             execution_id=execution_id,
             node_id=node_id,
             data={"node_type": node_def.type},
@@ -638,7 +570,7 @@ class PipelineEngine:
                 await emit.emit_node_log_entry(node_id, "success", f"完成: {runtime.summary}")
                 log_pipeline_event(PipelineEvent(
                     event_type="node_complete",
-                    pipeline_id=pd.id,
+                    flow_id=pd.id,
                     execution_id=execution_id,
                     node_id=node_id,
                     data={"summary": runtime.summary},
@@ -683,7 +615,7 @@ class PipelineEngine:
                 runtime.data = {}
 
                 ctx = NodeContext(
-                    pipeline_id=instance.pipeline_def.id,
+                    flow_id=instance.pipeline_def.id,
                     execution_id=execution_id,
                     node_id=node_def.id,
                     node_type=node_def.type,
@@ -694,12 +626,12 @@ class PipelineEngine:
                 emit = EventEmitter(self, instance.pipeline_def.id)
 
                 runtime.status = NodeState.PROCESSING
-                await emit.emit_node_update(node_def.id, "listening", "监听中...")
+                await emit.emit_node_update(node_def.id, NodeState.LISTENING, "监听中...")
                 await emit.emit_node_log_entry(node_def.id, "info", "开始监听...")
 
                 log_pipeline_event(PipelineEvent(
                     event_type="listener_start",
-                    pipeline_id=instance.pipeline_def.id,
+                    flow_id=instance.pipeline_def.id,
                     execution_id=execution_id,
                     node_id=node_def.id,
                 ))
@@ -726,7 +658,7 @@ class PipelineEngine:
                     # 继续下一轮监听
                     log_pipeline_event(PipelineEvent(
                         event_type="listener_cycle",
-                        pipeline_id=instance.pipeline_def.id,
+                        flow_id=instance.pipeline_def.id,
                         execution_id=execution_id,
                         node_id=node_def.id,
                     ))
@@ -735,7 +667,7 @@ class PipelineEngine:
                 except asyncio.CancelledError:
                     log_pipeline_event(PipelineEvent(
                         event_type="listener_cancelled",
-                        pipeline_id=instance.pipeline_def.id,
+                        flow_id=instance.pipeline_def.id,
                         execution_id=execution_id,
                         node_id=node_def.id,
                     ))
@@ -757,37 +689,50 @@ class PipelineEngine:
         规则:
         - 有 trigger → 以 trigger 为准，不等 data
         - 无 trigger → 等所有 data 上游完成才触发一次
+
+        使用 _lock 防止多个完成节点同时触发同一下游节点。
         """
-        pd = instance.pipeline_def
-        triggered = set()
-        logger.info(f"_trigger_downstream: completed={completed_node_id}")
+        async with self._lock:
+            pd = instance.pipeline_def
+            triggered = set()
+            logger.info(f"_trigger_downstream: completed={completed_node_id}")
 
-        def _all_data_ready(nd: NodeDefinition) -> bool:
-            for m in nd.input_mappings:
-                if m.from_node == completed_node_id:
-                    continue  # 刚刚完成的节点，始终视为就绪
-                src_rt = instance.get_runtime(m.from_node)
-                if not src_rt or src_rt.status != NodeState.COMPLETED:
-                    return False
-            return True
+            def _all_data_ready(nd: NodeDefinition) -> bool:
+                for m in nd.input_mappings:
+                    if m.from_node == completed_node_id:
+                        continue  # 刚刚完成的节点，始终视为就绪
+                    src_rt = instance.get_runtime(m.from_node)
+                    if not src_rt or src_rt.status != NodeState.COMPLETED:
+                        return False
+                return True
 
-        for node_def in pd.nodes:
-            if node_def.listener:
-                continue
+            for node_def in pd.nodes:
+                if node_def.listener:
+                    continue
 
-            if node_def.trigger:
-                # 有 trigger：只看 trigger 信号
-                if node_def.trigger.source_node == completed_node_id:
-                    triggered.add(node_def.id)
-            else:
-                # 无 trigger：等全部 data 上游都完成才触发
-                if node_def.input_mappings and _all_data_ready(node_def):
-                    is_source = any(m.from_node == completed_node_id for m in node_def.input_mappings)
-                    if is_source:
+                if node_def.trigger:
+                    # 有 trigger：只看 trigger 信号
+                    if node_def.trigger.source_node == completed_node_id:
                         triggered.add(node_def.id)
-                        logger.info(f"_trigger_downstream: triggering={node_def.id} from {completed_node_id}")
+                else:
+                    # 无 trigger：等全部 data 上游都完成才触发
+                    if node_def.input_mappings and _all_data_ready(node_def):
+                        is_source = any(m.from_node == completed_node_id for m in node_def.input_mappings)
+                        if is_source:
+                            triggered.add(node_def.id)
+                            logger.info(f"_trigger_downstream: triggering={node_def.id} from {completed_node_id}")
 
-        logger.info(f"_trigger_downstream: triggered set={triggered}")
+            # 去重：过滤掉已在执行中的下游节点
+            deduped = set()
+            for nid in triggered:
+                key = (instance.execution_id, nid)
+                if key in self._pending_executions:
+                    logger.info(f"_trigger_downstream: skip {nid} (already pending)")
+                    continue
+                self._pending_executions.add(key)
+                deduped.add(nid)
+
+        logger.info(f"_trigger_downstream: triggered set={deduped}")
         streaming_handled = set()
 
         # 先从完成节点（生产者）开始检测流式链
@@ -796,10 +741,14 @@ class PipelineEngine:
             await self._execute_chain_streaming(instance, chain)
             streaming_handled.update(chain)
 
-        for nid in triggered:
+        for nid in deduped:
             if nid in streaming_handled:
+                self._pending_executions.discard((instance.execution_id, nid))
                 continue
-            await self.execute_node(instance.execution_id, nid)
+            try:
+                await self.execute_node(instance.execution_id, nid)
+            finally:
+                self._pending_executions.discard((instance.execution_id, nid))
 
         # 检查是否所有非监听节点已完成，且所有监听节点已终止
         all_non_listeners_done = all(
@@ -826,7 +775,7 @@ class PipelineEngine:
             await emit.emit_node_error(node_id, error)
         log_pipeline_event(PipelineEvent(
             event_type="node_error",
-            pipeline_id=instance.pipeline_def.id,
+            flow_id=instance.pipeline_def.id,
             execution_id=instance.execution_id,
             node_id=node_id,
             data={"error": error},
@@ -837,19 +786,20 @@ class PipelineEngine:
 
     async def handle_node_action(self, data: dict):
         """处理前端发来的 node_action 消息"""
-        feature_id = data.get("feature_id", "")
+        flow_id = data.get("flow_id", "")
         node_id = data.get("node_id", "")
         action = data.get("action", "")
         payload = data.get("payload", {})
 
-        # 查找或创建 instance
-        instances = self.list_instances(feature_id)
-        if not instances:
-            execution_id = self.start_pipeline(feature_id)
-        else:
-            execution_id = instances[-1].execution_id
+        # 查找或创建 instance（加锁防并发重复创建）
+        async with self._lock:
+            instances = self.list_instances(flow_id)
+            if not instances:
+                execution_id = self.start_pipeline(flow_id)
+            else:
+                execution_id = instances[-1].execution_id
 
-        pd = self.get_definition(feature_id)
+        pd = self.get_definition(flow_id)
         node_def = pd.get_node(node_id) if pd else None
 
         if action == "upload":
@@ -866,47 +816,13 @@ class PipelineEngine:
         elif action == "restart":
             # 重新开始 → 删除旧的 instance，创建新的
             self.delete_instance(execution_id)
-            self.start_pipeline(feature_id)
+            self.start_pipeline(flow_id)
 
         elif action == "input_text":
             # 文本输入
             await self.execute_node(execution_id, node_id, {"text": payload.get("text", "")})
 
 
-def _port_input_key(port_id: str) -> str:
-    KNOWN = {"llm-in": "messages",
-             "stream-text-in": "stream-text", "batch-text-in": "batch-text",
-             "stream-audio-in": "stream-audio", "batch-audio-in": "batch-audio"}
-    if port_id in KNOWN:
-        return KNOWN[port_id]
-    return port_id.replace("-in", "") if port_id.endswith("-in") else port_id
-
-
-def _port_output_key(port_id: str) -> str:
-    KNOWN = {"data-out": "value", "text-out": "text", "img-out": "file", "ocr-out": "text",
-             "line-count": "line_count", "provider": "provider", "trigger-out": None,
-             "ctx-out": "messages",
-             # LLM 流式输出
-             "stream-text-out": "response", "stream-think-out": "reasoning",
-             "stream-raw-out": "raw",
-             # LLM 非流式输出
-             "batch-text-out": "response", "batch-think-out": "reasoning",
-             "batch-raw-out": "raw",
-             # LLM 元数据
-             "meta-token-count": "token_count", "meta-model": "model",
-             # STT 输出
-             "stream-text-out": "text", "batch-text-out": "text",
-             "stt-meta-keyword": "trigger_keyword",
-             "stt-meta-confidence": "confidence",
-             # TTS 输出
-             "stream-audio-out": "stream-audio-out",
-             "batch-audio-out": "batch-audio-out",
-             # TS 输入 / VAD 输出
-             "stream-pcm-out": "audio",
-             "stream-chunk-out": "chunk-audio"}
-    if port_id in KNOWN:
-        return KNOWN[port_id]
-    return port_id.replace("-out", "") if port_id.endswith("-out") else port_id
 
 
 def _sync_connections_to_nodes(pd: PipelineDefinition) -> None:
@@ -923,8 +839,8 @@ def _sync_connections_to_nodes(pd: PipelineDefinition) -> None:
                     source_node=conn.from_node,
                 )
         elif conn.type == "data":
-            as_field = _port_input_key(conn.to_port)
-            source_field = _port_output_key(conn.from_port)
+            as_field = port_input_key(conn.to_port)
+            source_field = port_output_key(conn.from_port)
             existing = next((m for m in target.input_mappings
                            if m.from_node == conn.from_node and m.as_field == as_field), None)
             if existing:

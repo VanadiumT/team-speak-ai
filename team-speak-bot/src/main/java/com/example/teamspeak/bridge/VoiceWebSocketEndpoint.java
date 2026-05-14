@@ -5,7 +5,6 @@ import jakarta.websocket.server.ServerEndpoint;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.nio.ByteBuffer;
 import java.util.concurrent.ConcurrentHashMap;
 
 @ServerEndpoint(value = "/teamspeak/voice")
@@ -17,20 +16,20 @@ public class VoiceWebSocketEndpoint extends Endpoint {
         bridgeMap.put(path, bridge);
     }
 
-    public static void unregisterBridge(String path) {
-        bridgeMap.remove(path);
-    }
-
-    private TeamSpeakVoiceBridge getBridge() {
-        for (TeamSpeakVoiceBridge bridge : bridgeMap.values()) {
-            return bridge;
-        }
+    private TeamSpeakVoiceBridge getBridge(Session session) {
+        if (session == null) return null;
+        // Match by the request path used to open this session
+        String path = session.getRequestURI().getPath();
+        TeamSpeakVoiceBridge bridge = bridgeMap.get(path);
+        if (bridge != null) return bridge;
+        // Fallback: if only one bridge registered, return it
+        if (bridgeMap.size() == 1) return bridgeMap.values().iterator().next();
         return null;
     }
 
     @Override
     public void onOpen(Session session, EndpointConfig config) {
-        TeamSpeakVoiceBridge bridge = getBridge();
+        TeamSpeakVoiceBridge bridge = getBridge(session);
         if (bridge != null) {
             bridge.onWsOpen(session);
         }
@@ -40,15 +39,11 @@ public class VoiceWebSocketEndpoint extends Endpoint {
                 bridge.onWsMessage(msg, session);
             }
         });
-
-        session.addMessageHandler(ByteBuffer.class, buffer -> {
-            log.debug("收到二进制消息: {} bytes", buffer.remaining());
-        });
     }
 
     @Override
     public void onClose(Session session, CloseReason closeReason) {
-        TeamSpeakVoiceBridge bridge = getBridge();
+        TeamSpeakVoiceBridge bridge = getBridge(session);
         if (bridge != null) {
             bridge.onWsClose(session);
         }

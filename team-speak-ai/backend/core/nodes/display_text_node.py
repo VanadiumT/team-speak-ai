@@ -8,7 +8,7 @@ import logging
 import re
 
 from core.nodes.base import BaseNode
-from core.pipeline.context import NodeContext, NodeOutput
+from core.pipeline.context import NodeContext, NodeOutput, NodeState
 from core.pipeline.emitter import EventEmitter
 from core.pipeline.registry import NodeRegistry
 
@@ -19,7 +19,7 @@ _VAR_PATTERN = re.compile(r'\$(param|sys)\.(\w+)')
 
 def _resolve_vars(text: str, context: NodeContext) -> str:
     """Replace $param.key and $sys.key with actual values."""
-    from core.variables.manager import get_sys_var_manager
+    from core.app_context import get_app_context
 
     def replacer(match):
         var_type = match.group(1)
@@ -27,7 +27,7 @@ def _resolve_vars(text: str, context: NodeContext) -> str:
         if var_type == "param":
             return str(context.accumulated_context.get(key, match.group(0)))
         else:
-            svm = get_sys_var_manager()
+            svm = get_app_context().sys_var_manager
             return str(svm.get(key, match.group(0)))
 
     return _VAR_PATTERN.sub(replacer, text)
@@ -40,8 +40,9 @@ class DisplayTextNode(BaseNode):
     node_type = "display_text"
 
     async def execute(self, context: NodeContext, emit: EventEmitter) -> NodeOutput:
-        mode = self.config.get("mode", "passthrough")
-        static_text = self.config.get("text", "")
+        cfg = context.node_config or self.config
+        mode = cfg.get("mode", "passthrough")
+        static_text = cfg.get("text", "")
 
         upstream_text = context.inputs.get("text")
         if mode == "passthrough" and upstream_text is not None:
@@ -49,7 +50,7 @@ class DisplayTextNode(BaseNode):
         else:
             text = _resolve_vars(static_text, context)
 
-        await emit.emit_node_status_changed(context.node_id, "processing")
+        await emit.emit_node_status_changed(context.node_id, NodeState.PROCESSING)
 
         await emit.emit_node_log_entry(
             context.node_id, "info",

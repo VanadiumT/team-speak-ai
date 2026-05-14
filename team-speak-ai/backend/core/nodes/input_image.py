@@ -6,7 +6,7 @@ InputImage 节点 — 接收用户上传的图片
 """
 
 from core.nodes.base import BaseNode
-from core.pipeline.context import NodeContext, NodeOutput
+from core.pipeline.context import NodeContext, NodeOutput, NodeState
 from core.pipeline.emitter import EventEmitter
 from core.pipeline.registry import NodeRegistry
 import logging
@@ -22,7 +22,8 @@ class InputImageNode(BaseNode):
 
     async def execute(self, context: NodeContext, emit: EventEmitter) -> NodeOutput:
         file_input = context.inputs.get("file", {})
-        notify_on_reach = self.config.get("notify_on_reach", True)
+        cfg = context.node_config or self.config
+        notify_on_reach = cfg.get("notify_on_reach", True)
 
         # file_input can be a string (base64 data), a dict with metadata, or empty
         if isinstance(file_input, str):
@@ -71,7 +72,7 @@ class InputImageNode(BaseNode):
             "mime_type": mime_type,
         }
 
-        await emit.emit_node_status_changed(context.node_id, "processing")
+        await emit.emit_node_status_changed(context.node_id, NodeState.PROCESSING)
 
         await emit.emit_node_log_entry(
             context.node_id, "info",

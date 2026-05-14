@@ -21,16 +21,17 @@ class SysVarReadNode(BaseNode):
     node_type = "sys_var_read"
 
     async def execute(self, context: NodeContext, emit: EventEmitter) -> NodeOutput:
-        from core.variables.manager import get_sys_var_manager
+        from core.app_context import get_app_context
 
-        key = self.config.get("key", "")
-        default = self.config.get("default_value", "")
+        cfg = context.node_config or self.config
+        key = cfg.get("key", "")
+        default = cfg.get("default_value", "")
 
         if not key:
             await emit.emit_node_log_entry(context.node_id, "warn", "未配置变量 key")
             return NodeOutput(data={"value": default, "key": ""}, trigger_next=True)
 
-        svm = get_sys_var_manager()
+        svm = get_app_context().sys_var_manager
         value = svm.get(key, default)
 
         await emit.emit_node_log_entry(context.node_id, "info", f"读取系统变量 {key} = {value}")

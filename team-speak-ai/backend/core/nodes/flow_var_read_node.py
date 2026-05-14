@@ -21,8 +21,9 @@ class FlowVarReadNode(BaseNode):
     node_type = "flow_var_read"
 
     async def execute(self, context: NodeContext, emit: EventEmitter) -> NodeOutput:
-        key = self.config.get("key", "")
-        default = self.config.get("default_value", "")
+        cfg = context.node_config or self.config
+        key = cfg.get("key", "")
+        default = cfg.get("default_value", "")
 
         if not key:
             await emit.emit_node_log_entry(context.node_id, "warn", "未配置参数 key")

@@ -96,8 +96,8 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { useEditorStore } from '@/stores/editor.js'
-import { useExecutionStore } from '@/stores/execution.js'
+import { useEditorStore } from '@/stores/editor'
+import { useExecutionStore } from '@/stores/execution'
 import NodeIODataView from '@/components/pipeline/nodes/NodeIODataView.vue'
 import NodeIOMgmt from '@/components/pipeline/nodes/NodeIOMgmt.vue'
 

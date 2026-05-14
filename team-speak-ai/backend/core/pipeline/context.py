@@ -30,7 +30,7 @@ class NodeOutput:
 @dataclass
 class NodeContext:
     """节点执行上下文"""
-    pipeline_id: str
+    flow_id: str
     execution_id: str
     node_id: str
     node_type: str

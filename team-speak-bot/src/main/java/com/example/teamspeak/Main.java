@@ -94,6 +94,18 @@ public class Main {
             // 心跳配置
             config.setHeartbeatIntervalSeconds(Integer.parseInt(props.getProperty("heartbeat.interval-seconds", "30")));
 
+            // 连接配置
+            config.setReconnectDelaySeconds(Integer.parseInt(props.getProperty("connection.reconnect-delay-seconds", "5")));
+            config.setReconnectMaxDelaySeconds(Integer.parseInt(props.getProperty("connection.reconnect-max-delay-seconds", "10")));
+
+            // 调度配置
+            config.setSchedulerPoolSize(Integer.parseInt(props.getProperty("scheduler.pool-size", "3")));
+            config.setDispatchIntervalMs(Integer.parseInt(props.getProperty("scheduler.dispatch-interval-ms", "10")));
+            config.setMaxDispatchPerTick(Integer.parseInt(props.getProperty("scheduler.max-dispatch-per-tick", "20")));
+
+            // Identity 配置
+            config.setIdentityDifficulty(Integer.parseInt(props.getProperty("teamspeak.identity-difficulty", "22")));
+
             log.info("配置文件加载成功");
 
         } catch (IOException e) {

@@ -21,17 +21,21 @@ class SysVarWriteNode(BaseNode):
     node_type = "sys_var_write"
 
     async def execute(self, context: NodeContext, emit: EventEmitter) -> NodeOutput:
-        from core.variables.manager import get_sys_var_manager
+        from core.app_context import get_app_context
 
-        key = self.config.get("key", "")
-        merge_mode = self.config.get("merge_mode", "overwrite")
+        cfg = context.node_config or self.config
+        key = cfg.get("key", "")
+        merge_mode = cfg.get("merge_mode", "overwrite")
 
         if not key:
             await emit.emit_node_log_entry(context.node_id, "warn", "未配置变量 key")
             return NodeOutput(data={"value": None, "key": ""}, trigger_next=True)
 
         value = context.inputs.get("data")
-        svm = get_sys_var_manager()
+        if value is None:
+            await emit.emit_node_log_entry(context.node_id, "warn", f"未收到数据，跳过写入变量 {key}")
+            return NodeOutput(data={"value": None, "key": key}, trigger_next=True)
+        svm = get_app_context().sys_var_manager
         svm.set(key, value, merge_mode)
 
         await emit.emit_node_log_entry(context.node_id, "info", f"写入系统变量 {key} = {value}")

@@ -9,20 +9,7 @@ Pipeline 定义模型
 """
 
 from dataclasses import dataclass, field
-from enum import Enum
 from typing import Optional, Union
-
-
-class NodeType(Enum):
-    """[已废弃] 节点类型枚举 — 不再使用。节点类型由 registry.py 的 _build_metadata() 动态管理。"""
-    INPUT_IMAGE = "input_image"
-    OCR = "ocr"
-    STT_LISTEN = "stt_listen"
-    STT_HISTORY = "stt_history"
-    CONTEXT_BUILD = "context_build"
-    LLM = "llm"
-    TTS = "tts"
-    TS_OUTPUT = "ts_output"
 
 
 # ── 端口与 Tab 元数据 ──────────────────────────────────────────
@@ -178,3 +165,34 @@ class SidebarNode:
     flow_id: Optional[str] = None        # type="flow_ref" 时的 flow ID
     enabled: bool = True                 # type="flow_ref" 时的启用状态
     children: list["SidebarNode"] = field(default_factory=list)
+
+
+# ── 端口 Key 推导（供 engine 和 WS 路由共享） ──────────────────
+
+def port_input_key(port_id: str) -> str:
+    """从输入端口 ID 推导 context.inputs 的 key"""
+    KNOWN = {"llm-in": "messages",
+             "stream-text-in": "stream-text", "batch-text-in": "batch-text",
+             "stream-audio-in": "stream-audio", "batch-audio-in": "batch-audio"}
+    if port_id in KNOWN:
+        return KNOWN[port_id]
+    return port_id.replace("-in", "") if port_id.endswith("-in") else port_id
+
+
+def port_output_key(port_id: str) -> str:
+    """从输出端口 ID 推导 source_field"""
+    KNOWN = {"data-out": "value", "text-out": "text", "img-out": "file", "ocr-out": "text",
+             "line-count": "line_count", "provider": "provider", "trigger-out": None,
+             "ctx-out": "messages",
+             "stream-text-out": "response", "stream-think-out": "reasoning",
+             "stream-raw-out": "raw",
+             "batch-text-out": "response", "batch-think-out": "reasoning",
+             "batch-raw-out": "raw",
+             "meta-token-count": "token_count", "meta-model": "model",
+             "stream-audio-out": "stream-audio-out",
+             "batch-audio-out": "batch-audio-out",
+             "stream-pcm-out": "audio",
+             "stream-chunk-out": "chunk-audio"}
+    if port_id in KNOWN:
+        return KNOWN[port_id]
+    return port_id.replace("-out", "") if port_id.endswith("-out") else port_id

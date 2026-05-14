@@ -3,7 +3,14 @@ package com.example.teamspeak.config;
 import com.github.manevolent.ts3j.enums.CodecType;
 
 /**
- * 桥接服务配置
+ * 桥接服务配置 —— Java 端权威配置源。
+ *
+ * 配置优先级：application.properties → BridgeConfig 默认值。
+ *
+ * 🔗 跨服务对齐要求（此文件中的参数与其他服务必须一致）：
+ *   - wsPort + wsPath → Python config.ts_ws_url 必须指向此地址
+ *   - heartbeatIntervalSeconds → Python config.ts_heartbeat_interval 必须一致
+ *   - connectionTimeoutSeconds → Python ts_reconnect_interval 的参考值
  */
 public class BridgeConfig {
 
@@ -71,6 +78,40 @@ public class BridgeConfig {
      * TeamSpeak 连接超时时间（秒）
      */
     private int connectionTimeoutSeconds = 10;
+
+    /**
+     * 断线重连延迟（秒）—— onDisconnected 触发后的等待时间
+     */
+    private int reconnectDelaySeconds = 5;
+
+    /**
+     * 重连失败后的最大重试延迟（秒）—— reconnectTs3 失败后的等待时间
+     */
+    private int reconnectMaxDelaySeconds = 10;
+
+    // ========== 调度配置 ==========
+
+    /**
+     * 调度线程池大小
+     */
+    private int schedulerPoolSize = 3;
+
+    /**
+     * 语音队列调度间隔（毫秒）—— dispatchVoiceQueue 的执行周期
+     */
+    private int dispatchIntervalMs = 10;
+
+    /**
+     * 每次调度最大发送消息数 —— 防止单次调度耗时过长
+     */
+    private int maxDispatchPerTick = 20;
+
+    // ========== Identity 配置 ==========
+
+    /**
+     * TeamSpeak Identity 生成难度（越大越慢但越唯一）
+     */
+    private int identityDifficulty = 22;
 
     // ========== Getters and Setters ==========
 
@@ -160,5 +201,53 @@ public class BridgeConfig {
 
     public void setConnectionTimeoutSeconds(int connectionTimeoutSeconds) {
         this.connectionTimeoutSeconds = connectionTimeoutSeconds;
+    }
+
+    public int getReconnectDelaySeconds() {
+        return reconnectDelaySeconds;
+    }
+
+    public void setReconnectDelaySeconds(int reconnectDelaySeconds) {
+        this.reconnectDelaySeconds = reconnectDelaySeconds;
+    }
+
+    public int getReconnectMaxDelaySeconds() {
+        return reconnectMaxDelaySeconds;
+    }
+
+    public void setReconnectMaxDelaySeconds(int reconnectMaxDelaySeconds) {
+        this.reconnectMaxDelaySeconds = reconnectMaxDelaySeconds;
+    }
+
+    public int getSchedulerPoolSize() {
+        return schedulerPoolSize;
+    }
+
+    public void setSchedulerPoolSize(int schedulerPoolSize) {
+        this.schedulerPoolSize = schedulerPoolSize;
+    }
+
+    public int getDispatchIntervalMs() {
+        return dispatchIntervalMs;
+    }
+
+    public void setDispatchIntervalMs(int dispatchIntervalMs) {
+        this.dispatchIntervalMs = dispatchIntervalMs;
+    }
+
+    public int getMaxDispatchPerTick() {
+        return maxDispatchPerTick;
+    }
+
+    public void setMaxDispatchPerTick(int maxDispatchPerTick) {
+        this.maxDispatchPerTick = maxDispatchPerTick;
+    }
+
+    public int getIdentityDifficulty() {
+        return identityDifficulty;
+    }
+
+    public void setIdentityDifficulty(int identityDifficulty) {
+        this.identityDifficulty = identityDifficulty;
     }
 }

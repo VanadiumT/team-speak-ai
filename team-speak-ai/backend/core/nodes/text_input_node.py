@@ -10,7 +10,7 @@ import logging
 
 from core.nodes.base import BaseNode
 from core.nodes.display_text_node import _resolve_vars
-from core.pipeline.context import NodeContext, NodeOutput
+from core.pipeline.context import NodeContext, NodeOutput, NodeState
 from core.pipeline.emitter import EventEmitter
 from core.pipeline.registry import NodeRegistry
 
@@ -24,9 +24,10 @@ class TextInputNode(BaseNode):
     node_type = "text_input"
 
     async def execute(self, context: NodeContext, emit: EventEmitter) -> NodeOutput:
-        mode = self.config.get("mode", "static")
-        static_text = self.config.get("text", "")
-        notify_on_reach = self.config.get("notify_on_reach", True)
+        cfg = context.node_config or self.config
+        mode = cfg.get("mode", "static")
+        static_text = cfg.get("text", "")
+        notify_on_reach = cfg.get("notify_on_reach", True)
 
         # User-provided text takes priority (from interactive input or upstream)
         user_text = context.inputs.get("text")
@@ -36,7 +37,7 @@ class TextInputNode(BaseNode):
                 # User has submitted text — process and continue
                 text = str(user_text)
 
-                await emit.emit_node_status_changed(context.node_id, "processing")
+                await emit.emit_node_status_changed(context.node_id, NodeState.PROCESSING)
 
                 await emit.emit_node_log_entry(
                     context.node_id, "info",
@@ -75,7 +76,7 @@ class TextInputNode(BaseNode):
             # Static mode — resolve and output immediately
             text = _resolve_vars(static_text, context)
 
-            await emit.emit_node_status_changed(context.node_id, "processing")
+            await emit.emit_node_status_changed(context.node_id, NodeState.PROCESSING)
 
             await emit.emit_node_log_entry(
                 context.node_id, "info",

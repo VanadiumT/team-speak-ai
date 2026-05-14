@@ -44,8 +44,10 @@ public class WebSocketAudioSource implements Microphone {
      * 队列超时时间（毫秒）
      */
     private static final long POLL_TIMEOUT_MS = 25;
+    private final int queueCapacity;
 
     public WebSocketAudioSource(int queueCapacity) {
+        this.queueCapacity = queueCapacity;
         this.audioQueue = new LinkedBlockingQueue<>(queueCapacity);
     }
 
@@ -130,6 +132,6 @@ public class WebSocketAudioSource implements Microphone {
     }
 
     public int getQueueCapacity() {
-        return audioQueue.remainingCapacity();
+        return queueCapacity;
     }
 }

@@ -19,8 +19,7 @@
 
 <script setup>
 import { ref } from 'vue'
-import { pipelineSocket } from '@/api/pipeline.js'
-import { useEditorStore } from '@/stores/editor.js'
+import { useEditorStore } from '@/stores/editor'
 
 const props = defineProps({
   side: { type: String, required: true },
@@ -111,7 +110,7 @@ function onMouseDown(e) {
     }
   }
 
-  function onUp(ev) {
+  async function onUp(ev) {
     if (dragState === 'tracking') {
       emit('portClick', ev)
     }
@@ -125,6 +124,7 @@ function onMouseDown(e) {
           if (!node.config._port_positions) node.config._port_positions = {}
           node.config._port_positions[props.dataPortId] = { side: props.side, top: finalTop }
         }
+        const { pipelineSocket } = await import('@/api/pipeline')
         pipelineSocket.sendCommand(editorStore.flowId, 'port.move', {
           node_id: props.dataNodeId,
           port_id: props.dataPortId,

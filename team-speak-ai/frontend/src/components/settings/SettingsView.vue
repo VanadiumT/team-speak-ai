@@ -69,7 +69,6 @@ import VadPresetsPanel from './VadPresetsPanel.vue'
 
 const props = defineProps({
   settingsPage: { type: String, default: '' },
-  providerStatus: { type: Object, default: () => ({}) },
 })
 
 const pageTitle = computed(() => ({

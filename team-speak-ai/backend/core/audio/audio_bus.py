@@ -18,8 +18,8 @@ class AudioBus:
     def __init__(self):
         self._queues: dict[str, asyncio.Queue] = {}
 
-    def subscribe(self, listener_id: str, maxsize: int = 100):
-        """订阅音频流，返回 asyncio.Queue"""
+    def subscribe(self, listener_id: str, maxsize: int = 500):
+        """订阅音频流，返回 asyncio.Queue。默认缓冲 500 帧（约 5 秒 @ 10ms/帧）"""
         if listener_id not in self._queues:
             self._queues[listener_id] = asyncio.Queue(maxsize=maxsize)
             logger.debug(f"AudioBus subscriber added: {listener_id}")
@@ -31,17 +31,23 @@ class AudioBus:
         logger.debug(f"AudioBus subscriber removed: {listener_id}")
 
     async def publish(self, audio_data: bytes, sender_id: int = 0):
-        """发布音频数据到所有订阅者"""
+        """发布音频数据到所有订阅者。队列满时丢弃最旧帧并记录警告。"""
         for listener_id, q in list(self._queues.items()):
             try:
                 q.put_nowait({"data": audio_data, "sender_id": sender_id})
             except asyncio.QueueFull:
-                # 队列满时丢弃旧数据
+                dropped = 0
                 try:
                     q.get_nowait()
+                    dropped += 1
                     q.put_nowait({"data": audio_data, "sender_id": sender_id})
                 except asyncio.QueueEmpty:
                     pass
+                if dropped > 0:
+                    logger.warning(
+                        "AudioBus queue full for subscriber '%s' (capacity=%d), dropped %d frame(s)",
+                        listener_id, q.maxsize, dropped,
+                    )
 
     async def get_audio(self, listener_id: str, timeout: float = 0.1) -> Optional[dict]:
         """订阅者获取音频数据"""
