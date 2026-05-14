@@ -5,6 +5,13 @@ import pytest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
+from tests.factories import make_context as _make_context
+from core.variables.manager import SysVarManager
+from core.flow.manager import FlowManager
+from core.notification.manager import NotificationManager
+from core.history.manager import HistoryManager
+from core.app_context import AppContext, set_app_context
+
 
 @pytest.fixture
 def tmp_data_dir(tmp_path):
@@ -14,6 +21,18 @@ def tmp_data_dir(tmp_path):
     defaults_dir = tmp_path / "defaults"
     defaults_dir.mkdir()
     return tmp_path
+
+
+@pytest.fixture
+def tmp_data(tmp_data_dir):
+    """tmp_data 别名 — 大量测试文件使用此名称"""
+    return tmp_data_dir
+
+
+@pytest.fixture
+def sample_flow_data(sample_flow):
+    """sample_flow_data 别名"""
+    return sample_flow
 
 
 @pytest.fixture
@@ -97,3 +116,23 @@ def mock_websocket():
     ws.receive_text = AsyncMock()
     ws.receive_json = AsyncMock()
     return ws
+
+
+@pytest.fixture
+def make_context():
+    """返回 factories.make_context 工厂函数，测试中可传参调用"""
+    return _make_context
+
+
+@pytest.fixture
+def mock_app_context(tmp_data_dir):
+    """创建真实的 AppContext 并注册为全局实例，供节点 get_app_context() 使用"""
+    ctx = AppContext()
+    ctx.data_dir = str(tmp_data_dir)
+    ctx.flow_manager = FlowManager(str(tmp_data_dir))
+    ctx.sys_var_manager = SysVarManager(str(tmp_data_dir))
+    ctx.notification_manager = NotificationManager(str(tmp_data_dir))
+    ctx.history_manager = HistoryManager(str(tmp_data_dir))
+    set_app_context(ctx)
+    yield ctx
+    set_app_context(None)
