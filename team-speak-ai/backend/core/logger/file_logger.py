@@ -2,6 +2,7 @@ import json
 import os
 import sys
 import glob
+import io
 from datetime import datetime, date
 from threading import Lock
 from typing import Optional
@@ -13,14 +14,21 @@ class FileLogger(BaseLogger):
     """JSON Lines 文件日志，按日轮转"""
 
     def __init__(self, log_dir: str = "logs", keep_days: int = 30, min_level: LogLevel = LogLevel.DEBUG):
-        self._log_dir = log_dir
+        self._log_dir = os.path.abspath(log_dir)
         self._keep_days = keep_days
         self._min_level = min_level
         self._lock = Lock()
         self._current_date: Optional[date] = None
-        self._file_handle: Optional[object] = None
-        os.makedirs(log_dir, exist_ok=True)
+        self._file_handle: Optional[io.TextIOWrapper] = None
+        os.makedirs(self._log_dir, exist_ok=True)
         self._cleanup_old_logs()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
 
     def _log_path(self, dt: date) -> str:
         return os.path.join(self._log_dir, f"app-{dt.isoformat()}.jsonl")
@@ -41,11 +49,12 @@ class FileLogger(BaseLogger):
                 file_date = date.fromisoformat(basename[4:-6])
                 if (cutoff - file_date).days > self._keep_days:
                     os.remove(fpath)
-            except (ValueError, OSError):
-                pass
+            except ValueError:
+                pass  # 文件名格式不匹配，跳过
+            except OSError as e:
+                sys.stderr.write(f"[LoggerError] Failed to remove old log {fpath}: {e}\n")
 
     def log(self, entry: LogEntry) -> None:
-        # 级别过滤
         if entry.level < self._min_level:
             return
 

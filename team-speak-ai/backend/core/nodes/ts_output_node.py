@@ -174,8 +174,8 @@ def _chunk_audio_b64(audio_b64: str, max_raw_bytes: int = _MAX_CHUNK_RAW_BYTES) 
 
     try:
         data, sample_rate = sf.read(io.BytesIO(raw))
-    except Exception:
-        logger.warning("Chunk: sf.read failed, fallback to raw split")
+    except Exception as e:
+        logger.warning(f"Chunk: sf.read failed ({e}), fallback to raw split")
         return _fallback_raw_split(audio_b64, max_raw_bytes)
 
     chunk_samples = int(sample_rate * _CHUNK_DURATION_MS / 1000)

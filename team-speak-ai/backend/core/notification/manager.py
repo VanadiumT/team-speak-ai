@@ -87,8 +87,8 @@ class NotificationManager:
                             continue
                         if item["id"] not in read_set:
                             count += 1
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Failed to rebuild unread count for {flow_id}: {e}")
             self._unread_counts[flow_id] = count
 
     def _cleanup_old(self):
@@ -177,8 +177,8 @@ class NotificationManager:
                                 continue
                             item = json.loads(line)
                             self._read_ids[flow_id].add(item["id"])
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"Failed to read notifications for mark_read({flow_id}): {e}")
             self._unread_counts[flow_id] = 0
         self._save_read_state()
         return self._unread_counts.get(flow_id, 0)

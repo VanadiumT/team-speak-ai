@@ -56,8 +56,8 @@ class TeamSpeakWebSocket:
         if self.ws:
             try:
                 await self.ws.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Error closing TeamSpeak WebSocket: {e}")
             self.connected = False
             logger.info("Disconnected from TeamSpeak WebSocket")
 
@@ -222,7 +222,7 @@ async def teamspeak_websocket(websocket: WebSocket):
                             elif msg_type == "HEARTBEAT":
                                 await ts_client.send_heartbeat()
                         except json.JSONDecodeError:
-                            pass
+                            logger.warning("Received malformed JSON from frontend, ignoring")
                     elif "bytes" in message:
                         await ts_client.send_voice(message["bytes"])
         except WebSocketDisconnect:

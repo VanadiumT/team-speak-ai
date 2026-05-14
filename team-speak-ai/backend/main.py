@@ -1,7 +1,9 @@
 import logging
 import sys
 import os
-from fastapi import FastAPI
+import traceback
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
@@ -44,6 +46,16 @@ app.add_middleware(
 
 app.include_router(ws_teamspeak.router)  # /ws/teamspeak — 语音桥接
 app.include_router(ws_main.router)       # /ws — 统一管理端点
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """全局 HTTP 异常处理器 — 防止未捕获异常返回泛型 500"""
+    logger.exception(f"Unhandled exception on {request.method} {request.url.path}")
+    return JSONResponse(
+        status_code=500,
+        content={"error": "INTERNAL_ERROR", "detail": str(exc)},
+    )
 
 
 @app.get("/")

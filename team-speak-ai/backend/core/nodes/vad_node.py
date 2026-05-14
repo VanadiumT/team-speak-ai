@@ -151,6 +151,6 @@ def _resolve_pcm(audio_data) -> bytes:
     if isinstance(audio_data, str):
         try:
             return base64.b64decode(audio_data)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Failed to base64 decode audio data: {e}")
     return b""

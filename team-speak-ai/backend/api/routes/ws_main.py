@@ -104,8 +104,8 @@ async def ws_main(websocket: WebSocket):
                     logger.info(f"WS client heartbeat timeout: {client_id}")
                     try:
                         await websocket.close(code=1001, reason="heartbeat timeout")
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"Failed to close timed-out websocket: {e}")
                     return
         except asyncio.CancelledError:
             pass
@@ -218,7 +218,7 @@ async def ws_main(websocket: WebSocket):
     except WebSocketDisconnect:
         logger.info(f"WS client disconnected: {client_id}")
     except Exception as e:
-        logger.error(f"WS error for client {client_id}: {e}")
+        logger.exception(f"WS error for client {client_id}: {e}")
     finally:
         monitor_task.cancel()
         try:
@@ -368,7 +368,8 @@ async def _broadcast_connection_status(websocket: WebSocket, flow_id: str) -> No
                 "detail": "就绪" if get_app_context().pipeline_engine.active_instance_count == 0 else f"{get_app_context().pipeline_engine.active_instance_count} 实例运行中",
             },
         ]
-    except Exception:
+    except Exception as e:
+        logger.debug(f"Failed to gather service status: {e}")
         services = [
             {"id": "backend", "name": "TeamSpeakAI 后端", "status": "healthy", "detail": "0.1.0"},
         ]
@@ -392,7 +393,8 @@ async def broadcast_connection_status_to_all() -> None:
             {"id": "backend", "name": "TeamSpeakAI 后端", "status": "healthy", "detail": "0.1.0"},
             {"id": "pipeline", "name": "Pipeline", "status": "healthy", "detail": "就绪"},
         ]
-    except Exception:
+    except Exception as e:
+        logger.debug(f"Failed to gather service status for broadcast: {e}")
         services = [
             {"id": "backend", "name": "TeamSpeakAI 后端", "status": "healthy", "detail": "0.1.0"},
         ]
@@ -400,8 +402,8 @@ async def broadcast_connection_status_to_all() -> None:
     for ws in list(_connected_clients.values()):
         try:
             await _send(ws, "_system", "event", "connection.status", {"services": services})
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Failed to broadcast connection status to client: {e}")
 
 
 # ── Flow 订阅管理 ─────────────────────────────────────────────
@@ -432,8 +434,8 @@ async def _broadcast_to_flow(flow_id: str, action: str, params: dict) -> None:
     for ws in list(subs):
         try:
             await _send(ws, flow_id, "event", action, params)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Failed to broadcast {action} to flow {flow_id} subscriber: {e}")
 
 
 def _register_engine_broadcast():
@@ -459,8 +461,8 @@ async def _push_history_state(websocket: WebSocket, flow_id: str) -> None:
         hm = get_app_context().history_manager
         state = hm.history_state(flow_id)
         await _send(websocket, flow_id, "event", "history.state", state)
-    except RuntimeError:
-        pass
+    except RuntimeError as e:
+        logger.debug(f"History manager unavailable: {e}")
 
 
 # ── 侧栏工具 ──────────────────────────────────────────────────

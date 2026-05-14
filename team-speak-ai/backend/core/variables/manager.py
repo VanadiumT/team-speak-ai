@@ -25,7 +25,8 @@ class SysVarManager:
             try:
                 with open(self._file, "r", encoding="utf-8") as f:
                     self._data = json.load(f)
-            except Exception:
+            except Exception as e:
+                logger.error(f"Failed to load {self._file}, resetting to empty: {e}")
                 self._data = {}
 
     def _save(self):

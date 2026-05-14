@@ -7,6 +7,7 @@ from core.logger.base import BaseLogger, LogEntry, LogLevel, PipelineEvent
 from core.logger.context import get_trace_id
 
 _logger: Optional[BaseLogger] = None
+_installed_handler: Optional[logging.Handler] = None
 
 
 class TraceIdFilter(logging.Filter):
@@ -35,18 +36,34 @@ class LoggingHandler(logging.Handler):
                 extra={"trace_id": get_trace_id()},
             )
             _logger.log(entry)
+        except KeyError:
+            # levelname 不在 LogLevel 枚举中（如 "WARN"），降级为 WARNING
+            try:
+                entry = LogEntry(
+                    timestamp=datetime.fromtimestamp(record.created),
+                    level=LogLevel.WARNING,
+                    module_name=record.name,
+                    message=record.getMessage(),
+                    extra={"trace_id": get_trace_id()},
+                )
+                _logger.log(entry)
+            except Exception:
+                self.handleError(record)
         except Exception:
             self.handleError(record)
 
 
 def install_logger(logger_instance: BaseLogger) -> None:
-    """安装全局 Logger，同时将 LoggingHandler 注册到 root logger"""
-    global _logger
+    """安装全局 Logger，同时将 LoggingHandler 注册到 root logger（防重复注册）"""
+    global _logger, _installed_handler
     _logger = logger_instance
 
     root = logging.getLogger()
-    handler = LoggingHandler()
-    root.addHandler(handler)
+    # 移除旧 handler 防止重复写入
+    if _installed_handler is not None:
+        root.removeHandler(_installed_handler)
+    _installed_handler = LoggingHandler()
+    root.addHandler(_installed_handler)
 
 
 def log_pipeline_event(event: PipelineEvent) -> None:
@@ -55,16 +72,20 @@ def log_pipeline_event(event: PipelineEvent) -> None:
     if _logger is not None:
         try:
             _logger.log_event(event)
-        except Exception:
-            pass
+        except Exception as e:
+            sys.stderr.write(f"[LoggerError] Failed to log pipeline event: {e}\n")
 
 
 def close_logger() -> None:
     """关闭全局 Logger"""
-    global _logger
+    global _logger, _installed_handler
     if _logger is not None:
         try:
             _logger.close()
-        except Exception:
-            pass
+        except Exception as e:
+            sys.stderr.write(f"[LoggerError] Failed to close logger: {e}\n")
         _logger = None
+    # 清理 root logger 上的 handler
+    if _installed_handler is not None:
+        logging.getLogger().removeHandler(_installed_handler)
+        _installed_handler = None

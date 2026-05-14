@@ -1,5 +1,6 @@
 import io
 import asyncio
+import logging
 import tempfile
 import os
 import wave
@@ -11,6 +12,8 @@ import soundfile as sf
 from funasr import AutoModel
 from funasr.utils.postprocess_utils import rich_transcription_postprocess
 from core.stt.base import BaseSTT
+
+logger = logging.getLogger(__name__)
 
 
 # 全局线程池，避免阻塞事件循环
@@ -86,7 +89,7 @@ class SenseVoiceSTT(BaseSTT):
             return audio_int16.tobytes()
 
         except Exception as e:
-            # 如果处理失败，返回原始数据
+            logger.warning(f"Audio preprocessing failed, returning raw data: {e}")
             return audio_data
 
     def _write_wav(self, filepath: str, audio_data: bytes, sample_rate: int):

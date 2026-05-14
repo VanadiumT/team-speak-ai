@@ -46,7 +46,8 @@ class FlowManager:
         try:
             with open(self._groups_file, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except Exception:
+        except Exception as e:
+            logger.error(f"Failed to load groups from {self._groups_file}: {e}")
             return []
 
     def _save_groups(self, groups: list[str]) -> None:
@@ -308,8 +309,8 @@ class FlowManager:
                             data["group"] = flow.group[len(parent_prefix):]
                         zf.writestr(f"{flow.id}.json",
                                     json.dumps(data, ensure_ascii=False, indent=2))
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"Failed to export flow {filepath.stem} in group zip: {e}")
         return buf.getvalue()
 
     def export_all_zip(self) -> bytes:
@@ -325,8 +326,8 @@ class FlowManager:
                     data = self._serialize_flow(flow)
                     zf.writestr(f"{flow.id}.json",
                                 json.dumps(data, ensure_ascii=False, indent=2))
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"Failed to export flow {filepath.stem} in all zip: {e}")
         return buf.getvalue()
 
     async def import_group_zip(self, zip_data: bytes, target_group: str = "",

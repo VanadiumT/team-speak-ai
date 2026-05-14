@@ -55,8 +55,8 @@ async def handle_node_create(websocket: WebSocket, flow_id: str, msg_id: str,
         await hm.record_operation(flow_id, "node.create",
                             forward={"node_id": node_id, "node_type": node_type, "position": position},
                             reverse={"node_id": node_id})
-    except RuntimeError:
-        pass
+    except RuntimeError as e:
+        logger.debug(f"History manager unavailable: {e}")
 
     await _send_ack(websocket, flow_id, msg_id)
     node_data = fm._serialize_flow(fm.load_flow(flow_id))["nodes"][-1]
@@ -83,8 +83,8 @@ async def handle_node_delete(websocket: WebSocket, flow_id: str, msg_id: str,
         await hm.record_operation(flow_id, "node.delete",
                             forward={"node_id": node_id},
                             reverse={"node": saved_node})
-    except RuntimeError:
-        pass
+    except RuntimeError as e:
+        logger.debug(f"History manager unavailable: {e}")
 
     await _send_ack(websocket, flow_id, msg_id)
     await _get_broadcast_to_flow()(flow_id, "node.deleted", {"node_id": node_id})
@@ -110,8 +110,8 @@ async def handle_node_move(websocket: WebSocket, flow_id: str, msg_id: str,
         await hm.record_operation(flow_id, "node.move",
                             forward={"node_id": node_id, "position": pos},
                             reverse={"node_id": node_id, "position": old_pos})
-    except RuntimeError:
-        pass
+    except RuntimeError as e:
+        logger.debug(f"History manager unavailable: {e}")
 
     await _send_ack(websocket, flow_id, msg_id)
     await _get_broadcast_to_flow()(flow_id, "node.moved", {
@@ -139,8 +139,8 @@ async def handle_node_update_config(websocket: WebSocket, flow_id: str, msg_id: 
         await hm.record_operation(flow_id, "node.update_config",
                             forward={"node_id": node_id, "config": new_config},
                             reverse={"node_id": node_id, "config": old_config})
-    except RuntimeError:
-        pass
+    except RuntimeError as e:
+        logger.debug(f"History manager unavailable: {e}")
 
     await _send_ack(websocket, flow_id, msg_id)
     await _get_broadcast_to_flow()(flow_id, "node.config_updated", {
@@ -169,8 +169,8 @@ async def handle_node_rename(websocket: WebSocket, flow_id: str, msg_id: str,
         await hm.record_operation(flow_id, "node.rename",
                             forward={"node_id": node_id, "name": new_name},
                             reverse={"node_id": node_id, "name": old_name})
-    except RuntimeError:
-        pass
+    except RuntimeError as e:
+        logger.debug(f"History manager unavailable: {e}")
 
     await _send_ack(websocket, flow_id, msg_id)
     await _send(websocket, flow_id, "event", "node.renamed", {
@@ -268,8 +268,8 @@ async def handle_connection_create(websocket: WebSocket, flow_id: str, msg_id: s
         await hm.record_operation(flow_id, "connection.create",
                             forward={"connection_id": conn_id},
                             reverse={"connection_id": conn_id})
-    except RuntimeError:
-        pass
+    except RuntimeError as e:
+        logger.debug(f"History manager unavailable: {e}")
 
     await _send_ack(websocket, flow_id, msg_id)
     conn_data = fm._serialize_flow(fm.load_flow(flow_id))["connections"][-1]
@@ -310,8 +310,8 @@ async def handle_connection_delete(websocket: WebSocket, flow_id: str, msg_id: s
         await hm.record_operation(flow_id, "connection.delete",
                             forward={"connection_id": conn_id},
                             reverse={"connection": saved_conn})
-    except RuntimeError:
-        pass
+    except RuntimeError as e:
+        logger.debug(f"History manager unavailable: {e}")
 
     await _send_ack(websocket, flow_id, msg_id)
     await _get_broadcast_to_flow()(flow_id, "connection.deleted", {"connection_id": conn_id})
