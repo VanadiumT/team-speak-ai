@@ -22,6 +22,7 @@ class STTHistoryNode(BaseNode):
     node_type = "stt_history"
 
     async def execute(self, context: NodeContext, emit: EventEmitter) -> NodeOutput:
+        self.node_id = context.node_id
         max_entries = context.node_config.get("max_entries", 20)
         keywords = context.node_config.get("keywords", [])
 
@@ -49,6 +50,7 @@ class STTHistoryNode(BaseNode):
 
         combined = "\n".join(history)
 
+        self._log_info(f"历史记录: {len(history)} 条，共 {len(combined)} 字符")
         await emit.emit_node_log_entry(
             context.node_id, "info",
             f"历史记录: {len(history)} 条，共 {len(combined)} 字符",
@@ -58,7 +60,7 @@ class STTHistoryNode(BaseNode):
         if keywords:
             for kw in keywords:
                 if kw in combined:
-                    logger.info(f"STT History [{context.node_id}]: keyword '{kw}' detected")
+                    self._log_info(f"keyword '{kw}' detected")
                     await emit.emit_node_update(
                         context.node_id,
                         "completed",
@@ -92,6 +94,7 @@ class STTHistoryNode(BaseNode):
             })
 
         # 无关键词配置，默认触发
+        self._log_info(f"已收集 {len(history)} 条历史记录")
         await emit.emit_node_update(
             context.node_id,
             "completed",

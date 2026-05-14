@@ -25,15 +25,19 @@ class TSInputNode(BaseNode):
     node_type = "ts_input"
 
     async def execute(self, context: NodeContext, emit: EventEmitter) -> NodeOutput:
+        self.node_id = context.node_id
         from api.routes.ws_teamspeak import ts_client
 
         listener_id = f"ts_input_{context.execution_id}_{context.node_id}"
-        audio_bus.subscribe(listener_id)
+        try:
+            audio_bus.subscribe(listener_id)
+        except Exception as e:
+            raise self._wrap_error("AudioBus subscribe failed", e) from e
 
         loopback = context.node_config.get("loopback", False)
         if loopback:
             ts_client.loopback_enabled = True
-            logger.info(f"TSInput loopback enabled by {context.node_id}")
+            self._log_info("loopback enabled")
 
         accumulated_frames = []
         total_bytes = 0
@@ -43,6 +47,7 @@ class TSInputNode(BaseNode):
         has_any_audio = False
 
         try:
+            self._log_info("接收 TS 音频流..." + (" (含回环监听)" if loopback else ""))
             await emit.emit_node_update(
                 context.node_id,
                 "listening",
@@ -78,13 +83,14 @@ class TSInputNode(BaseNode):
                     break
 
         except asyncio.CancelledError:
-            logger.info(f"TSInput cancelled: {context.node_id}")
+            self._log_info("cancelled")
             audio_bus.unsubscribe(listener_id)
             if loopback:
                 ts_client.loopback_enabled = False
-                logger.info(f"TSInput loopback disabled by {context.node_id}")
+                self._log_info("loopback disabled")
             raise
 
+        self._log_info(f"已接收 {total_bytes / 1024:.1f} KB 音频")
         await emit.emit_node_update(
             context.node_id,
             "completed",
@@ -100,7 +106,7 @@ class TSInputNode(BaseNode):
                 d["data"] = base64.b64encode(d["data"]).decode("ascii")
             safe_frames.append(d)
 
-        logger.info(f"TSInput returning: frames={len(safe_frames)}, total_bytes={total_bytes}")
+        self._log_info(f"returning: frames={len(safe_frames)}, total_bytes={total_bytes}")
         return NodeOutput({
             "audio": safe_frames,
             "total_bytes": total_bytes,

@@ -40,6 +40,7 @@ class DisplayTextNode(BaseNode):
     node_type = "display_text"
 
     async def execute(self, context: NodeContext, emit: EventEmitter) -> NodeOutput:
+        self.node_id = context.node_id
         cfg = context.node_config or self.config
         mode = cfg.get("mode", "passthrough")
         static_text = cfg.get("text", "")
@@ -50,6 +51,7 @@ class DisplayTextNode(BaseNode):
         else:
             text = _resolve_vars(static_text, context)
 
+        self._log_info(f"文本输出: {text[:60]}{'...' if len(text) > 60 else ''}")
         await emit.emit_node_status_changed(context.node_id, NodeState.PROCESSING)
 
         await emit.emit_node_log_entry(

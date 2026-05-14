@@ -6,13 +6,25 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
 from api.routes import ws_teamspeak, ws_main
+from core.logger.handler import TraceIdFilter
+
+# 创建自定义 Handler 并注入 TraceIdFilter
+_trace_filter = TraceIdFilter()
+
+_stream_handler = logging.StreamHandler(sys.stdout)
+_stream_handler.addFilter(_trace_filter)
 
 logging.basicConfig(
     level=logging.DEBUG if settings.debug else logging.INFO,
-    format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+    format="%(asctime)s | %(levelname)-8s | %(trace_id)s | %(name)s | %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
-    handlers=[logging.StreamHandler(sys.stdout)]
+    handlers=[_stream_handler],
+    force=True,
 )
+
+# 同时为 uvicorn 的 logger 注入 filter
+for name in ("uvicorn", "uvicorn.access", "uvicorn.error"):
+    logging.getLogger(name).addFilter(_trace_filter)
 
 logger = logging.getLogger(__name__)
 
@@ -81,13 +93,18 @@ async def startup_event():
     # 初始化结构化日志模块
     from core.logger.factory import create_logger, LoggerProvider
     from core.logger.handler import install_logger
+    from core.logger.base import LogLevel
 
     log_instance = create_logger(
         LoggerProvider(settings.log_provider),
-        {"log_dir": settings.log_dir, "keep_days": settings.log_keep_days},
+        {
+            "log_dir": settings.log_dir,
+            "keep_days": settings.log_keep_days,
+            "min_level": LogLevel[settings.log_level],
+        },
     )
     install_logger(log_instance)
-    logger.info(f"Logger initialized: {settings.log_provider} -> {settings.log_dir}")
+    logger.info(f"Logger initialized: {settings.log_provider} -> {settings.log_dir} (level={settings.log_level})")
 
     # 一次性创建所有应用服务（替代原来的 12 次 init_xxx 调用）
     from core.app_context import AppContext, set_app_context

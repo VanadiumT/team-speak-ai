@@ -20,6 +20,7 @@ class ContextBuildNode(BaseNode):
     node_type = "context_build"
 
     async def execute(self, context: NodeContext, emit: EventEmitter) -> NodeOutput:
+        self.node_id = context.node_id
         # 1. System prompt: 仅当 system-in 有输入时才添加
         messages = []
         system_text = context.inputs.get("system", "")
@@ -61,6 +62,7 @@ class ContextBuildNode(BaseNode):
         user_message = "\n\n".join(user_parts) if user_parts else "请介绍一下你自己"
         messages.append({"role": "user", "content": user_message})
 
+        self._log_info(f"上下文已构建: {len(user_parts)}个片段, {total_chars}字符, {len(messages)}条消息")
         await emit.emit_node_update(
             context.node_id,
             "completed",

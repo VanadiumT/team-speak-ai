@@ -1,6 +1,7 @@
 from enum import Enum
 from core.llm.base import BaseLLM
 from core.llm.openai_llm import OpenAILLM
+from core.exceptions import ProviderConnectionError
 
 
 class LLMProvider(Enum):
@@ -10,4 +11,4 @@ class LLMProvider(Enum):
 def create_llm(provider: LLMProvider, config: dict) -> BaseLLM:
     if provider == LLMProvider.OPENAI:
         return OpenAILLM(**config)
-    raise ValueError(f"Unknown LLM provider: {provider}")
+    raise ProviderConnectionError(provider=str(provider), detail=f"Unknown LLM provider: {provider}")

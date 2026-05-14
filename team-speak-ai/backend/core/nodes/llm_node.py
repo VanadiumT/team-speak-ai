@@ -30,58 +30,53 @@ class LLMNode(BaseNode):
     node_type = "llm"
 
     async def execute(self, context: NodeContext, emit: EventEmitter) -> NodeOutput:
+        self.node_id = context.node_id
         cfg = context.node_config
 
-        try:
-            # ── 检测新旧配置格式 ──
-            if cfg.get("platform_id") and cfg.get("model_id"):
-                effective = self._resolve_preset_config(cfg)
-            else:
-                effective = self._resolve_legacy_config(cfg)
+        # ── 检测新旧配置格式 ──
+        if cfg.get("platform_id") and cfg.get("model_id"):
+            effective = self._resolve_preset_config(cfg)
+        else:
+            effective = self._resolve_legacy_config(cfg)
 
-            # ── 构建 messages（兼容 as_field 为 "llm" 或 "messages" 的映射） ──
-            messages = context.inputs.get("llm") or context.inputs.get("messages") or []
-            if not messages:
-                messages = [{"role": "user", "content": _DEFAULT_USER_MSG}]
+        # ── 构建 messages（兼容 as_field 为 "llm" 或 "messages" 的映射） ──
+        messages = context.inputs.get("llm") or context.inputs.get("messages") or []
+        if not messages:
+            messages = [{"role": "user", "content": _DEFAULT_USER_MSG}]
 
-            images = context.inputs.get("image", []) or []
-            if effective.get("vision") and images:
-                messages = self._inject_images(messages, images, effective)
+        images = context.inputs.get("image", []) or []
+        if effective.get("vision") and images:
+            messages = self._inject_images(messages, images, effective)
 
-            # ── 构造 LLM 实例 ──
-            llm = self._build_llm(effective)
+        # ── 构造 LLM 实例 ──
+        llm = self._build_llm(effective)
 
-            # ── 思考模式 ──
-            thinking_mode = effective.get("thinking_mode", "off")
-            yield_reasoning = thinking_mode == "separate"
+        # ── 思考模式 ──
+        thinking_mode = effective.get("thinking_mode", "off")
+        yield_reasoning = thinking_mode == "separate"
 
-            await emit.emit_node_update(
-                context.node_id, "processing", "AI 思考中...",
-                data={"mode": "thinking"},
+        self._log_info("AI 思考中...")
+        await emit.emit_node_update(
+            context.node_id, "processing", "AI 思考中...",
+            data={"mode": "thinking"},
+        )
+
+        model_name = effective.get("model", "")
+
+        if effective.get("streaming", True):
+            return await self._execute_streaming(
+                context, emit, llm, messages,
+                yield_reasoning=yield_reasoning,
+                thinking_mode=thinking_mode,
+                model_name=model_name,
             )
-
-            model_name = effective.get("model", "")
-
-            if effective.get("streaming", True):
-                return await self._execute_streaming(
-                    context, emit, llm, messages,
-                    yield_reasoning=yield_reasoning,
-                    thinking_mode=thinking_mode,
-                    model_name=model_name,
-                )
-            else:
-                return await self._execute_batch(
-                    context, emit, llm, messages,
-                    yield_reasoning=yield_reasoning,
-                    thinking_mode=thinking_mode,
-                    model_name=model_name,
-                )
-
-        except Exception as e:
-            logger.exception(f"LLM error")
-            await emit.emit_node_error(context.node_id, str(e))
-            return NodeOutput({"response": f"错误: {str(e)}", "reasoning": ""},
-                              trigger_next=False)
+        else:
+            return await self._execute_batch(
+                context, emit, llm, messages,
+                yield_reasoning=yield_reasoning,
+                thinking_mode=thinking_mode,
+                model_name=model_name,
+            )
 
     async def execute_stream(self, context: NodeContext, emit: EventEmitter):
         """流式大模型生成，逐 chunk yield NodeOutput(final=False)，最后 yield NodeOutput(final=True)"""
@@ -142,9 +137,9 @@ class LLMNode(BaseNode):
                 )
                 yield NodeOutput(chunk_data, final=False)
 
-        except Exception:
-            logger.exception("LLM streaming error")
-            raise
+        except Exception as e:
+            self._log_exception("LLM streaming error")
+            raise self._wrap_error("LLM streaming error", e) from e
 
         # 构造最终输出（复用 _finish 逻辑）
         clean_content, inline_think = self._parse_think(full_content)

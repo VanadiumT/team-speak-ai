@@ -29,44 +29,40 @@ class TTSNode(BaseNode):
         return [p.strip() for p in parts if p.strip()]
 
     async def execute(self, context: NodeContext, emit: EventEmitter) -> NodeOutput:
+        self.node_id = context.node_id
         cfg = context.node_config
 
-        try:
-            # ── 检测新旧配置格式 ──
-            if cfg.get("platform_id") and cfg.get("model_id"):
-                effective = self._resolve_preset_config(cfg)
-            else:
-                effective = self._resolve_legacy_config(cfg)
+        # ── 检测新旧配置格式 ──
+        if cfg.get("platform_id") and cfg.get("model_id"):
+            effective = self._resolve_preset_config(cfg)
+        else:
+            effective = self._resolve_legacy_config(cfg)
 
-            # ── 获取输入文本 ──
-            text = context.inputs.get("stream-text") or context.inputs.get("batch-text") or ""
-            if not text or not text.strip():
-                if not text:
-                    text = context.inputs.get("text") or context.inputs.get("response") or ""
-            if not text or not text.strip():
-                await emit.emit_node_update(context.node_id, NodeState.COMPLETED, "无文本可合成")
-                return NodeOutput({"stream-audio-out": "", "batch-audio-out": "", "segments": [], "text": ""})
+        # ── 获取输入文本 ──
+        text = context.inputs.get("stream-text") or context.inputs.get("batch-text") or ""
+        if not text or not text.strip():
+            if not text:
+                text = context.inputs.get("text") or context.inputs.get("response") or ""
+        if not text or not text.strip():
+            self._log_info("无文本可合成")
+            await emit.emit_node_update(context.node_id, NodeState.COMPLETED, "无文本可合成")
+            return NodeOutput({"stream-audio-out": "", "batch-audio-out": "", "segments": [], "text": ""})
 
-            tts = self._build_tts(effective)
-            sentences = self._split_sentences(text)
-            model_name = effective.get("model", "")
+        tts = self._build_tts(effective)
+        sentences = self._split_sentences(text)
+        model_name = effective.get("model", "")
 
-            await emit.emit_node_update(
-                context.node_id, "processing",
-                f"语音合成中 (0/{len(sentences)})",
-                data={"mode": "synthesizing", "total": len(sentences), "model": model_name},
-            )
+        self._log_info(f"语音合成中 (0/{len(sentences)})")
+        await emit.emit_node_update(
+            context.node_id, "processing",
+            f"语音合成中 (0/{len(sentences)})",
+            data={"mode": "synthesizing", "total": len(sentences), "model": model_name},
+        )
 
-            if effective.get("streaming", True):
-                return await self._execute_streaming(context, emit, tts, sentences, text, len(sentences), model_name)
-            else:
-                return await self._execute_batch(context, emit, tts, sentences, text, len(sentences), model_name)
-
-        except Exception as e:
-            logger.exception("TTS error")
-            await emit.emit_node_error(context.node_id, str(e))
-            return NodeOutput({"stream-audio-out": "", "batch-audio-out": "", "segments": [], "text": ""},
-                              trigger_next=False)
+        if effective.get("streaming", True):
+            return await self._execute_streaming(context, emit, tts, sentences, text, len(sentences), model_name)
+        else:
+            return await self._execute_batch(context, emit, tts, sentences, text, len(sentences), model_name)
 
     async def execute_stream(self, context: NodeContext, emit: EventEmitter):
         """逐块接收 LLM 文本（从 context._stream_input），缓冲到句子边界后合成语音，逐段 yield"""
@@ -139,9 +135,9 @@ class TTSNode(BaseNode):
                                           "audio_b64": audio_b64}, final=False)
                         seg_idx += 1
 
-        except Exception:
-            logger.exception("TTS streaming error")
-            raise
+        except Exception as e:
+            self._log_exception("TTS streaming error")
+            raise self._wrap_error("TTS streaming error", e) from e
 
         # 最终输出
         full_audio_b64 = base64.b64encode(all_audio).decode("ascii") if all_audio else ""

@@ -21,6 +21,7 @@ class StartNode(BaseNode):
     node_type = "start"
 
     async def execute(self, context: NodeContext, emit: EventEmitter) -> NodeOutput:
+        self.node_id = context.node_id
         await emit.emit_node_status_changed(context.node_id, NodeState.PROCESSING)
 
         cfg = context.node_config or self.config
@@ -35,6 +36,7 @@ class StartNode(BaseNode):
                 context.accumulated_context[key] = value
 
         param_count = len(init_params)
+        self._log_info(f"流程启动，写入 {param_count} 个参数")
         await emit.emit_node_log_entry(
             context.node_id, "info",
             f"流程启动，写入 {param_count} 个参数" + (f": {list(init_params.keys())}" if init_params else ""),

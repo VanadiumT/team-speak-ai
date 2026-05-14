@@ -54,6 +54,7 @@ class OCRNode(BaseNode):
     node_type = "ocr"
 
     async def execute(self, context: NodeContext, emit: EventEmitter) -> NodeOutput:
+        self.node_id = context.node_id
         cfg = context.node_config
 
         # ── 解析配置 ──
@@ -63,7 +64,7 @@ class OCRNode(BaseNode):
             else:
                 effective = self._resolve_legacy_config(cfg)
         except Exception as e:
-            logger.warning(f"OCR config resolution failed: {e}, falling back to legacy")
+            self._log_warning(f"OCR config resolution failed: {e}, falling back to legacy")
             effective = self._resolve_legacy_config(cfg)
 
         provider = effective["provider"]
@@ -80,13 +81,16 @@ class OCRNode(BaseNode):
         elif isinstance(file_input, str):
             b64 = file_input
         else:
+            self._log_error("未收到图片数据")
             await emit.emit_node_update(context.node_id, NodeState.ERROR, "未收到图片数据")
             return NodeOutput({"text": "", "error": "no_image_data"})
 
         if not b64:
+            self._log_error("图片数据为空")
             await emit.emit_node_update(context.node_id, NodeState.ERROR, "图片数据为空")
             return NodeOutput({"text": "", "error": "empty_image_data"})
 
+        self._log_info(f"[{label}] 识别图片文字...")
         await emit.emit_node_update(
             context.node_id, "processing",
             f"[{label}] 识别图片文字...",
@@ -96,19 +100,18 @@ class OCRNode(BaseNode):
             img_bytes = base64.b64decode(b64)
             img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
         except Exception as e:
-            logger.exception("Failed to decode image")
-            await emit.emit_node_update(context.node_id, NodeState.ERROR, f"图片解码失败: {e}")
-            return NodeOutput({"text": "", "error": str(e)})
+            self._log_exception("Failed to decode image")
+            raise self._wrap_error("图片解码失败", e) from e
 
         try:
             img_array = np.array(img)
             loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(None, _run_ocr, img_array, provider, ocr_config)
         except Exception as e:
-            logger.exception("OCR recognition failed")
-            await emit.emit_node_update(context.node_id, NodeState.ERROR, f"OCR 识别失败: {e}")
-            return NodeOutput({"text": "", "error": str(e)})
+            self._log_exception("OCR recognition failed")
+            raise self._wrap_error("OCR 识别失败", e) from e
 
+        self._log_info(f"[{result.provider}] 识别到 {len(result.lines)} 行，{len(result.text)} 字符")
         await emit.emit_node_log_entry(
             context.node_id, "success",
             f"[{result.provider}] 识别到 {len(result.lines)} 行，{len(result.text)} 字符",

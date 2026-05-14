@@ -1,19 +1,21 @@
 import json
 import os
+import sys
 import glob
 from datetime import datetime, date
 from threading import Lock
 from typing import Optional
 
-from core.logger.base import BaseLogger, LogEntry, PipelineEvent
+from core.logger.base import BaseLogger, LogEntry, LogLevel, PipelineEvent
 
 
 class FileLogger(BaseLogger):
     """JSON Lines 文件日志，按日轮转"""
 
-    def __init__(self, log_dir: str = "logs", keep_days: int = 30):
+    def __init__(self, log_dir: str = "logs", keep_days: int = 30, min_level: LogLevel = LogLevel.DEBUG):
         self._log_dir = log_dir
         self._keep_days = keep_days
+        self._min_level = min_level
         self._lock = Lock()
         self._current_date: Optional[date] = None
         self._file_handle: Optional[object] = None
@@ -43,11 +45,15 @@ class FileLogger(BaseLogger):
                 pass
 
     def log(self, entry: LogEntry) -> None:
+        # 级别过滤
+        if entry.level < self._min_level:
+            return
+
         dt = entry.timestamp.date()
         payload = {
             "type": "log",
             "timestamp": entry.timestamp.isoformat(),
-            "level": entry.level.value,
+            "level": entry.level.name,
             "module": entry.module_name,
             "message": entry.message,
             **(entry.extra if entry.extra else {}),
@@ -57,8 +63,8 @@ class FileLogger(BaseLogger):
                 self._rotate(dt)
                 self._file_handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
                 self._file_handle.flush()
-            except Exception:
-                pass
+            except Exception as e:
+                sys.stderr.write(f"[LoggerError] Failed to write log: {e}\n")
 
     def log_event(self, event: PipelineEvent) -> None:
         dt = event.timestamp.date()
@@ -76,8 +82,8 @@ class FileLogger(BaseLogger):
                 self._rotate(dt)
                 self._file_handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
                 self._file_handle.flush()
-            except Exception:
-                pass
+            except Exception as e:
+                sys.stderr.write(f"[LoggerError] Failed to write pipeline event: {e}\n")
 
     def close(self) -> None:
         with self._lock:

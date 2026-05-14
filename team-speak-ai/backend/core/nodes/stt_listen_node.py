@@ -22,6 +22,7 @@ class STTListenNode(BaseNode):
     node_type = "stt_listen"
 
     async def execute(self, context: NodeContext, emit: EventEmitter) -> NodeOutput:
+        self.node_id = context.node_id
         cfg = context.node_config
 
         # 预设解析
@@ -34,11 +35,13 @@ class STTListenNode(BaseNode):
         # 获取音频数据：流式优先，否则非流式，也兼容 stt-stream
         audio_data = context.inputs.get("stream-audio") or context.inputs.get("batch-audio") or context.inputs.get("stt-stream")
         if not audio_data:
+            self._log_warning("未收到音频数据")
             await emit.emit_node_error(context.node_id, "未收到音频数据")
             return NodeOutput({"text": ""}, trigger_next=False)
 
         audio_data = self._decode_audio_input(audio_data)
 
+        self._log_info("转写中...")
         await emit.emit_node_update(
             context.node_id, NodeState.PROCESSING,
             "转写中...",
@@ -49,10 +52,10 @@ class STTListenNode(BaseNode):
             text = await stt.transcribe(audio_data)
             text = text.strip() if text else ""
         except Exception as e:
-            logger.exception(f"STT transcribe error")
-            await emit.emit_node_error(context.node_id, str(e))
-            return NodeOutput({"text": ""}, trigger_next=False)
+            self._log_exception("STT transcribe error")
+            raise self._wrap_error("STT transcribe error", e) from e
 
+        self._log_info(f"转写完成 ({len(text)} 字)")
         await emit.emit_node_update(
             context.node_id, "completed",
             f"转写完成 ({len(text)} 字)",
@@ -106,6 +109,7 @@ class STTListenNode(BaseNode):
         from core.stt.sensevoice_stt import SenseVoiceSTT
         from core.stt.whisper_stt import WhisperSTT
         from core.stt.minimax_stt import MiniMaxSTT
+        from core.exceptions import ProviderConnectionError
 
         provider = effective["provider"]
         if provider == "sensevoice":
@@ -123,4 +127,4 @@ class STTListenNode(BaseNode):
                 api_key=effective["api_key"] or "",
                 api_url=effective.get("api_url") or settings.minimax_api_url,
             )
-        raise ValueError(f"Unknown STT provider: {provider}")
+        raise ProviderConnectionError(provider=provider, detail=f"Unknown STT provider: {provider}")

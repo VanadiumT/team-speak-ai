@@ -4,7 +4,7 @@ BaseNode — 所有节点的抽象基类
 
 import logging
 from abc import ABC, abstractmethod
-from typing import AsyncGenerator, Optional
+from typing import Any, AsyncGenerator, Optional
 
 from core.pipeline.context import NodeContext, NodeOutput
 from core.pipeline.emitter import EventEmitter
@@ -19,6 +19,41 @@ class BaseNode(ABC):
 
     def __init__(self, config: dict):
         self.config = config
+        self.node_id: str = ""  # 由引擎在执行前设置
+
+    # ── 统一日志模板 ──
+
+    def _log(self, level: str, msg: str, **kw: Any) -> None:
+        """统一格式: [{NodeType}:{NodeId}] {msg}"""
+        tag = f"[{self.__class__.__name__}:{self.node_id}]" if self.node_id else f"[{self.__class__.__name__}]"
+        getattr(logger, level)(f"{tag} {msg}", **kw)
+
+    def _log_debug(self, msg: str, **kw: Any) -> None:
+        self._log("debug", msg, **kw)
+
+    def _log_info(self, msg: str, **kw: Any) -> None:
+        self._log("info", msg, **kw)
+
+    def _log_warning(self, msg: str, **kw: Any) -> None:
+        self._log("warning", msg, **kw)
+
+    def _log_error(self, msg: str, **kw: Any) -> None:
+        self._log("error", msg, **kw)
+
+    def _log_exception(self, msg: str) -> None:
+        """记录异常日志（含堆栈）"""
+        tag = f"[{self.__class__.__name__}:{self.node_id}]" if self.node_id else f"[{self.__class__.__name__}]"
+        logger.exception(f"{tag} {msg}")
+
+    def _wrap_error(self, detail: str, cause: Optional[Exception] = None) -> "NodeExecutionError":
+        """将当前节点的错误包装为 NodeExecutionError，由引擎层统一捕获"""
+        from core.exceptions import NodeExecutionError
+        return NodeExecutionError(
+            node_id=self.node_id,
+            node_type=self.__class__.__name__,
+            detail=detail,
+            cause=cause,
+        )
 
     @staticmethod
     def _resolve_preset_with_fallback(cfg: dict, pm, legacy_fn=None, fallback_default=None):

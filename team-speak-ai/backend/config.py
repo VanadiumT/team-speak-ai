@@ -83,6 +83,7 @@ class Settings(BaseSettings):
     log_provider: str = "file"
     log_dir: str = "logs"
     log_keep_days: int = 30
+    log_level: str = "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
 
     # CORS（逗号分隔的允许来源列表，如 "http://localhost:5173,https://example.com"）
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"

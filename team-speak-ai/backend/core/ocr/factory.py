@@ -2,6 +2,7 @@ import logging
 from enum import Enum
 from core.ocr.base import BaseOCR
 from core.ocr.easyocr_ocr import EasyOCROCR
+from core.exceptions import ProviderConnectionError
 
 logger = logging.getLogger(__name__)
 
@@ -28,4 +29,4 @@ def create_ocr(provider: OCRProvider, config: dict) -> BaseOCR:
             logger.warning("paddleocr not installed, falling back to easyocr")
             return EasyOCROCR(**config)
         return PaddleOCROCR(**config)
-    raise ValueError(f"Unknown OCR provider: {provider}")
+    raise ProviderConnectionError(provider=str(provider), detail=f"Unknown OCR provider: {provider}")

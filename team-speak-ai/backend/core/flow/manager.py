@@ -17,6 +17,7 @@ from core.pipeline.definition import (
     PipelineDefinition, NodeDefinition, ConnectionDef,
     FlowSummary, SidebarNode,
 )
+from core.exceptions import FlowNotFoundError, FlowValidationError, FlowCycleError
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +98,7 @@ class FlowManager:
         """从 JSON 文件加载完整流程定义"""
         filepath = self._flow_path(flow_id)
         if not filepath.exists():
-            raise FileNotFoundError(f"Flow not found: {flow_id}")
+            raise FlowNotFoundError(flow_id)
         data = self._load_json(filepath)
         return self._deserialize_flow(data)
 
@@ -270,7 +271,7 @@ class FlowManager:
         """从 JSON 字典导入流程"""
         flow_id = data.get("id", "")
         if not flow_id:
-            raise ValueError("Missing flow id in import data")
+            raise FlowValidationError(flow_id="unknown", detail="Missing flow id in import data")
         filepath = self._flow_path(flow_id)
         async with self._get_lock(flow_id):
             if filepath.exists() and not overwrite:
@@ -381,7 +382,7 @@ class FlowManager:
             flow = self.load_flow(flow_id)
             node = flow.get_node(node_id)
             if not node:
-                raise ValueError(f"Node not found: {node_id}")
+                raise FlowValidationError(flow_id=flow_id, detail=f"Node not found: {node_id}")
             node.position = {"x": x, "y": y}
             self._save_flow_locked(flow)
             return flow
@@ -392,7 +393,7 @@ class FlowManager:
             flow = self.load_flow(flow_id)
             node = flow.get_node(node_id)
             if not node:
-                raise ValueError(f"Node not found: {node_id}")
+                raise FlowValidationError(flow_id=flow_id, detail=f"Node not found: {node_id}")
             node.config.update(config)
             self._save_flow_locked(flow)
             return flow
@@ -403,7 +404,7 @@ class FlowManager:
             flow = self.load_flow(flow_id)
             node = flow.get_node(node_id)
             if not node:
-                raise ValueError(f"Node not found: {node_id}")
+                raise FlowValidationError(flow_id=flow_id, detail=f"Node not found: {node_id}")
             node.name = name
             self._save_flow_locked(flow)
             return flow

@@ -26,8 +26,10 @@ class AudioPlayerNode(BaseNode):
     # ── 非流式路径 ──
 
     async def execute(self, context: NodeContext, emit: EventEmitter) -> NodeOutput:
+        self.node_id = context.node_id
         audio_b64 = _extract_b64_from_inputs(context.inputs)
         if not audio_b64:
+            self._log_info("无音频数据")
             await emit.emit_node_update(context.node_id, NodeState.COMPLETED, "无音频数据")
             return NodeOutput({
                 "stream-audio": None,
@@ -39,6 +41,7 @@ class AudioPlayerNode(BaseNode):
         data_size = len(audio_b64)
         fmt = _audio_format(context.inputs)
 
+        self._log_info("播放中 (1/1)")
         await emit.emit_node_update(
             context.node_id, "processing",
             "播放中 (1/1)",

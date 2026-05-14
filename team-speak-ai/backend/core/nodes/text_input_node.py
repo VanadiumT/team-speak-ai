@@ -24,6 +24,7 @@ class TextInputNode(BaseNode):
     node_type = "text_input"
 
     async def execute(self, context: NodeContext, emit: EventEmitter) -> NodeOutput:
+        self.node_id = context.node_id
         cfg = context.node_config or self.config
         mode = cfg.get("mode", "static")
         static_text = cfg.get("text", "")
@@ -37,6 +38,7 @@ class TextInputNode(BaseNode):
                 # User has submitted text — process and continue
                 text = str(user_text)
 
+                self._log_info(f"已接收文本: {text[:60]}{'...' if len(text) > 60 else ''}")
                 await emit.emit_node_status_changed(context.node_id, NodeState.PROCESSING)
 
                 await emit.emit_node_log_entry(
@@ -61,6 +63,7 @@ class TextInputNode(BaseNode):
                         node_id=context.node_id,
                     )
 
+                self._log_info("等待用户输入文本...")
                 await emit.emit_node_log_entry(
                     context.node_id, "info",
                     "等待用户输入文本...",
@@ -76,6 +79,7 @@ class TextInputNode(BaseNode):
             # Static mode — resolve and output immediately
             text = _resolve_vars(static_text, context)
 
+            self._log_info(f"文本输入: {text[:60]}{'...' if len(text) > 60 else ''}")
             await emit.emit_node_status_changed(context.node_id, NodeState.PROCESSING)
 
             await emit.emit_node_log_entry(

@@ -25,8 +25,9 @@ class VADNode(BaseNode):
     node_type = "vad"
 
     async def execute(self, context: NodeContext, emit: EventEmitter) -> NodeOutput:
+        self.node_id = context.node_id
         cfg = context.node_config
-        logger.info(f"VAD execute start: node={context.node_id}")
+        self._log_info("VAD execute start")
 
         # ── 预设解析 ──
         if cfg.get("platform_id") and cfg.get("model_id"):
@@ -38,18 +39,19 @@ class VADNode(BaseNode):
 
         # ── 获取输入音频 ──
         audio_data = context.inputs.get("stream-audio")
-        logger.info(f"VAD audio_data type={type(audio_data).__name__}, len={len(audio_data) if audio_data else 0}")
+        self._log_debug(f"audio_data type={type(audio_data).__name__}, len={len(audio_data) if audio_data else 0}")
         if audio_data is None:
+            self._log_warning("未收到音频数据")
             await emit.emit_node_error(context.node_id, "未收到音频数据")
             return NodeOutput({}, trigger_next=False)
 
         pcm_bytes = _resolve_pcm(audio_data)
         if not pcm_bytes:
-            logger.warning(f"VAD _resolve_pcm returned empty, audio_data preview: {str(audio_data)[:200]}")
+            self._log_warning(f"_resolve_pcm returned empty, audio_data preview: {str(audio_data)[:200]}")
             await emit.emit_node_error(context.node_id, "无法解析音频数据")
             return NodeOutput({}, trigger_next=False)
 
-        logger.info(f"VAD pcm_bytes={len(pcm_bytes)} bytes, sample_rate={sample_rate}")
+        self._log_info(f"pcm_bytes={len(pcm_bytes)} bytes, sample_rate={sample_rate}")
         await emit.emit_node_update(
             context.node_id, "processing",
             f"VAD 分句中 (共 {len(pcm_bytes)} 字节)",

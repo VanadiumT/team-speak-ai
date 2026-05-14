@@ -21,6 +21,7 @@ class InputImageNode(BaseNode):
     node_type = "input_image"
 
     async def execute(self, context: NodeContext, emit: EventEmitter) -> NodeOutput:
+        self.node_id = context.node_id
         file_input = context.inputs.get("file", {})
         cfg = context.node_config or self.config
         notify_on_reach = cfg.get("notify_on_reach", True)
@@ -49,6 +50,7 @@ class InputImageNode(BaseNode):
                     node_id=context.node_id,
                 )
 
+            self._log_info("等待用户上传图片...")
             await emit.emit_node_log_entry(
                 context.node_id, "info",
                 "等待用户上传图片...",
@@ -72,6 +74,7 @@ class InputImageNode(BaseNode):
             "mime_type": mime_type,
         }
 
+        self._log_info(f"已接收图片: {filename}")
         await emit.emit_node_status_changed(context.node_id, NodeState.PROCESSING)
 
         await emit.emit_node_log_entry(

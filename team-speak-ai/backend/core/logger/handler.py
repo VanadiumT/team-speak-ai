@@ -1,14 +1,24 @@
 import logging
+import sys
 from datetime import datetime
 from typing import Optional
 
 from core.logger.base import BaseLogger, LogEntry, LogLevel, PipelineEvent
+from core.logger.context import get_trace_id
 
 _logger: Optional[BaseLogger] = None
 
 
+class TraceIdFilter(logging.Filter):
+    """将 trace_id 注入 LogRecord，供 console 格式串使用"""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.trace_id = get_trace_id()  # type: ignore[attr-defined]
+        return True
+
+
 class LoggingHandler(logging.Handler):
-    """将标准 logging.LogRecord 转发到 BaseLogger"""
+    """将标准 logging.LogRecord 转发到 BaseLogger，自动注入 trace_id"""
 
     def __init__(self, level: int = logging.NOTSET):
         super().__init__(level)
@@ -19,9 +29,10 @@ class LoggingHandler(logging.Handler):
         try:
             entry = LogEntry(
                 timestamp=datetime.fromtimestamp(record.created),
-                level=LogLevel(record.levelname),
+                level=LogLevel[record.levelname],
                 module_name=record.name,
                 message=record.getMessage(),
+                extra={"trace_id": get_trace_id()},
             )
             _logger.log(entry)
         except Exception:

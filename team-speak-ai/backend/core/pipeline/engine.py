@@ -28,6 +28,15 @@ from core.pipeline.emitter import EventEmitter
 from core.nodes.base import BaseNode
 from core.logger.handler import log_pipeline_event
 from core.logger.base import PipelineEvent
+from core.logger.context import trace_context
+from core.exceptions import (
+    NodeExecutionError,
+    NodeConfigError,
+    StreamingError,
+    ProviderConnectionError,
+    ProviderTimeoutError,
+    ProviderAuthError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -587,9 +596,18 @@ class PipelineEngine:
                 # 自动触发下游
                 await self._trigger_downstream(instance, node_id)
 
+        except NodeExecutionError as e:
+            logger.error(f"[Engine:{pd.id}:{execution_id}] Node execution error: {e.message}")
+            await self._fail_node(instance, node_id, e.to_dict(), emit)
+        except NodeConfigError as e:
+            logger.error(f"[Engine:{pd.id}:{execution_id}] Node config error: {e.message}")
+            await self._fail_node(instance, node_id, e.to_dict(), emit)
+        except (ProviderConnectionError, ProviderTimeoutError, ProviderAuthError) as e:
+            logger.error(f"[Engine:{pd.id}:{execution_id}] Provider error: {e.message}")
+            await self._fail_node(instance, node_id, e.to_dict(), emit)
         except Exception as e:
-            logger.exception(f"Node {node_id} execution error")
-            await self._fail_node(instance, node_id, str(e), emit)
+            logger.exception(f"[Engine:{pd.id}:{execution_id}] Unexpected error in node {node_id}")
+            await self._fail_node(instance, node_id, {"error_code": "INTERNAL_ERROR", "message": str(e)}, emit)
 
     async def _run_listener_node(self, execution_id: str, node_def: NodeDefinition):
         """后台运行常驻监听节点（如 stt_listen），循环监听"""
@@ -673,9 +691,18 @@ class PipelineEngine:
                     ))
                     logger.info(f"Listener {node_def.id} cancelled")
                     break
+                except (ProviderTimeoutError, ProviderConnectionError) as e:
+                    # 瞬态故障：记录警告但继续循环
+                    logger.warning(f"Listener {node_def.id} transient error: {e.message}, retrying...")
+                    await emit.emit_node_log_entry(node_def.id, "warning", f"瞬态错误: {e.message}，继续监听...")
+                    continue
+                except NodeExecutionError as e:
+                    logger.error(f"Listener {node_def.id} execution error: {e.message}")
+                    await self._fail_node(instance, node_def.id, e.to_dict(), emit)
+                    break
                 except Exception as e:
-                    logger.exception(f"Listener node {node_def.id} error")
-                    await self._fail_node(instance, node_def.id, str(e), emit)
+                    logger.exception(f"Listener {node_def.id} unexpected error")
+                    await self._fail_node(instance, node_def.id, {"error_code": "INTERNAL_ERROR", "message": str(e)}, emit)
                     break
         finally:
             if loopback:
@@ -766,21 +793,33 @@ class PipelineEngine:
             emit = EventEmitter(self, pd.id)
             await emit.emit_pipeline_complete(instance.execution_id)
 
-    async def _fail_node(self, instance: PipelineInstance, node_id: str, error: str, emit: EventEmitter = None):
+    async def _fail_node(self, instance: PipelineInstance, node_id: str, error: dict | str, emit: EventEmitter = None):
+        """统一节点失败处理
+
+        Args:
+            error: 可以是 str（旧格式）或 dict（新结构化格式，含 error_code, message, context 等）
+        """
+        if isinstance(error, dict):
+            error_msg = error.get("message", str(error))
+            error_data = error
+        else:
+            error_msg = str(error)
+            error_data = {"error": error_msg}
+
         runtime = instance.get_runtime(node_id)
         if runtime:
             runtime.status = NodeState.ERROR
-            runtime.error = error
+            runtime.error = error_msg
         if emit:
-            await emit.emit_node_error(node_id, error)
+            await emit.emit_node_error(node_id, error_data)
         log_pipeline_event(PipelineEvent(
             event_type="node_error",
             flow_id=instance.pipeline_def.id,
             execution_id=instance.execution_id,
             node_id=node_id,
-            data={"error": error},
+            data=error_data,
         ))
-        logger.error(f"Node {node_id} failed: {error}")
+        logger.error(f"Node {node_id} failed: {error_msg}")
 
     # ── 前端消息处理 ──
 

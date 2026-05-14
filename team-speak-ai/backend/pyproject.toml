@@ -26,6 +26,22 @@ numpy = ">=1.24.0"
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
 pytest-asyncio = "^0.23.0"
+pytest-cov = "^5.0"
+pytest-mock = "^3.14"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+markers = [
+    "unit: 纯逻辑单元测试",
+    "integration: 涉及文件 I/O 的集成测试",
+    "ws: WebSocket 协议测试",
+    "slow: 涉及真实网络/模型的慢测试",
+]
+addopts = "-v --tb=short"
 
 [build-system]
 requires = ["poetry-core"]

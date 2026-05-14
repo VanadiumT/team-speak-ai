@@ -115,7 +115,18 @@ public class TeamSpeakVoiceBridge implements TS3Listener {
         tomcat.setPort(config.getWsPort());
         tomcat.getConnector();
 
-        Context context = tomcat.addWebapp("", System.getProperty("java.io.tmpdir"));
+        // addContext 创建最小上下文，不加载默认 web.xml（避免 JSP servlet 注册）
+        Context context = tomcat.addContext("", System.getProperty("java.io.tmpdir"));
+
+        // 禁用 JAR 扫描，防止尝试加载 Jasper (JSP)
+        context.getJarScanner().setJarScanFilter((jarScanType, attributes) -> false);
+
+        // 手动初始化 WebSocket 支持（WsSci 实现 ServletContainerInitializer）
+        try {
+            new org.apache.tomcat.websocket.server.WsSci().onStartup(null, context.getServletContext());
+        } catch (Exception e) {
+            log.warn("WsSci.onStartup 跳过: {}", e.getMessage());
+        }
 
         VoiceWebSocketEndpoint.registerBridge(config.getWsPath(), this);
 

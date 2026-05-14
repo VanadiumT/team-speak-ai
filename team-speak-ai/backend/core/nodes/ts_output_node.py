@@ -35,15 +35,18 @@ class TSOutputNode(BaseNode):
     # ── 非流式路径 ──
 
     async def execute(self, context: NodeContext, emit: EventEmitter) -> NodeOutput:
+        self.node_id = context.node_id
         from api.routes.ws_teamspeak import ts_client
 
         audio_b64 = _extract_b64_from_inputs(context.inputs)
         if not audio_b64:
+            self._log_info("无音频数据")
             await emit.emit_node_update(context.node_id, NodeState.COMPLETED, "无音频数据")
             return NodeOutput({"sent": False, "reason": "no_audio"})
 
         connected = ts_client and ts_client.connected
         if not connected and not ts_client.loopback_enabled:
+            self._log_error("TeamSpeak 未连接且未开启回环")
             await emit.emit_node_update(context.node_id, NodeState.ERROR, "TeamSpeak 未连接且未开启回环")
             return NodeOutput({"sent": False, "reason": "not_connected"}, trigger_next=False)
 
@@ -51,6 +54,7 @@ class TSOutputNode(BaseNode):
         chunks = _chunk_audio_b64(audio_b64)
         total = len(chunks)
 
+        self._log_info(f"{label}中 (0/{total})")
         await emit.emit_node_update(context.node_id, NodeState.PROCESSING, f"{label}中 (0/{total})",
                                     data={"total_chunks": total})
 
@@ -58,9 +62,8 @@ class TSOutputNode(BaseNode):
             try:
                 await ts_client.send_voice_message(chunk_b64)
             except Exception as e:
-                logger.exception("TS output error")
-                await emit.emit_node_error(context.node_id, str(e))
-                return NodeOutput({"sent": False, "reason": str(e), "chunk_index": i}, trigger_next=False)
+                self._log_exception("TS output error")
+                raise self._wrap_error("TS output error", e) from e
 
             await emit.emit_node_update(
                 context.node_id, "processing",
@@ -72,6 +75,7 @@ class TSOutputNode(BaseNode):
                 await asyncio.sleep(0.15)
 
         summary = f"已发送 {total} 段到 TeamSpeak" if connected else f"已回环 {total} 段到 AudioBus"
+        self._log_info(summary)
         await emit.emit_node_update(context.node_id, NodeState.COMPLETED, summary)
         return NodeOutput({"sent": True, "segment_count": total})
 
@@ -114,10 +118,8 @@ class TSOutputNode(BaseNode):
                     try:
                         await ts_client.send_voice_message(sub_b64)
                     except Exception as e:
-                        logger.exception("TS output streaming error")
-                        await emit.emit_node_error(context.node_id, str(e))
-                        yield NodeOutput({"sent": False, "reason": str(e), "segment_count": total_chunks}, final=True)
-                        return
+                        self._log_exception("TS output streaming error")
+                        raise self._wrap_error("TS output streaming error", e) from e
                     total_chunks += 1
                     if len(sub_chunks) > 1:
                         await asyncio.sleep(0.1)

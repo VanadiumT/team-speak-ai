@@ -18,6 +18,20 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from core.pipeline.registry import NodeRegistry
 from core.app_context import get_app_context
+from core.exceptions import (
+    AppBaseException,
+    FlowNotFoundError,
+    FlowValidationError,
+    FlowCycleError,
+    NodeExecutionError,
+    NodeConfigError,
+    ProviderConnectionError,
+    ProviderTimeoutError,
+    ProviderAuthError,
+    WSProtocolError,
+    AudioBusError,
+    AudioDecodeError,
+)
 from api.routes.ws_utils import _now_ts, _make_msg, _send, _send_ack, _send_error
 from api.routes.ws_presets import make_preset_handlers, handle_preset_test_llm, handle_tts_preset_test, handle_stt_preset_test, handle_ocr_preset_test, handle_ts_preset_test
 from api.routes.ws_flow import COMMAND_HANDLERS as _FLOW_HANDLERS
@@ -25,6 +39,23 @@ from api.routes.ws_editor import COMMAND_HANDLERS as _EDITOR_HANDLERS
 from api.routes.ws_exec import COMMAND_HANDLERS as _EXEC_HANDLERS
 
 logger = logging.getLogger(__name__)
+
+# ── 异常 → 错误码映射表 ──
+EXCEPTION_MAP: dict[type, str] = {
+    FlowNotFoundError: "FLOW_NOT_FOUND",
+    FlowValidationError: "FLOW_VALIDATION",
+    FlowCycleError: "FLOW_CYCLE",
+    NodeExecutionError: "NODE_EXECUTION",
+    NodeConfigError: "NODE_CONFIG",
+    ProviderConnectionError: "PROVIDER_CONNECTION",
+    ProviderTimeoutError: "PROVIDER_TIMEOUT",
+    ProviderAuthError: "PROVIDER_AUTH",
+    WSProtocolError: "WS_PROTOCOL",
+    AudioBusError: "AUDIO_BUS_ERROR",
+    AudioDecodeError: "AUDIO_DECODE_ERROR",
+    ValueError: "INVALID_PARAMS",
+    KeyError: "INVALID_PARAMS",
+}
 
 router = APIRouter()
 
@@ -277,7 +308,13 @@ async def _handle_command(websocket: WebSocket, msg: dict) -> None:
     try:
         params = msg.get("params", {})
         await handler(websocket, flow_id, msg_id, params)
+    except AppBaseException as e:
+        # 自定义异常：按类型映射错误码
+        error_code = EXCEPTION_MAP.get(type(e), "APP_ERROR")
+        logger.warning(f"AppException in {action}: {error_code} - {e.message}")
+        await _send_error(websocket, flow_id, error_code, e.to_dict(), msg_id)
     except FileNotFoundError as e:
+        # 兼容旧格式
         await _send_error(websocket, flow_id, "FLOW_NOT_FOUND", str(e), msg_id)
     except (ValueError, KeyError) as e:
         await _send_error(websocket, flow_id, "INVALID_PARAMS", str(e), msg_id)
