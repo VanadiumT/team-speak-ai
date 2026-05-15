@@ -34,6 +34,14 @@ class TeamSpeakWebSocket:
         self._should_reconnect = True
         self.loopback_enabled = False
 
+    async def _notify_status_change(self):
+        """广播连接状态变更给所有前端客户端"""
+        try:
+            from api.routes.ws_main import broadcast_connection_status_to_all
+            await broadcast_connection_status_to_all()
+        except Exception as e:
+            logger.debug(f"Failed to broadcast status change: {e}")
+
     async def connect(self, url: str = None) -> bool:
         url = url or settings.ts_ws_url
         try:
@@ -45,6 +53,7 @@ class TeamSpeakWebSocket:
             self.connected = True
             self.reconnect_attempts = 0
             logger.info(f"Connected to TeamSpeak WebSocket: {url}")
+            asyncio.ensure_future(self._notify_status_change())
             return True
         except Exception as e:
             self.connected = False
@@ -60,6 +69,7 @@ class TeamSpeakWebSocket:
                 logger.debug(f"Error closing TeamSpeak WebSocket: {e}")
             self.connected = False
             logger.info("Disconnected from TeamSpeak WebSocket")
+            await self._notify_status_change()
 
     async def reconnect(self, url: str = None) -> bool:
         while self._should_reconnect and self.reconnect_attempts < self.max_reconnect_attempts:
@@ -84,6 +94,8 @@ class TeamSpeakWebSocket:
                     yield {"type": "BINARY", "data": message}
         except Exception as e:
             logger.error(f"Receive error: {e}")
+            self.connected = False
+            await self._notify_status_change()
 
     async def send_voice(self, data: bytes) -> None:
         if self.ws and self.connected:
