@@ -14,6 +14,47 @@ from core.pipeline.registry import NodeRegistry
 
 logger = logging.getLogger(__name__)
 
+_stt_cache: dict[str, object] = {}  # config_key → STT instance
+
+
+def _stt_config_hash(effective: dict) -> str:
+    key_fields = {k: effective.get(k) for k in ("provider", "model_dir", "device", "model_name", "api_key", "api_url")}
+    return f"{key_fields}"
+
+
+def _load_stt(effective: dict):
+    """从缓存获取或创建 STT 实例（供 preheat 和 execute 共用）"""
+    key = _stt_config_hash(effective)
+    if key not in _stt_cache:
+        _stt_cache[key] = _create_stt(effective)
+    return _stt_cache[key]
+
+
+def _create_stt(effective: dict):
+    from core.stt.sensevoice_stt import SenseVoiceSTT
+    from core.stt.whisper_stt import WhisperSTT
+    from core.stt.minimax_stt import MiniMaxSTT
+    from core.exceptions import ProviderConnectionError
+    from config import settings
+
+    provider = effective["provider"]
+    if provider == "sensevoice":
+        return SenseVoiceSTT(
+            model_dir=effective.get("model_dir") or settings.sensevoice_model,
+            device=effective.get("device", "cpu"),
+        )
+    elif provider == "whisper":
+        return WhisperSTT(
+            model_name=effective.get("model_name", "base"),
+            device=effective.get("device", "cuda"),
+        )
+    elif provider == "minimax":
+        return MiniMaxSTT(
+            api_key=effective.get("api_key") or "",
+            api_url=effective.get("api_url") or settings.minimax_api_url,
+        )
+    raise ProviderConnectionError(provider=provider, detail=f"Unknown STT provider: {provider}")
+
 
 @NodeRegistry.register("stt_listen")
 class STTListenNode(BaseNode):
@@ -30,7 +71,7 @@ class STTListenNode(BaseNode):
             effective = self._resolve_stt_preset_config(cfg)
         else:
             effective = self._resolve_stt_legacy_config(cfg)
-        stt = self._get_stt_from_config(effective)
+        stt = _load_stt(effective)
 
         # 获取音频数据：流式优先，否则非流式，也兼容 stt-stream
         audio_data = context.inputs.get("stream-audio") or context.inputs.get("batch-audio") or context.inputs.get("stt-stream")
@@ -103,28 +144,3 @@ class STTListenNode(BaseNode):
         if isinstance(audio_data, (bytes, bytearray)):
             return bytes(audio_data)
         raise TypeError(f"Unsupported audio input type: {type(audio_data)}")
-
-    @staticmethod
-    def _get_stt_from_config(effective: dict):
-        from core.stt.sensevoice_stt import SenseVoiceSTT
-        from core.stt.whisper_stt import WhisperSTT
-        from core.stt.minimax_stt import MiniMaxSTT
-        from core.exceptions import ProviderConnectionError
-
-        provider = effective["provider"]
-        if provider == "sensevoice":
-            return SenseVoiceSTT(
-                model_dir=effective.get("model_dir") or settings.sensevoice_model,
-                device=effective.get("device", "cpu"),
-            )
-        elif provider == "whisper":
-            return WhisperSTT(
-                model_name=effective.get("model_name", "base"),
-                device=effective.get("device", "cuda"),
-            )
-        elif provider == "minimax":
-            return MiniMaxSTT(
-                api_key=effective["api_key"] or "",
-                api_url=effective.get("api_url") or settings.minimax_api_url,
-            )
-        raise ProviderConnectionError(provider=provider, detail=f"Unknown STT provider: {provider}")

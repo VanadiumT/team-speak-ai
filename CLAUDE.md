@@ -80,9 +80,21 @@ Key files:
 - `emitter.py` — `EventEmitter`: pushes real-time events (`node.status_changed`, `node.log_entry`, `pipeline.started/completed`) to subscribed WS clients; auto-persists important updates to notification system
 - `context.py` — `NodeContext`, `NodeOutput`, `NodeState` (enum: IDLE/STARTING/RUNNING/COMPLETED/ERROR/CANCELLED/PAUSED), `NodeRuntime`, `_STREAM_END` sentinel
 
+### Exception hierarchy (`core/exceptions/`)
+Structured exception hierarchy for domain-specific error handling:
+- `base.py` — `AppException` base class with error code and context
+- `audio.py` — Audio processing errors
+- `flow.py` — Flow management errors
+- `pipeline.py` — Pipeline execution errors
+- `provider.py` — AI provider errors
+- `ws.py` — WebSocket protocol errors
+
 ### Logging (`core/logger/`)
 - `factory.py` — Creates loggers; `LoggingHandler` bridges standard `logging` to pipeline event system
 - `file_logger.py` — `FileLogger`: daily-rotated JSONL logs with configurable retention
+- `handler.py` — Logging handler with self-repair mechanism (logger auto-recovery on failure)
+- `context.py` — Log context management for request-scoped metadata
+- `main.py` — Global exception handler catches unhandled errors and routes them through the logging system
 
 Nodes live in `core/nodes/`. Each node extends `BaseNode` and implements `execute(context, emit) -> NodeOutput`. Nodes are registered via `@NodeRegistry.register("node_name")` and imported in `core/nodes/__init__.py`.
 
@@ -113,10 +125,25 @@ Available node types (extensible — register new types via `@NodeRegistry.regis
 - `manager.py` — `HistoryManager`: per-flow undo/redo stacks (max 100 entries each), JSONL persistence, 500ms merge window for config updates
 
 ### Default config (`core/config/`)
-- `defaults.py` — `ConfigDefaultsManager`: load/save per-node-type default configs from `data/defaults/`. Also contains all 6 preset managers (see below).
+- `defaults.py` — `ConfigDefaultsManager`: load/save per-node-type default configs from `data/defaults/`.
 
-### Presets system (`core/config/defaults.py`)
+### Model preheat (`core/preheat.py`, `core/config/preheat.py`)
+Background model preheating on app startup to avoid first-use latency (10-30s for OCR/STT local models):
+- `core/config/preheat.py` — `PreheatConfigManager`: CRUD for preheat toggles, persisted to `data/defaults/preheat.json`
+- `core/preheat.py` — `preheat_models()`: validates default preset configs, loads heavy models (OCR/STT) in thread pool, logs warnings for incomplete configs
+- STT instances are cached in `stt_listen_node._stt_cache` (same pattern as `ocr_node._ocr_cache`)
+- Frontend: `stores/preheat.ts` + `components/settings/PreheatPanel.vue` — toggle per-provider preheat on/off
+
+### Presets system (`core/config/presets/`)
 Two-tier "platform + model" preset architecture for each AI capability. Each preset manager supports CRUD via WebSocket, persisted to `data/defaults/*.json`, with `get_effective_config(platform_id, model_id, overrides)` that merges platform settings, model config, and node-level overrides (falls back to global `settings` when API keys/URLs are empty).
+
+Preset managers are split into individual modules under `core/config/presets/`:
+- `llm.py` — `PresetManager` (LLM)
+- `tts.py` — `TtsPresetManager`
+- `stt.py` — `SttPresetManager`
+- `ocr.py` — `OcrPresetManager`
+- `vad.py` — `VadPresetManager`
+- `ts.py` — `TeamSpeakPresetManager`
 
 | Preset Manager | Config file | Key model params |
 |---|---|---|
@@ -137,8 +164,18 @@ Two-tier "platform + model" preset architecture for each AI capability. Each pre
 - `audio_bus.py` — publish/subscribe bus: `ws_teamspeak.py` publishes incoming audio, `stt_listen_node` consumes it
 - `audio_buffer.py` — per-speaker audio buffering with timeout and voice activity detection
 
+### WebSocket route modules (`api/routes/`)
+The monolithic `ws_main.py` was split into domain-specific modules:
+- `ws_main.py` — Routing hub: dispatches incoming WS messages to the appropriate handler module
+- `ws_editor.py` — Editor actions: node CRUD, connection CRUD, undo/redo, config updates
+- `ws_flow.py` — Flow management: flow CRUD, groups, import/export, sidebar tree
+- `ws_exec.py` — Execution control: pipeline run/stop, node trigger, status subscriptions
+- `ws_presets.py` — Preset CRUD: all 6 preset types (LLM/TTS/STT/OCR/VAD/TS)
+- `ws_teamspeak.py` — TeamSpeak voice bridge relay (independent channel)
+- `ws_utils.py` — Shared utilities: auth, error formatting, broadcast helpers
+
 ### Notification (`core/notification/`)
-- `manager.py` — `NotificationManager`: JSONL per-flow persistence, cursor-based pagination, read state tracking, 7-day auto-cleanup. Integrated via `emitter.py` (auto-persist on `emit_important_update`) and `ws_main.py` (`notification.list`, `notification.mark_read` commands)
+- `manager.py` — `NotificationManager`: JSONL per-flow persistence, cursor-based pagination, read state tracking, 7-day auto-cleanup. Integrated via `emitter.py` (auto-persist on `emit_important_update`) and `ws_main.py` / route modules (`notification.list`, `notification.mark_read` commands)
 
 ### Provider factories
 Each AI capability has a factory pattern with swappable backends. Runtime config is resolved via the presets system (platform + model tiers), with global `config.py` / `.env` as fallback.
@@ -163,6 +200,9 @@ backend/data/
   notifications/   # Per-flow notification history JSONL + read_state.json
 ```
 
+### AppContext (`core/app_context.py`)
+Centralized service container that replaces scattered global singletons. One `create()` call initializes all services; the rest of the app accesses them via `get_app_context()`. Holds: `FlowManager`, `HistoryManager`, `ConfigDefaultsManager`, all 6 preset managers, `SysVarManager`, `ChunkReceiver`, `NotificationManager`, `PipelineEngine`.
+
 ### Frontend state management
 - `stores/editor.js` — Pinia store for flow editing state: nodes, connections, undo/redo, drag-and-drop, debounced config updates, edit mode toggle, dirty field tracking
 - `stores/execution.js` — Runtime execution state: node statuses, streaming data, per-node log buffers (max 200 entries FIFO)
@@ -173,7 +213,7 @@ backend/data/
 - `stores/presets.js` — LLM/TTS/OCR/VAD/TS preset management: platform+model CRUD per category
 - `stores/sttPresets.js` — STT-specific preset management (separate store due to different structure)
 - `stores/sysvars.js` — System variables CRUD with optimistic updates, real-time WS sync
-- `api/pipeline.js` — `PipelineSocket` class: envelope protocol, promise-based ACK tracking (15s timeout), binary frame upload, heartbeat (30s ping/90s pong), exponential backoff reconnect (3s initial, 30s max)
+- `api/pipeline.ts` — `PipelineSocket` class (TypeScript): envelope protocol, promise-based ACK tracking (15s timeout), binary frame upload, heartbeat (30s ping/90s pong), exponential backoff reconnect (3s initial, 30s max)
 
 ### Frontend component system
 - `components/pipeline/NodeCard.vue` — Glassmorphism node card with ports, tabs, workflow badge
@@ -197,6 +237,39 @@ backend/data/
 - Fonts: Inter (body), Space Grotesk (code/labels/tabs)
 - Full spec: `team-speak-ai/docs/07-设计系统规范.md`
 
+## Test framework
+
+### Python backend (`team-speak-ai/backend/tests/`)
+```bash
+cd team-speak-ai/backend
+pytest tests/ -v
+```
+- `conftest.py` — Shared fixtures: mock context, mock emit, mock audio frames
+- `factories.py` — Test data factories for nodes, connections, flows
+- `unit/nodes/` — Per-node-type unit tests (18 node types)
+- `unit/presets/` — Preset manager tests (LLM, TTS)
+- `unit/` — Core module tests: audio_bus, audio_buffer, chunk_receiver, definition, emitter, exceptions, flow_manager, history_manager, logger, node_registry, notification_mgr, sys_var_manager
+- `integration/` — Flow persistence, sysvar persistence
+- `ws/` — WebSocket integration tests (placeholder)
+
+### Vue frontend (`team-speak-ai/frontend/`)
+```bash
+cd team-speak-ai/frontend
+npx vitest run
+```
+- Vitest config: `vitest.config.ts`
+- `src/api/__tests__/pipeline.spec.ts` — PipelineSocket tests
+- `src/stores/__tests__/` — Pinia store tests: connection, editor, execution, files, notifications, sidebar, sysvars
+
+### Java bridge (`team-speak-bot/`)
+```bash
+cd team-speak-bot
+mvn test
+```
+- `VoiceMessageTest.java` — Voice message protocol tests
+- `VoiceMessageTypeTest.java` — Message type enum tests
+- `BridgeConfigTest.java` — Configuration loading tests
+
 ## Configuration
 
 - **Python**: `team-speak-ai/backend/.env` + `config.py` (Pydantic `BaseSettings`, auto-loads `.env`)
@@ -216,3 +289,5 @@ backend/data/
 - Backend owns all state (node positions, connections, configs); frontend is an editor + renderer only
 - Pipeline definitions use JSON (not YAML), persisted to `data/flows/`
 - Streaming execution: nodes can implement `execute_stream()` for chunked processing; the engine auto-detects streaming chains via `stream-*` port prefix and pipelines them with async queues
+- Structured exceptions: all domain errors use `core/exceptions/` hierarchy (not bare `Exception`); unhandled errors are caught by the global handler in `main.py` and routed through the logging system
+- `AppContext` (`core/app_context.py`) is the single source of truth for all service instances — use `get_app_context()` instead of scattered global singletons

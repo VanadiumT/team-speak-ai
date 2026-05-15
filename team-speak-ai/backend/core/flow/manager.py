@@ -592,6 +592,7 @@ class FlowManager:
                 id="system_settings", name="系统设置", icon="settings", type="section",
                 children=[
                     SidebarNode(id="action:sys_vars", name="系统变量", icon="data_object", type="action"),
+                    SidebarNode(id="action:preheat", name="模型预热", icon="local_fire_department", type="action"),
                     SidebarNode(id="action:shortcuts", name="系统快捷键", icon="keyboard", type="action"),
                 ],
             ),

@@ -81,6 +81,19 @@ npm run dev            # Vite dev server on :5173
 | LLM | `openai` (MiniMax 兼容) | openai |
 | OCR | `easyocr`, `paddleocr` | easyocr |
 
+## 测试
+
+```bash
+# Python 后端 (333 tests)
+cd team-speak-ai/backend && pytest tests/ -v
+
+# Vue 前端 (52 tests)
+cd team-speak-ai/frontend && npx vitest run
+
+# Java 桥 (32 tests)
+cd team-speak-bot && mvn test
+```
+
 ## 功能特性
 
 - **可视化流程编辑器** — 拖拽节点、连线、画布缩放平移、编辑模式切换
@@ -90,8 +103,10 @@ npm run dev            # Vite dev server on :5173
 - **撤销/重做** — 每流程 100 步历史，JSONL 持久化
 - **通知中心** — 执行通知持久化、分页查询、已读追踪
 - **文件上传** — 256KB 分片、断点续传、MIME 校验
+- **结构化异常** — 领域异常层次结构 + 全局异常处理器 + 日志自修复
 - **Material Design 3** — 暗色毛玻璃主题，轻量级 UI
 - **WebSocket 统一协议** — 所有通信走信封格式的 `/ws` 端点
+- **全栈测试** — Python 333 + Vue 52 + Java 32 测试用例
 
 ## AI 节点
 
@@ -121,28 +136,46 @@ team-speak-ai/
 ├── start-all.bat, stop-all.bat       # 一键启停脚本
 ├── environment/                       # 内嵌 JDK 17 + Maven 3.9.9
 ├── team-speak-bot/                    # Java Bridge（音频中转）
+│   └── src/test/                      # Java 测试（32 tests）
 ├── team-speak-ai/
 │   ├── backend/
-│   │   ├── main.py                    # FastAPI 入口
+│   │   ├── main.py                    # FastAPI 入口 + 全局异常处理器
 │   │   ├── config.py                  # Pydantic 配置
-│   │   ├── api/routes/                # WebSocket 路由
+│   │   ├── api/routes/                # WebSocket 路由（按领域拆分）
+│   │   │   ├── ws_main.py             # 路由枢纽
+│   │   │   ├── ws_editor.py           # 编辑器操作
+│   │   │   ├── ws_flow.py             # 流程管理
+│   │   │   ├── ws_exec.py             # 执行控制
+│   │   │   ├── ws_presets.py          # 预设 CRUD
+│   │   │   └── ws_teamspeak.py        # TS 语音桥接
 │   │   ├── core/
+│   │   │   ├── app_context.py         # 全局服务容器
+│   │   │   ├── exceptions/            # 结构化异常层次
 │   │   │   ├── pipeline/              # 管线引擎（定义、注册、执行、事件）
-│   │   │   ├── nodes/                 # 节点实现（17 种节点类型）
+│   │   │   ├── nodes/                 # 节点实现（18 种节点类型）
 │   │   │   ├── flow/                  # 流程管理（CRUD、分组、导入导出）
 │   │   │   ├── history/               # 撤销/重做历史
-│   │   │   ├── config/                # 预设系统（LLM/TTS/STT/OCR/VAD/TS）
+│   │   │   ├── config/                # 默认配置 + 预设系统
+│   │   │   │   └── presets/           # 预设管理器（llm/tts/stt/ocr/vad/ts）
+│   │   │   ├── logger/                # 日志系统（自修复 + 上下文）
 │   │   │   ├── audio/                 # AudioBus 发布/订阅 + 缓冲
 │   │   │   ├── variables/             # 系统变量管理
 │   │   │   ├── upload/                # 分片文件上传
 │   │   │   ├── notification/          # 通知持久化
 │   │   │   └── stt/tts/llm/ocr/       # AI Provider 工厂
+│   │   ├── tests/                     # Python 测试（333 tests）
+│   │   │   ├── unit/                  # 单元测试（节点、预设、核心模块）
+│   │   │   └── integration/           # 集成测试（持久化）
 │   │   └── data/                      # 运行时数据（flows, defaults, history, vars）
 │   ├── frontend/
 │   │   ├── src/
 │   │   │   ├── components/pipeline/   # 编辑器组件（画布、节点、连线、面板）
 │   │   │   ├── stores/                # Pinia 状态管理
-│   │   │   └── api/                   # WebSocket 客户端
+│   │   │   │   └── __tests__/         # Store 测试（Vitest）
+│   │   │   └── api/
+│   │   │       ├── pipeline.ts        # WebSocket 客户端（TypeScript）
+│   │   │       └── __tests__/         # API 测试
+│   │   ├── vitest.config.ts           # 前端测试配置
 │   │   └── package.json
 │   └── docs/                          # 设计文档（8 篇）
 ```

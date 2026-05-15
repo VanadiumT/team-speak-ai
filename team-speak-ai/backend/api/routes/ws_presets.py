@@ -359,3 +359,22 @@ async def handle_ts_preset_test(websocket: WebSocket, flow_id: str, msg_id: str,
         result = {"type": "ts", "platform_id": platform_id,
                   "success": False, "message": f"测试失败: {str(e)[:300]}"}
     await _send(websocket, flow_id, "ack", "ack", {"ok": True, "test_result": result}, msg_id)
+
+
+# ═══════════════════════════════════════════════════════════════════
+# 模型预热配置
+# ═══════════════════════════════════════════════════════════════════
+
+async def handle_preheat_get_config(ws: WebSocket, flow_id: str, msg_id: str, params: dict) -> None:
+    ctx = get_app_context()
+    config = ctx.preheat_manager.get_config_dict()
+    await _send_ack(ws, flow_id, msg_id)
+    await _send(ws, "_system", "event", "preheat.config", config)
+
+
+async def handle_preheat_update_config(ws: WebSocket, flow_id: str, msg_id: str, params: dict) -> None:
+    ctx = get_app_context()
+    patch = {k: v for k, v in params.items() if k in ("enabled", "ocr", "stt")}
+    config = ctx.preheat_manager.update_config(patch)
+    await _send_ack(ws, flow_id, msg_id)
+    await _get_broadcast()("__all__", "preheat.config", config)

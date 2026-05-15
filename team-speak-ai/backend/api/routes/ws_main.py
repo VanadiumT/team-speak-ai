@@ -33,7 +33,11 @@ from core.exceptions import (
     AudioDecodeError,
 )
 from api.routes.ws_utils import _now_ts, _make_msg, _send, _send_ack, _send_error
-from api.routes.ws_presets import make_preset_handlers, handle_preset_test_llm, handle_tts_preset_test, handle_stt_preset_test, handle_ocr_preset_test, handle_ts_preset_test
+from api.routes.ws_presets import (
+    make_preset_handlers, handle_preset_test_llm, handle_tts_preset_test,
+    handle_stt_preset_test, handle_ocr_preset_test, handle_ts_preset_test,
+    handle_preheat_get_config, handle_preheat_update_config,
+)
 from api.routes.ws_flow import COMMAND_HANDLERS as _FLOW_HANDLERS
 from api.routes.ws_editor import COMMAND_HANDLERS as _EDITOR_HANDLERS
 from api.routes.ws_exec import COMMAND_HANDLERS as _EXEC_HANDLERS
@@ -335,6 +339,8 @@ _COMMAND_HANDLERS = {
     "stt_preset.test": handle_stt_preset_test,
     "ocr_preset.test": handle_ocr_preset_test,
     "ts_preset.test": handle_ts_preset_test,
+    "preheat.get_config": handle_preheat_get_config,
+    "preheat.update_config": handle_preheat_update_config,
 }
 
 

@@ -48,6 +48,11 @@
         <VadPresetsPanel />
       </div>
 
+      <!-- 模型预热 -->
+      <div v-else-if="settingsPage === 'preheat'" class="sv-section">
+        <PreheatPanel />
+      </div>
+
       <div v-else class="sv-section sv-placeholder">
         <span class="material-symbols-outlined" style="font-size: 48px; opacity: 0.15;">settings</span>
         <p>选择左侧设置项</p>
@@ -66,6 +71,7 @@ import SttPresetsPanel from './SttPresetsPanel.vue'
 import TeamSpeakPresetsPanel from './TeamSpeakPresetsPanel.vue'
 import OcrPresetsPanel from './OcrPresetsPanel.vue'
 import VadPresetsPanel from './VadPresetsPanel.vue'
+import PreheatPanel from './PreheatPanel.vue'
 
 const props = defineProps({
   settingsPage: { type: String, default: '' },
@@ -80,6 +86,7 @@ const pageTitle = computed(() => ({
   tts_settings: 'TTS 设置',
   ts_settings: 'TeamSpeak 连接',
   vad_settings: 'VAD 设置',
+  preheat: '模型预热',
 }[props.settingsPage] || '系统设置'))
 
 const pageIcon = computed(() => ({
@@ -91,6 +98,7 @@ const pageIcon = computed(() => ({
   tts_settings: 'record_voice_over',
   ts_settings: 'headset_mic',
   vad_settings: 'voice_selection',
+  preheat: 'local_fire_department',
 }[props.settingsPage] || 'settings'))
 </script>
 

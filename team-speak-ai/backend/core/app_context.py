@@ -24,6 +24,7 @@ from core.config.presets.ts import TeamSpeakPresetManager
 from core.variables.manager import SysVarManager
 from core.upload.chunk_receiver import ChunkReceiver
 from core.notification.manager import NotificationManager
+from core.config.preheat import PreheatConfigManager
 
 if TYPE_CHECKING:
     from core.pipeline.engine import PipelineEngine
@@ -58,6 +59,7 @@ class AppContext:
     ocr_preset_manager: Optional[OcrPresetManager] = None
     vad_preset_manager: Optional[VadPresetManager] = None
     ts_preset_manager: Optional[TeamSpeakPresetManager] = None
+    preheat_manager: Optional[PreheatConfigManager] = None
 
     # ── 后台任务 ──
     _cleanup_task: Optional[asyncio.Task] = field(default=None, repr=False)
@@ -102,6 +104,9 @@ class AppContext:
         ctx.ts_preset_manager = TeamSpeakPresetManager(data_dir)
         logger.info("  TeamSpeakPresetManager ready")
 
+        ctx.preheat_manager = PreheatConfigManager(data_dir)
+        logger.info("  PreheatConfigManager ready")
+
         ctx.sys_var_manager = SysVarManager(data_dir)
         logger.info("  SysVarManager ready (%d variables)", len(ctx.sys_var_manager.list_all()))
 
@@ -130,6 +135,9 @@ class AppContext:
         self._cleanup_task = asyncio.create_task(
             self.chunk_receiver.cleanup_timeouts()
         )
+        # 模型预热（后台执行，不阻塞启动）
+        from core.preheat import preheat_models
+        asyncio.create_task(preheat_models(self))
 
 
 # ── 唯一的一对全局存取函数 —— 整个项目只此一处 ──
