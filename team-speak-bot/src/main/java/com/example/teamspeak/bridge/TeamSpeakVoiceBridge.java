@@ -8,7 +8,6 @@ import com.github.manevolent.ts3j.protocol.packet.PacketBody1VoiceWhisper;
 import com.github.manevolent.ts3j.protocol.socket.client.LocalTeamspeakClientSocket;
 import jakarta.websocket.*;
 import jakarta.websocket.server.ServerEndpointConfig;
-import org.apache.catalina.Context;
 import org.apache.catalina.LifecycleException;
 import org.apache.catalina.startup.Tomcat;
 import org.apache.catalina.Wrapper;
@@ -113,47 +112,37 @@ public class TeamSpeakVoiceBridge implements TS3Listener {
     private void startWebSocketServer() throws Exception {
         tomcat = new Tomcat();
         tomcat.setPort(config.getWsPort());
-        tomcat.getConnector();
 
-        // addContext 创建最小上下文，不加载默认 web.xml（避免 JSP servlet 注册）
-        Context context = tomcat.addContext("", System.getProperty("java.io.tmpdir"));
+        // 手动创建 StandardContext 而非用 addContext()：
+        // addContext() 会立即启动 context，导致 WsSci 无法添加 WebSocket filter。
+        // 手动创建 → addChild(设置 parent) → 初始化 WsSci → tomcat.start() 才启动。
+        org.apache.catalina.core.StandardContext ctx =
+                new org.apache.catalina.core.StandardContext();
+        ctx.setPath("");
+        ctx.setDocBase(System.getProperty("java.io.tmpdir"));
 
         // 禁用 JAR 扫描，防止尝试加载 Jasper (JSP)
-        context.getJarScanner().setJarScanFilter((jarScanType, attributes) -> false);
+        ctx.getJarScanner().setJarScanFilter((jarScanType, attributes) -> false);
 
-        // addContext() 在 Tomcat 10.1.x 中会立即初始化 context，
-        // 导致 WsSci 无法添加 filter。用反射绕过初始化检查。
-        try {
-            // 1. 暂时解除初始化锁定
-            var initializedField = org.apache.catalina.core.ApplicationContext.class.getDeclaredField("initialized");
-            initializedField.setAccessible(true);
-            initializedField.setBoolean(context.getServletContext(), false);
+        // 先加入 host 建立 parent 关系（host 未启动，context 不会被启动）
+        tomcat.getHost().addChild(ctx);
 
-            // 2. 初始化 WebSocket 支持
-            new org.apache.tomcat.websocket.server.WsSci().onStartup(null, context.getServletContext());
+        // 此时 getServletContext() 可用，且 context 未启动，WsSci 可加 filter
+        new org.apache.tomcat.websocket.server.WsSci().onStartup(null, ctx.getServletContext());
 
-            // 3. 恢复初始化状态
-            initializedField.setBoolean(context.getServletContext(), true);
-
-            // 4. 手动注册 WebSocket 端点
-            jakarta.websocket.server.ServerContainer serverContainer =
-                    (jakarta.websocket.server.ServerContainer) context.getServletContext()
-                            .getAttribute(jakarta.websocket.server.ServerContainer.class.getName());
-            if (serverContainer != null) {
-                ServerEndpointConfig sec = ServerEndpointConfig.Builder
-                        .create(VoiceWebSocketEndpoint.class, config.getWsPath())
-                        .build();
-                serverContainer.addEndpoint(sec);
-                log.info("WebSocket endpoint registered: {}", config.getWsPath());
-            } else {
-                log.error("ServerContainer not found, WebSocket endpoint not registered!");
-            }
-        } catch (Exception e) {
-            log.error("Failed to initialize WebSocket: {}", e.getMessage(), e);
-        }
+        // 注册 WebSocket 端点
+        jakarta.websocket.server.ServerContainer serverContainer =
+                (jakarta.websocket.server.ServerContainer) ctx.getServletContext()
+                        .getAttribute(jakarta.websocket.server.ServerContainer.class.getName());
+        ServerEndpointConfig sec = ServerEndpointConfig.Builder
+                .create(VoiceWebSocketEndpoint.class, config.getWsPath())
+                .build();
+        serverContainer.addEndpoint(sec);
+        log.info("WebSocket endpoint registered: {}", config.getWsPath());
 
         VoiceWebSocketEndpoint.registerBridge(config.getWsPath(), this);
 
+        tomcat.getConnector();
         tomcat.start();
         log.debug("WebSocket 服务器已启动，端口: {}", config.getWsPort());
     }
