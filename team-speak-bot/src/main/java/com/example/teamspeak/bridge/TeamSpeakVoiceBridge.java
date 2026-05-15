@@ -113,7 +113,6 @@ public class TeamSpeakVoiceBridge implements TS3Listener {
     private void startWebSocketServer() throws Exception {
         tomcat = new Tomcat();
         tomcat.setPort(config.getWsPort());
-        tomcat.getConnector();
 
         // addContext 创建最小上下文，不加载默认 web.xml（避免 JSP servlet 注册）
         Context context = tomcat.addContext("", System.getProperty("java.io.tmpdir"));
@@ -121,12 +120,8 @@ public class TeamSpeakVoiceBridge implements TS3Listener {
         // 禁用 JAR 扫描，防止尝试加载 Jasper (JSP)
         context.getJarScanner().setJarScanFilter((jarScanType, attributes) -> false);
 
-        // 手动初始化 WebSocket 支持（WsSci 实现 ServletContainerInitializer）
-        try {
-            new org.apache.tomcat.websocket.server.WsSci().onStartup(null, context.getServletContext());
-        } catch (Exception e) {
-            log.warn("WsSci.onStartup 跳过: {}", e.getMessage());
-        }
+        // 必须在 getConnector() 之前初始化 WebSocket，否则 context 已初始化无法添加 filter
+        new org.apache.tomcat.websocket.server.WsSci().onStartup(null, context.getServletContext());
 
         // 手动注册 WebSocket 端点（JAR 扫描已禁用，@ServerEndpoint 注解不会被自动发现）
         jakarta.websocket.server.ServerContainer serverContainer =
@@ -137,12 +132,14 @@ public class TeamSpeakVoiceBridge implements TS3Listener {
                     .create(VoiceWebSocketEndpoint.class, config.getWsPath())
                     .build();
             serverContainer.addEndpoint(sec);
+            log.info("WebSocket endpoint registered: {}", config.getWsPath());
         } else {
             log.error("ServerContainer not found, WebSocket endpoint not registered!");
         }
 
         VoiceWebSocketEndpoint.registerBridge(config.getWsPath(), this);
 
+        tomcat.getConnector();
         tomcat.start();
         log.debug("WebSocket 服务器已启动，端口: {}", config.getWsPort());
     }
