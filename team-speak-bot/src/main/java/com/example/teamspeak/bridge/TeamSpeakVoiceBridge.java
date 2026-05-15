@@ -8,6 +8,7 @@ import com.github.manevolent.ts3j.protocol.packet.PacketBody1VoiceWhisper;
 import com.github.manevolent.ts3j.protocol.socket.client.LocalTeamspeakClientSocket;
 import jakarta.websocket.*;
 import jakarta.websocket.server.ServerEndpointConfig;
+import org.apache.catalina.Context;
 import org.apache.catalina.LifecycleException;
 import org.apache.catalina.startup.Tomcat;
 import org.apache.catalina.Wrapper;
@@ -112,37 +113,28 @@ public class TeamSpeakVoiceBridge implements TS3Listener {
     private void startWebSocketServer() throws Exception {
         tomcat = new Tomcat();
         tomcat.setPort(config.getWsPort());
+        tomcat.getConnector();
 
-        // 手动创建 StandardContext 而非用 addContext()：
-        // addContext() 会立即启动 context，导致 WsSci 无法添加 WebSocket filter。
-        // 手动创建 → addChild(设置 parent) → 初始化 WsSci → tomcat.start() 才启动。
-        org.apache.catalina.core.StandardContext ctx =
-                new org.apache.catalina.core.StandardContext();
-        ctx.setPath("");
-        ctx.setDocBase(System.getProperty("java.io.tmpdir"));
+        // addWebapp 在 context 启动前调用 SCI（含 WsSci），
+        // WsServerContainer 构造函数在此时可成功添加 WsFilter
+        Context context = tomcat.addWebapp("", System.getProperty("java.io.tmpdir"));
 
-        // 禁用 JAR 扫描，防止尝试加载 Jasper (JSP)
-        ctx.getJarScanner().setJarScanFilter((jarScanType, attributes) -> false);
-
-        // 先加入 host 建立 parent 关系（host 未启动，context 不会被启动）
-        tomcat.getHost().addChild(ctx);
-
-        // 此时 getServletContext() 可用，且 context 未启动，WsSci 可加 filter
-        new org.apache.tomcat.websocket.server.WsSci().onStartup(null, ctx.getServletContext());
-
-        // 注册 WebSocket 端点
+        // WsSci 已在 addWebapp 期间被调用，ServerContainer 已就绪
         jakarta.websocket.server.ServerContainer serverContainer =
-                (jakarta.websocket.server.ServerContainer) ctx.getServletContext()
+                (jakarta.websocket.server.ServerContainer) context.getServletContext()
                         .getAttribute(jakarta.websocket.server.ServerContainer.class.getName());
-        ServerEndpointConfig sec = ServerEndpointConfig.Builder
-                .create(VoiceWebSocketEndpoint.class, config.getWsPath())
-                .build();
-        serverContainer.addEndpoint(sec);
-        log.info("WebSocket endpoint registered: {}", config.getWsPath());
+        if (serverContainer != null) {
+            ServerEndpointConfig sec = ServerEndpointConfig.Builder
+                    .create(VoiceWebSocketEndpoint.class, config.getWsPath())
+                    .build();
+            serverContainer.addEndpoint(sec);
+            log.info("WebSocket endpoint registered: {}", config.getWsPath());
+        } else {
+            log.error("ServerContainer not found, WebSocket endpoint not registered!");
+        }
 
         VoiceWebSocketEndpoint.registerBridge(config.getWsPath(), this);
 
-        tomcat.getConnector();
         tomcat.start();
         log.debug("WebSocket 服务器已启动，端口: {}", config.getWsPort());
     }
