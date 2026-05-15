@@ -128,6 +128,12 @@ public class TeamSpeakVoiceBridge implements TS3Listener {
             log.warn("WsSci.onStartup 跳过: {}", e.getMessage());
         }
 
+        // 手动注册 WebSocket 端点（JAR 扫描已禁用，@ServerEndpoint 注解不会被自动发现）
+        ServerEndpointConfig sec = ServerEndpointConfig.Builder
+                .create(VoiceWebSocketEndpoint.class, config.getWsPath())
+                .build();
+        context.getServletContext().addEndpoint(sec);
+
         VoiceWebSocketEndpoint.registerBridge(config.getWsPath(), this);
 
         tomcat.start();
