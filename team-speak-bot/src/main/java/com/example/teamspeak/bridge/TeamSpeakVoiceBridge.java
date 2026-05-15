@@ -129,10 +129,17 @@ public class TeamSpeakVoiceBridge implements TS3Listener {
         }
 
         // 手动注册 WebSocket 端点（JAR 扫描已禁用，@ServerEndpoint 注解不会被自动发现）
-        ServerEndpointConfig sec = ServerEndpointConfig.Builder
-                .create(VoiceWebSocketEndpoint.class, config.getWsPath())
-                .build();
-        context.getServletContext().addEndpoint(sec);
+        jakarta.websocket.server.ServerContainer serverContainer =
+                (jakarta.websocket.server.ServerContainer) context.getServletContext()
+                        .getAttribute(jakarta.websocket.server.ServerContainer.class.getName());
+        if (serverContainer != null) {
+            ServerEndpointConfig sec = ServerEndpointConfig.Builder
+                    .create(VoiceWebSocketEndpoint.class, config.getWsPath())
+                    .build();
+            serverContainer.addEndpoint(sec);
+        } else {
+            log.error("ServerContainer not found, WebSocket endpoint not registered!");
+        }
 
         VoiceWebSocketEndpoint.registerBridge(config.getWsPath(), this);
 
