@@ -82,6 +82,16 @@ class TeamSpeakWebSocket:
         logger.error("Max reconnection attempts reached")
         return False
 
+    async def auto_reconnect_loop(self, url: str = None):
+        """后台持久重连循环 — 连接断开后自动尝试恢复，无次数限制"""
+        while True:
+            if not self.connected:
+                try:
+                    await self.connect(url)
+                except Exception as e:
+                    logger.debug(f"Auto-reconnect failed: {e}")
+            await asyncio.sleep(settings.ts_reconnect_interval)
+
     async def receive_message(self) -> AsyncIterator[dict]:
         if not self.ws:
             return

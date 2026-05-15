@@ -139,7 +139,9 @@ async def startup_event():
     if success:
         logger.info("Successfully connected to TeamSpeak Voice Bridge")
     else:
-        logger.warning("Failed to connect to TeamSpeak Voice Bridge")
+        logger.warning("Failed to connect to TeamSpeak Voice Bridge, will auto-reconnect in background")
+    # 后台持久重连循环（连接断开后自动恢复）
+    asyncio.create_task(ts_client.auto_reconnect_loop())
 
 
 @app.on_event("shutdown")
